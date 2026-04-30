@@ -1,72 +1,87 @@
 """
-Email channel handler: processes inbound emails from SendGrid.
+Email channel: SendGrid inbound/outbound handler.
 
-Handles:
-- Inbound email parsing
-- Attachment extraction
-- Reply routing
+Handles inbound email parsing via webhook.
+Sends outgoing emails via SendGrid API.
 """
 
-import os
+import base64
+import logging
 from datetime import datetime
 from typing import Any, Optional
-import structlog
-from fastapi import Request
-from fastapi.responses import JSONResponse
 
-from config.modelos import ChannelTypeEnum
+import httpx
 
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class EmailHandler:
-    """
-    Handles inbound emails from SendGrid.
+    """Handles email messages via SendGrid."""
 
-    Processes email parsing webhook, extracts sender, subject, body, attachments.
-    """
-
-    def __init__(self):
-        """Initialize email handler."""
-        self.channel = ChannelTypeEnum.EMAIL
-        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY", "")
-
-    async def handle_inbound(
+    def __init__(
         self,
-        body: dict[str, Any],
-        request: Request,
-    ) -> JSONResponse:
+        sendgrid_api_key: str,
+        supabase_client: Any,
+        router: Any,
+        normalizer: Any,
+        buffer: Any,
+        memory: Any,
+    ):
         """
-        Handle inbound email from SendGrid webhook.
-
-        SendGrid sends parsed email data as form data, not JSON.
+        Initialize email handler.
 
         Args:
-            body: Parsed request body
-            request: FastAPI request
+            sendgrid_api_key: SendGrid API key
+            supabase_client: Supabase client for credentials
+            router: MessageRouter instance
+            normalizer: MessageNormalizer instance
+            buffer: MessageBuffer instance
+            memory: MemoryManager instance
+        """
+        self.sendgrid_api_key = sendgrid_api_key
+        self.supabase = supabase_client
+        self.router = router
+        self.normalizer = normalizer
+        self.buffer = buffer
+        self.memory = memory
+        self.sendgrid_api_url = "https://api.sendgrid.com/v3/mail/send"
+        self.http_client = httpx.AsyncClient(timeout=30.0)
+
+    async def close(self) -> None:
+        """Close HTTP client."""
+        await self.http_client.aclose()
+
+    async def handle_webhook(
+        self,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Handle SendGrid inbound email webhook.
+
+        SendGrid sends parsed email data as form data.
+
+        Args:
+            body: Parsed form data from SendGrid
 
         Returns:
-            JSON response
+            Response dict
         """
-        logger.info("email_webhook_received")
-
         try:
-            # Extract email data from SendGrid webhook
+            logger.info("Email webhook received")
+
             email_data = await self._parse_sendgrid_webhook(body)
 
             if not email_data:
-                logger.warning("failed_to_parse_email")
-                return JSONResponse(status_code=400, content={"error": "Invalid email"})
+                logger.warning("Failed to parse email")
+                return {"error": "Invalid email"}
 
-            # Process email asynchronously
             await self._process_email(email_data)
 
-            return JSONResponse(status_code=200, content={"result": "accepted"})
+            return {"status": "ok"}
 
         except Exception as e:
-            logger.error("email_handling_error", error=str(e), exc_info=True)
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            logger.error(f"Error handling webhook: {e}", exc_info=True)
+            return {"error": str(e)}
 
     async def _parse_sendgrid_webhook(
         self,
@@ -75,13 +90,11 @@ class EmailHandler:
         """
         Parse SendGrid inbound email webhook.
 
-        SendGrid sends via POST with form data (not JSON).
-
         Args:
-            body: Parsed form data
+            body: Parsed form data from SendGrid
 
         Returns:
-            Parsed email dict
+            Parsed email dict or None
         """
         try:
             sender = body.get("from", "")
@@ -91,30 +104,33 @@ class EmailHandler:
             html = body.get("html", "")
             message_id = body.get("message-id", "")
 
-            # Parse attachments
+            # Parse attachments (SendGrid sends as "attachmentX" fields)
             attachments = []
-            for key in body:
-                if key.startswith("attachment"):
-                    # SendGrid puts attachments as files in multipart
-                    # (we'd need to handle multipart/form-data differently)
-                    pass
+            for i in range(1, 10):  # Support up to 10 attachments
+                attachment_key = f"attachment{i}" if i > 1 else "attachment"
+                if attachment_key in body:
+                    # Note: actual file data would be in file uploads
+                    attachments.append({
+                        "filename": body.get(f"{attachment_key}-filename", ""),
+                    })
 
-            if not sender or not subject:
+            if not sender:
+                logger.warning("Missing sender in email")
                 return None
 
             return {
-                "sender": sender,
+                "from": sender,
                 "to": to,
                 "subject": subject,
                 "text": text,
                 "html": html,
                 "message_id": message_id,
                 "attachments": attachments,
-                "received_at": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
         except Exception as e:
-            logger.error("email_parsing_error", error=str(e), exc_info=True)
+            logger.error(f"Error parsing email: {e}")
             return None
 
     async def _process_email(self, email_data: dict[str, Any]) -> None:
@@ -125,56 +141,213 @@ class EmailHandler:
             email_data: Parsed email dict
         """
         try:
+            sender_email = email_data.get("from", "")
+            to_email = email_data.get("to", "")
+            subject = email_data.get("subject", "")
+            text = email_data.get("text", "")
+            timestamp = email_data.get("timestamp", "")
+
             logger.info(
-                "processing_email",
-                sender=email_data.get("sender"),
-                subject=email_data.get("subject"),
+                f"Processing email from {sender_email}",
+                extra={"subject": subject},
             )
 
-            # TODO: Route to message processor
-            # - Identify client from "to" address
-            # - Normalize message using MessageNormalizer
-            # - Create/fetch conversation
-            # - Call agent
-            # - Send email response via SendGrid
+            # Identify client from "to" address
+            client_id = await self.router.identify_client(
+                sender_email,
+                "sender_email",
+            )
+
+            if not client_id:
+                logger.warning(f"Could not identify client for {sender_email}")
+                return
+
+            # Normalize message
+            normalized = await self.normalizer.normalize_and_validate(
+                {
+                    "from": sender_email,
+                    "to": to_email,
+                    "subject": subject,
+                    "text": text,
+                    "html": email_data.get("html"),
+                    "attachments": str(len(email_data.get("attachments", []))),
+                    "timestamp": timestamp,
+                },
+                "email",
+            )
+
+            if not normalized:
+                logger.warning("Failed to normalize email")
+                return
+
+            # Create/fetch conversation
+            conversation = await self.memory.get_or_create_conversation(
+                client_id,
+                sender_email,
+                "email",
+            )
+
+            # Save message
+            await self.memory.save_message(
+                client_id,
+                conversation["id"],
+                sender_email,
+                "user",
+                normalized["text"],
+                "email",
+                media_url=normalized.get("media_url"),
+                media_type=normalized.get("media_type"),
+            )
+
+            # Get context for agent
+            memory_context = await self.memory.get_context_for_agent(
+                client_id,
+                conversation["id"],
+            )
+
+            # Route to agent
+            agent_response = await self.router.route_message(
+                client_id,
+                {
+                    "text": normalized["text"],
+                    "sender_id": sender_email,
+                    "channel": "email",
+                    "media_url": normalized.get("media_url"),
+                    "media_type": normalized.get("media_type"),
+                },
+                memory_context,
+            )
+
+            if agent_response.get("escalated"):
+                logger.warning(f"Email escalated for {client_id}")
+                return
+
+            response_text = agent_response.get("response_text", "")
+            await self.send_email(
+                sender_email,
+                f"Re: {subject}",
+                response_text,
+                client_id,
+            )
+
+            # Save agent response
+            await self.memory.save_message(
+                client_id,
+                conversation["id"],
+                "agent",
+                "agent",
+                response_text,
+                "email",
+            )
 
         except Exception as e:
-            logger.error(
-                "email_processing_error",
-                error=str(e),
-                exc_info=True,
-            )
+            logger.error(f"Error processing email: {e}", exc_info=True)
 
     async def send_email(
         self,
         to_email: str,
         subject: str,
         body_text: str,
+        client_id: str,
         body_html: Optional[str] = None,
-    ) -> Optional[str]:
+        from_email: Optional[str] = None,
+    ) -> bool:
         """
-        Send email via SendGrid.
+        Send email via SendGrid API.
 
         Args:
             to_email: Recipient email
             subject: Email subject
             body_text: Plain text body
-            body_html: HTML body (optional)
+            client_id: Client ID
+            body_html: Optional HTML body
+            from_email: Optional sender email (defaults to client's email)
 
         Returns:
-            Message ID if sent successfully
+            True if sent successfully
         """
-        # TODO: Implement SendGrid API call
-        # Use SendGrid Python SDK to send email
+        try:
+            # Get client's email address if not provided
+            if not from_email:
+                from_email = await self._get_client_email(client_id)
 
-        logger.info(
-            "sending_email",
-            to=to_email,
-            subject=subject,
-        )
+            if not from_email:
+                logger.error(f"No email address for client {client_id}")
+                return False
 
-        return None
+            payload = {
+                "personalizations": [
+                    {
+                        "to": [{"email": to_email}],
+                        "subject": subject,
+                    }
+                ],
+                "from": {
+                    "email": from_email,
+                },
+                "content": [
+                    {
+                        "type": "text/plain",
+                        "value": body_text,
+                    }
+                ],
+            }
 
+            # Add HTML content if provided
+            if body_html:
+                payload["content"].append({
+                    "type": "text/html",
+                    "value": body_html,
+                })
 
-# Global instance
-email_router = EmailHandler()
+            headers = {
+                "Authorization": f"Bearer {self.sendgrid_api_key}",
+                "Content-Type": "application/json",
+            }
+
+            response = await self.http_client.post(
+                self.sendgrid_api_url,
+                json=payload,
+                headers=headers,
+            )
+
+            if response.status_code in (200, 201, 202):
+                logger.info(
+                    f"Email sent to {to_email}",
+                    extra={"client_id": client_id},
+                )
+                return True
+            else:
+                logger.error(
+                    f"Failed to send email: {response.status_code} {response.text}"
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Error sending email: {e}", exc_info=True)
+            return False
+
+    async def _get_client_email(self, client_id: str) -> Optional[str]:
+        """
+        Get client's email address from Supabase.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Email address or None
+        """
+        try:
+            response = self.supabase.table("clients").select(
+                "email"
+            ).eq("id", client_id).single().execute()
+
+            if response.data:
+                return response.data.get("email")
+
+            logger.warning(f"No email found for client {client_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching client email: {e}")
+            return None

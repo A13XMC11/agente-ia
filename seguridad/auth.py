@@ -18,6 +18,8 @@ from supabase import create_client, Client
 
 from config.modelos import UserLogin, TokenResponse, RoleEnum
 
+RateLimiter = Any
+
 
 logger = structlog.get_logger(__name__)
 
@@ -40,27 +42,37 @@ class AuthManager:
         self,
         supabase_url: str | None = None,
         supabase_key: str | None = None,
+        supabase_client: Optional[Client] = None,
         jwt_secret: str | None = None,
         jwt_algorithm: str = "HS256",
         jwt_expiration_hours: int = 24,
+        rate_limiter: Optional[RateLimiter] = None,
     ):
         """
         Initialize auth manager.
 
         Args:
-            supabase_url: Supabase project URL (from env if not provided)
-            supabase_key: Supabase public key (from env if not provided)
+            supabase_url: Supabase project URL (ignored if supabase_client provided)
+            supabase_key: Supabase public key (ignored if supabase_client provided)
+            supabase_client: Existing Supabase client (preferred over url/key)
             jwt_secret: JWT signing secret (from env if not provided)
             jwt_algorithm: JWT algorithm (default: HS256)
             jwt_expiration_hours: Token expiration in hours
+            rate_limiter: Optional RateLimiter for failed login tracking
         """
-        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL", "")
-        self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY", "")
         self.jwt_secret = jwt_secret or os.getenv("JWT_SECRET_KEY", "")
         self.jwt_algorithm = jwt_algorithm
         self.jwt_expiration_hours = jwt_expiration_hours
+        self.rate_limiter = rate_limiter
 
-        self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
+        if supabase_client:
+            self.supabase = supabase_client
+        else:
+            url = supabase_url or os.getenv("SUPABASE_URL", "")
+            key = supabase_key or os.getenv("SUPABASE_KEY", "")
+            if not url or not key:
+                raise ValueError("Must provide supabase_client or both url and key")
+            self.supabase = create_client(url, key)
 
         logger.info("auth_manager_initialized")
 
@@ -98,6 +110,7 @@ class AuthManager:
         Authenticate user by email and password.
 
         Returns user data if successful, None otherwise.
+        Tracks failed attempts via rate limiter for lockout protection.
 
         Args:
             email: User email
@@ -107,6 +120,20 @@ class AuthManager:
             User dict with id, email, client_id, role; or None
         """
         try:
+            # Check if account is locked due to failed attempts
+            if self.rate_limiter:
+                try:
+                    allowed, remaining = await self.rate_limiter.record_failed_login(email)
+
+                    if not allowed:
+                        logger.warning(
+                            "login_attempt_locked_account",
+                            email=email,
+                        )
+                        return None
+                except Exception as e:
+                    logger.warning("rate_limit_check_failed", error=str(e))
+
             # Query user by email
             response = self.supabase.table("users").select("*").eq(
                 "email", email.lower()
@@ -121,7 +148,15 @@ class AuthManager:
             # Verify password
             if not self.verify_password(password, user.get("password_hash", "")):
                 logger.warning("invalid_password", email=email)
+                # Failed attempt already recorded via rate_limiter above
                 return None
+
+            # Reset failed attempts on successful login
+            if self.rate_limiter:
+                try:
+                    await self.rate_limiter.reset_login_attempts(email)
+                except Exception as e:
+                    logger.warning("reset_login_attempts_failed", error=str(e))
 
             logger.info("user_authenticated", user_id=user["id"], email=email)
 

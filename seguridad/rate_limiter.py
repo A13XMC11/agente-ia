@@ -9,7 +9,7 @@ Uses Redis to track:
 
 import os
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any
 import structlog
 import redis.asyncio as redis
 
@@ -27,15 +27,21 @@ class RateLimiter:
     - Failed login attempts
     """
 
-    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        supabase_client: Optional[Any] = None,
+    ):
         """
         Initialize rate limiter.
 
         Args:
             redis_url: Redis connection URL
+            supabase_client: Optional Supabase client for fetching limits from DB
         """
         self.redis_url = redis_url
         self.redis: Optional[redis.Redis] = None
+        self.supabase = supabase_client
 
         # Configuration
         self.rate_limit_per_user_per_minute = int(
@@ -46,6 +52,7 @@ class RateLimiter:
         )
         self.login_max_attempts = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
         self.login_lockout_minutes = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "30"))
+        self.token_limit_warning_pct = 0.80
 
     async def initialize(self) -> None:
         """Connect to Redis."""
@@ -251,7 +258,7 @@ class RateLimiter:
             client_id: Client ID
 
         Returns:
-            Dict with token counts
+            Dict with token counts and limit
         """
         if not self.redis:
             return {}
@@ -259,11 +266,28 @@ class RateLimiter:
         try:
             key = f"tokens:client:{client_id}:{datetime.now().strftime('%Y-%m')}"
             usage = await self.redis.get(key)
+            used = int(usage or 0)
+
+            # Fetch limit from Supabase if available
+            limit = 1000000  # Default fallback
+            if self.supabase:
+                try:
+                    response = self.supabase.table("clients").select(
+                        "monthly_token_limit"
+                    ).eq("id", client_id).single().execute()
+
+                    if response.data:
+                        limit = response.data.get("monthly_token_limit", 1000000)
+                except Exception as e:
+                    logger.warning(
+                        "failed_to_fetch_token_limit",
+                        client_id=client_id,
+                        error=str(e),
+                    )
 
             return {
-                "used": int(usage or 0),
-                # TODO: Fetch limit from database
-                "limit": 1000000,
+                "used": used,
+                "limit": limit,
             }
 
         except Exception as e:
@@ -300,7 +324,36 @@ class RateLimiter:
 
             await self.redis.expire(key, ttl)
 
-            # TODO: Check if approaching limit and send alert
+            # Check if approaching limit and send alert
+            usage = await self.get_client_token_usage(client_id)
+            if usage.get("limit", 0) > 0:
+                usage_pct = usage.get("used", 0) / usage.get("limit", 1)
+
+                if usage_pct >= self.token_limit_warning_pct:
+                    logger.warning(
+                        "token_usage_threshold_warning",
+                        client_id=client_id,
+                        used=usage.get("used"),
+                        limit=usage.get("limit"),
+                        usage_pct=round(usage_pct * 100, 2),
+                    )
+
+                    # Insert alert into Supabase if available
+                    if self.supabase:
+                        try:
+                            self.supabase.table("alerts").insert({
+                                "client_id": client_id,
+                                "type": "token_usage_threshold",
+                                "severity": "warning",
+                                "message": f"Token usage at {round(usage_pct * 100, 2)}% of monthly limit",
+                                "created_at": datetime.utcnow().isoformat(),
+                            }).execute()
+                        except Exception as e:
+                            logger.error(
+                                "failed_to_create_alert",
+                                client_id=client_id,
+                                error=str(e),
+                            )
 
         except Exception as e:
             logger.error("increment_token_count_error", error=str(e), exc_info=True)

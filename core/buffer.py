@@ -1,49 +1,41 @@
 """
-Message buffer: debounces rapid messages and simulates human-like response timing.
+Buffer module: message debouncing with Redis.
 
-Uses Redis to:
-- Group rapid messages together
-- Delay responses to simulate human behavior
-- Split long responses into multiple messages
-- Send typing indicators
+Debounces rapid messages (WhatsApp/Instagram/Facebook) to avoid flooding.
+Email is not buffered (immediate delivery).
+
+Delay: 4 seconds for social channels, no delay for email.
 """
 
 import asyncio
 import json
+import logging
 import random
 from datetime import datetime, timedelta
-from typing import Optional
-import structlog
+from typing import Any, Optional
+from uuid import uuid4
+
 import redis.asyncio as redis
 
-from config.modelos import ChannelTypeEnum
-
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MessageBuffer:
-    """
-    Buffers outgoing messages to simulate human-like behavior.
+    """Manages message debouncing for social channels using Redis."""
 
-    Features:
-    - Debouncing: groups multiple rapid responses
-    - Typing delay: variable delay based on message length
-    - Message splitting: long responses divided into multiple messages
-    - Jitter: random delay to avoid bot-like patterns
-    """
-
-    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
+    def __init__(self, redis_url: str = "redis://localhost:6379"):
         """
-        Initialize message buffer with Redis connection.
+        Initialize message buffer.
 
         Args:
             redis_url: Redis connection URL
         """
         self.redis_url = redis_url
-        self.redis: Optional[redis.Redis] = None
-        self.buffer_delay_seconds: float = 3.0
-        self.max_message_length: int = 500
+        self.redis_client: Optional[redis.Redis] = None
+        self.buffer_delay = 4  # seconds for social channels
+        self.email_delay = 0  # no delay for email
+        self.max_buffer_size = 3  # Max messages before immediate send
+        self.max_message_length = 1000  # Max chars per message before splitting
 
     async def initialize(self) -> None:
         """Connect to Redis."""
@@ -102,7 +94,7 @@ class MessageBuffer:
     async def flush_buffer(
         self,
         conversation_id: str,
-        channel: ChannelTypeEnum,
+        channel: str,
         send_callback,
     ) -> None:
         """

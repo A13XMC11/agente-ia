@@ -1,329 +1,422 @@
 """
-Message normalizer: converts channel-specific formats to unified internal schema.
+Normalizer module: unifies message format across all channels.
 
-Handles: WhatsApp, Instagram, Facebook, Email
-Extracts: text, media, sender_id, timestamp, attachments
+Converts channel-specific payloads (Meta, Email, etc) to internal schema.
+Extracts: text, media, sender_id, channel_type, timestamp, metadata.
 """
 
-import json
+import logging
 from datetime import datetime
 from typing import Any, Optional
-import structlog
 
-from config.modelos import ChannelTypeEnum, WebhookEvent
-
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MessageNormalizer:
-    """
-    Converts messages from different channels into a unified format.
+    """Normalizes messages from all channels to internal format."""
 
-    Each channel has different payload structures; this class abstracts them away.
-    """
+    # Internal message schema keys
+    REQUIRED_FIELDS = {"text", "sender_id", "channel", "timestamp"}
+    OPTIONAL_FIELDS = {"media_url", "media_type", "message_type", "metadata"}
 
-    @staticmethod
-    def normalize_whatsapp(webhook_data: dict[str, Any]) -> Optional[WebhookEvent]:
+    async def normalize(
+        self,
+        raw_message: dict[str, Any],
+        channel_type: str,
+    ) -> Optional[dict[str, Any]]:
         """
-        Normalize WhatsApp message from Meta Cloud API.
+        Normalize channel-specific message to internal format.
 
-        WhatsApp payload structure:
+        Args:
+            raw_message: Channel-specific payload
+            channel_type: Channel (whatsapp, instagram, facebook, email, telegram)
+
+        Returns:
+            Normalized message or None if invalid
+        """
+        try:
+            if channel_type == "whatsapp":
+                return await self._normalize_whatsapp(raw_message)
+            elif channel_type == "instagram":
+                return await self._normalize_instagram(raw_message)
+            elif channel_type == "facebook":
+                return await self._normalize_facebook(raw_message)
+            elif channel_type == "email":
+                return await self._normalize_email(raw_message)
+            else:
+                logger.warning(f"Unknown channel type: {channel_type}")
+                return None
+
+        except Exception as e:
+            logger.error(
+                f"Error normalizing message from {channel_type}: {e}",
+                exc_info=True,
+            )
+            return None
+
+    async def _normalize_whatsapp(
+        self,
+        message: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """
+        Normalize WhatsApp Cloud API message.
+
+        Meta Cloud API format:
         {
-            "entry": [{
-                "id": "phone_number_id",
-                "changes": [{
-                    "value": {
-                        "messages": [{
-                            "from": "1234567890",
-                            "id": "msg_id",
-                            "timestamp": "1234567890",
-                            "type": "text|image|document|etc",
-                            "text": {"body": "message text"},
-                            "image": {"mime_type": "...", "sha256": "...", "id": "..."},
-                            ...
-                        }],
-                        "statuses": [...],
-                        "contacts": [{...}]
-                    }
+          "entry": [{
+            "changes": [{
+              "value": {
+                "messages": [{
+                  "from": "1234567890",
+                  "id": "msg_id",
+                  "timestamp": "1234567890",
+                  "type": "text|image|document|video|audio",
+                  "text": {"body": "..."},
+                  "image": {"mime_type": "...", "id": "..."},
+                  ...
                 }]
+              }
             }]
+          }]
         }
         """
         try:
-            entries = webhook_data.get("entry", [])
-            if not entries:
-                return None
-
-            entry = entries[0]
-            changes = entry.get("changes", [])
-            if not changes:
-                return None
-
-            value = changes[0].get("value", {})
+            # Extract message from nested structure
+            entry = message.get("entry", [{}])[0]
+            changes = entry.get("changes", [{}])[0]
+            value = changes.get("value", {})
             messages = value.get("messages", [])
 
             if not messages:
-                # Could be delivery confirmation or status update
-                statuses = value.get("statuses", [])
-                if statuses:
-                    status = statuses[0]
-                    return WebhookEvent(
-                        channel=ChannelTypeEnum.WHATSAPP,
-                        event_type="status_update",
-                        sender_id=value.get("metadata", {}).get("phone_number_id", ""),
-                        message_id=status.get("id"),
-                        timestamp=datetime.fromtimestamp(int(status.get("timestamp", 0))),
-                        raw_data=webhook_data,
-                    )
+                logger.warning("No messages in WhatsApp payload")
                 return None
 
-            message = messages[0]
-            sender_id = message.get("from")
-            message_id = message.get("id")
-            timestamp = datetime.fromtimestamp(int(message.get("timestamp", 0)))
-            message_type = message.get("type")
+            msg = messages[0]
+            sender_id = msg.get("from", "")
+            timestamp = msg.get("timestamp", "")
+            message_type = msg.get("type", "text")
 
-            # Extract message content based on type
-            message_text: Optional[str] = None
-            media_url: Optional[str] = None
-            media_type: Optional[str] = None
+            if not sender_id:
+                logger.warning("Missing sender_id in WhatsApp message")
+                return None
+
+            # Extract text based on type
+            text = ""
+            media_url = None
+            media_type = None
 
             if message_type == "text":
-                message_text = message.get("text", {}).get("body", "")
-
+                text = msg.get("text", {}).get("body", "")
             elif message_type == "image":
+                text = msg.get("image", {}).get("caption", "")
                 media_type = "image"
-                media_data = message.get("image", {})
-                media_url = media_data.get("id")  # Image ID from Meta
-                message_text = media_data.get("caption", "")
-
-            elif message_type == "video":
-                media_type = "video"
-                media_data = message.get("video", {})
-                media_url = media_data.get("id")
-                message_text = media_data.get("caption", "")
-
+                media_url = msg.get("image", {}).get("id")
             elif message_type == "document":
+                text = msg.get("document", {}).get("caption", "")
                 media_type = "document"
-                media_data = message.get("document", {})
-                media_url = media_data.get("id")
-                message_text = media_data.get("caption", "")
-
+                media_url = msg.get("document", {}).get("id")
+            elif message_type == "video":
+                text = msg.get("video", {}).get("caption", "")
+                media_type = "video"
+                media_url = msg.get("video", {}).get("id")
+            elif message_type == "audio":
+                media_type = "audio"
+                media_url = msg.get("audio", {}).get("id")
             elif message_type == "location":
+                location = msg.get("location", {})
+                text = f"Ubicación: {location.get('latitude')}, {location.get('longitude')}"
                 media_type = "location"
-                location = message.get("location", {})
-                message_text = f"Location: {location.get('latitude')},{location.get('longitude')}"
+            else:
+                text = f"[{message_type}]"
 
-            elif message_type == "button":
-                button_data = message.get("button", {})
-                message_text = button_data.get("text", "")
-
-            elif message_type == "interactive":
-                interactive = message.get("interactive", {})
-                if "button_reply" in interactive:
-                    message_text = interactive["button_reply"].get("title", "")
-                elif "list_reply" in interactive:
-                    message_text = interactive["list_reply"].get("title", "")
-
-            return WebhookEvent(
-                channel=ChannelTypeEnum.WHATSAPP,
-                event_type="message",
-                sender_id=sender_id,
-                message_id=message_id,
-                message_text=message_text or "",
-                media_url=media_url,
-                media_type=media_type,
-                timestamp=timestamp,
-                raw_data=webhook_data,
-            )
+            return {
+                "text": text,
+                "sender_id": sender_id,
+                "channel": "whatsapp",
+                "timestamp": timestamp,
+                "message_type": message_type,
+                "media_url": media_url,
+                "media_type": media_type,
+                "metadata": {
+                    "message_id": msg.get("id"),
+                    "phone_number_id": value.get("metadata", {}).get("phone_number_id"),
+                },
+            }
 
         except Exception as e:
-            logger.error("whatsapp_normalization_error", error=str(e), exc_info=True)
+            logger.error(f"Error normalizing WhatsApp message: {e}")
             return None
 
-    @staticmethod
-    def normalize_instagram(webhook_data: dict[str, Any]) -> Optional[WebhookEvent]:
+    async def _normalize_instagram(
+        self,
+        message: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
         """
-        Normalize Instagram message from Meta Graph API.
+        Normalize Instagram Graph API message.
 
-        Similar to WhatsApp but uses different field names.
+        Similar to WhatsApp (both use Meta Cloud API).
         """
         try:
-            entries = webhook_data.get("entry", [])
-            if not entries:
-                return None
-
-            entry = entries[0]
-            changes = entry.get("changes", [])
-            if not changes:
-                return None
-
-            value = changes[0].get("value", {})
+            entry = message.get("entry", [{}])[0]
+            changes = entry.get("changes", [{}])[0]
+            value = changes.get("value", {})
             messages = value.get("messages", [])
 
             if not messages:
+                logger.warning("No messages in Instagram payload")
                 return None
 
-            message = messages[0]
-            sender_id = message.get("from", {}).get("id", "")
-            message_id = message.get("id")
-            timestamp = datetime.fromtimestamp(int(message.get("timestamp", 0)))
+            msg = messages[0]
+            sender_id = msg.get("from", "")
+            timestamp = msg.get("timestamp", "")
+            message_type = msg.get("type", "text")
 
-            message_text = ""
-            media_url: Optional[str] = None
-            media_type: Optional[str] = None
+            if not sender_id:
+                logger.warning("Missing sender_id in Instagram message")
+                return None
 
-            if "text" in message:
-                message_text = message["text"].get("body", "")
+            text = ""
+            media_url = None
+            media_type = None
 
-            elif "image" in message:
+            if message_type == "text":
+                text = msg.get("text", {}).get("body", "")
+            elif message_type == "image":
+                text = msg.get("image", {}).get("caption", "")
                 media_type = "image"
-                media_url = message["image"].get("id")
-
-            elif "video" in message:
+                media_url = msg.get("image", {}).get("id")
+            elif message_type == "video":
+                text = msg.get("video", {}).get("caption", "")
                 media_type = "video"
-                media_url = message["video"].get("id")
+                media_url = msg.get("video", {}).get("id")
+            elif message_type == "story_mention":
+                text = "[Story mention]"
+            else:
+                text = f"[{message_type}]"
 
-            return WebhookEvent(
-                channel=ChannelTypeEnum.INSTAGRAM,
-                event_type="message",
-                sender_id=sender_id,
-                message_id=message_id,
-                message_text=message_text,
-                media_url=media_url,
-                media_type=media_type,
-                timestamp=timestamp,
-                raw_data=webhook_data,
-            )
+            return {
+                "text": text,
+                "sender_id": sender_id,
+                "channel": "instagram",
+                "timestamp": timestamp,
+                "message_type": message_type,
+                "media_url": media_url,
+                "media_type": media_type,
+                "metadata": {
+                    "message_id": msg.get("id"),
+                    "page_id": value.get("metadata", {}).get("page_id"),
+                },
+            }
 
         except Exception as e:
-            logger.error("instagram_normalization_error", error=str(e), exc_info=True)
+            logger.error(f"Error normalizing Instagram message: {e}")
             return None
 
-    @staticmethod
-    def normalize_facebook(webhook_data: dict[str, Any]) -> Optional[WebhookEvent]:
+    async def _normalize_facebook(
+        self,
+        message: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
         """
-        Normalize Facebook Messenger message from Meta Graph API.
+        Normalize Facebook Graph API message.
+
+        Similar to Instagram/WhatsApp (all use Meta APIs).
         """
         try:
-            entries = webhook_data.get("entry", [])
-            if not entries:
-                return None
-
-            entry = entries[0]
+            entry = message.get("entry", [{}])[0]
             messaging = entry.get("messaging", [])
 
             if not messaging:
+                logger.warning("No messaging in Facebook payload")
                 return None
 
-            event = messaging[0]
-            sender_id = event.get("sender", {}).get("id", "")
-            timestamp = datetime.fromtimestamp(int(event.get("timestamp", 0)) / 1000)
+            msg = messaging[0]
+            sender_id = msg.get("sender", {}).get("id", "")
+            timestamp = msg.get("timestamp", "")
+            message_data = msg.get("message", {})
 
-            message_text = ""
-            media_url: Optional[str] = None
-            media_type: Optional[str] = None
-            message_id: Optional[str] = None
+            if not sender_id:
+                logger.warning("Missing sender_id in Facebook message")
+                return None
 
-            if "message" in event:
-                msg = event["message"]
-                message_id = msg.get("mid")
-                message_text = msg.get("text", "")
+            text = message_data.get("text", "")
+            media_url = None
+            media_type = None
 
-                if "attachments" in msg:
-                    attachment = msg["attachments"][0]
-                    attachment_type = attachment.get("type")  # image, video, file, etc.
+            # Check for attachments (images, videos, files)
+            attachments = message_data.get("attachments", [])
+            if attachments:
+                attachment = attachments[0]
+                payload = attachment.get("payload", {})
+                attachment_type = attachment.get("type", "")
 
-                    if attachment_type in ["image", "video", "file"]:
-                        media_type = attachment_type
-                        payload = attachment.get("payload", {})
-                        media_url = payload.get("url")
+                if attachment_type == "image":
+                    media_type = "image"
+                    media_url = payload.get("url")
+                elif attachment_type == "video":
+                    media_type = "video"
+                    media_url = payload.get("url")
+                elif attachment_type == "file":
+                    media_type = "document"
+                    media_url = payload.get("url")
+                elif attachment_type == "location":
+                    coords = payload.get("coordinates", {})
+                    text = f"Ubicación: {coords.get('lat')}, {coords.get('long')}"
+                    media_type = "location"
 
-            return WebhookEvent(
-                channel=ChannelTypeEnum.FACEBOOK,
-                event_type="message",
-                sender_id=sender_id,
-                message_id=message_id,
-                message_text=message_text,
-                media_url=media_url,
-                media_type=media_type,
-                timestamp=timestamp,
-                raw_data=webhook_data,
-            )
+            # Fallback if no text
+            if not text and media_type:
+                text = f"[{media_type}]"
+
+            return {
+                "text": text,
+                "sender_id": sender_id,
+                "channel": "facebook",
+                "timestamp": timestamp,
+                "message_type": "attachment" if attachments else "text",
+                "media_url": media_url,
+                "media_type": media_type,
+                "metadata": {
+                    "message_id": message_data.get("mid"),
+                    "page_id": msg.get("recipient", {}).get("id"),
+                },
+            }
 
         except Exception as e:
-            logger.error("facebook_normalization_error", error=str(e), exc_info=True)
+            logger.error(f"Error normalizing Facebook message: {e}")
             return None
 
-    @staticmethod
-    def normalize_email(
-        sender_email: str,
-        subject: str,
-        body_text: str,
-        body_html: Optional[str] = None,
-        attachments: Optional[list[dict[str, Any]]] = None,
-        message_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None,
-    ) -> WebhookEvent:
+    async def _normalize_email(
+        self,
+        message: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
         """
-        Normalize email from SendGrid inbound parsing.
+        Normalize SendGrid Inbound Parse webhook.
 
-        Emails arrive as separate fields, not nested JSON.
+        SendGrid Inbound Parse format:
+        {
+          "from": "sender@example.com",
+          "to": "myservice@example.com",
+          "subject": "...",
+          "text": "...",
+          "html": "...",
+          "attachments": "...",
+          "email": "sender@example.com",
+          "charsets": "...",
+          "SPF": "..."
+        }
         """
-        if not timestamp:
-            timestamp = datetime.utcnow()
+        try:
+            sender_email = message.get("from", "")
+            subject = message.get("subject", "")
+            text = message.get("text", "")
 
-        message_text = f"Subject: {subject}\n\n{body_text}"
+            if not sender_email:
+                logger.warning("Missing from email in message")
+                return None
 
-        # If there are attachments, note them
-        media_url: Optional[str] = None
-        media_type: Optional[str] = None
+            # Use email as sender_id
+            sender_id = sender_email
 
-        if attachments and len(attachments) > 0:
-            # For simplicity, just note the first attachment
-            # In production, you'd handle multiple attachments
-            first_attachment = attachments[0]
-            media_type = "attachment"
-            media_url = first_attachment.get("url") or first_attachment.get("filename")
+            # Combine subject and text for full message
+            full_text = text
+            if subject:
+                full_text = f"{subject}\n{text}" if text else subject
 
-        return WebhookEvent(
-            channel=ChannelTypeEnum.EMAIL,
-            event_type="message",
-            sender_id=sender_email,
-            message_id=message_id,
-            message_text=message_text,
-            media_url=media_url,
-            media_type=media_type,
-            timestamp=timestamp,
-            raw_data={
-                "sender": sender_email,
-                "subject": subject,
-                "body_text": body_text,
-                "body_html": body_html,
-                "attachments": attachments or [],
+            # Check for attachments
+            attachments = message.get("attachments", "")
+            media_url = None
+            media_type = None
+
+            if attachments:
+                # attachments is a string count; actual files would be in raw POST
+                # For now, we note that attachments exist
+                media_type = "attachment"
+                full_text = f"{full_text}\n[Tiene {attachments} archivo(s) adjunto(s)]"
+
+            return {
+                "text": full_text,
+                "sender_id": sender_id,
+                "channel": "email",
+                "timestamp": message.get("timestamp", ""),
+                "message_type": "email",
+                "media_url": media_url,
+                "media_type": media_type,
+                "metadata": {
+                    "subject": subject,
+                    "email": sender_email,
+                    "to": message.get("to", ""),
+                    "html": message.get("html"),
+                    "attachments_count": attachments,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error normalizing email message: {e}")
+            return None
+
+    def validate(self, normalized: dict[str, Any]) -> bool:
+        """
+        Validate normalized message has all required fields.
+
+        Args:
+            normalized: Normalized message dict
+
+        Returns:
+            True if valid, False otherwise
+        """
+        if not isinstance(normalized, dict):
+            return False
+
+        # Check required fields
+        for field in self.REQUIRED_FIELDS:
+            if field not in normalized or normalized[field] is None:
+                logger.warning(f"Missing required field: {field}")
+                return False
+
+        # Validate text is not empty
+        if not normalized.get("text", "").strip():
+            logger.warning("Message text is empty")
+            return False
+
+        # Validate channel is known
+        valid_channels = {"whatsapp", "instagram", "facebook", "email"}
+        if normalized.get("channel") not in valid_channels:
+            logger.warning(f"Invalid channel: {normalized.get('channel')}")
+            return False
+
+        return True
+
+    async def normalize_and_validate(
+        self,
+        raw_message: dict[str, Any],
+        channel_type: str,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Normalize message and validate result.
+
+        Args:
+            raw_message: Channel-specific payload
+            channel_type: Channel type
+
+        Returns:
+            Validated normalized message or None
+        """
+        normalized = await self.normalize(raw_message, channel_type)
+
+        if not normalized:
+            return None
+
+        if not self.validate(normalized):
+            logger.warning(f"Validation failed for {channel_type} message")
+            return None
+
+        logger.info(
+            f"Message normalized successfully",
+            extra={
+                "channel": channel_type,
+                "sender_id": normalized.get("sender_id"),
+                "message_type": normalized.get("message_type"),
             },
         )
 
-    @classmethod
-    def normalize(
-        cls,
-        channel: ChannelTypeEnum,
-        webhook_data: dict[str, Any],
-    ) -> Optional[WebhookEvent]:
-        """
-        Main normalization entry point.
-
-        Routes to correct channel-specific normalizer.
-        """
-        logger.info("normalizing_message", channel=channel.value)
-
-        if channel == ChannelTypeEnum.WHATSAPP:
-            return cls.normalize_whatsapp(webhook_data)
-        elif channel == ChannelTypeEnum.INSTAGRAM:
-            return cls.normalize_instagram(webhook_data)
-        elif channel == ChannelTypeEnum.FACEBOOK:
-            return cls.normalize_facebook(webhook_data)
-        else:
-            logger.error("unknown_channel", channel=channel.value)
-            return None
+        return normalized

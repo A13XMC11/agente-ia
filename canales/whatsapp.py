@@ -1,260 +1,513 @@
 """
-WhatsApp channel handler: processes messages from Meta Cloud API.
+WhatsApp channel: Meta Cloud API webhook handler.
 
-Handles:
-- Inbound message webhooks
-- Delivery confirmations
-- Message status updates
-- Webhook signature validation
+Handles inbound messages, media, and status updates.
+Sends responses with typing indicators and message spacing.
 """
 
-import os
-import hmac
+import asyncio
 import hashlib
+import hmac
+import json
+import logging
 from typing import Any, Optional
-import structlog
-from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
 
-from config.modelos import ChannelTypeEnum, WebhookEvent
-from seguridad.validator import validate_webhook_signature
+import httpx
 
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class WhatsAppHandler:
-    """
-    Handles WhatsApp messages from Meta Cloud API.
+    """Handles WhatsApp Cloud API webhooks and message sending."""
 
-    Validates webhook signatures, processes events, routes to agent.
-    """
-
-    def __init__(self):
-        """Initialize WhatsApp handler."""
-        self.channel = ChannelTypeEnum.WHATSAPP
-        self.meta_verify_token = os.getenv("META_VERIFY_TOKEN", "")
-        self.meta_api_version = os.getenv("META_API_VERSION", "v18.0")
-
-    async def handle_webhook(
+    def __init__(
         self,
-        body: dict[str, Any],
-        request: Request,
-    ) -> JSONResponse:
+        verify_token: str,
+        app_secret: str,
+        supabase_client: Any,
+        router: Any,
+        normalizer: Any,
+        buffer: Any,
+        memory: Any,
+    ):
         """
-        Main webhook handler for WhatsApp events.
-
-        Validates signature, processes event, returns 200 to Meta immediately.
+        Initialize WhatsApp handler.
 
         Args:
-            body: Request JSON body
-            request: FastAPI request object
-
-        Returns:
-            JSON response (immediately returned to Meta)
+            verify_token: Verification token for webhook validation
+            app_secret: Meta app secret for signature validation
+            supabase_client: Supabase client for credentials
+            router: MessageRouter instance
+            normalizer: MessageNormalizer instance
+            buffer: MessageBuffer instance
+            memory: MemoryManager instance
         """
-        logger.info("whatsapp_webhook_received")
+        self.verify_token = verify_token
+        self.app_secret = app_secret
+        self.supabase = supabase_client
+        self.router = router
+        self.normalizer = normalizer
+        self.buffer = buffer
+        self.memory = memory
+        self.api_base_url = "https://graph.instagram.com/v18.0"
+        self.http_client = httpx.AsyncClient(timeout=30.0)
 
-        # Validate signature (if not in development)
-        skip_validation = os.getenv("SKIP_WEBHOOK_VALIDATION", "false").lower() == "true"
-        if not skip_validation:
-            signature = request.headers.get("X-Hub-Signature-256", "")
-            if not self._validate_signature(body, signature):
-                logger.warning("invalid_webhook_signature")
-                raise HTTPException(status_code=403, detail="Invalid signature")
+    async def close(self) -> None:
+        """Close HTTP client."""
+        await self.http_client.aclose()
 
-        # Return 200 to Meta immediately (process async)
-        asyncio_task = self._process_webhook(body)
-
-        return JSONResponse(
-            status_code=200,
-            content={"result": "accepted"},
-        )
-
-    async def _process_webhook(self, body: dict[str, Any]) -> None:
-        """
-        Process webhook asynchronously (don't block Meta timeout).
-
-        Args:
-            body: Request JSON body
-        """
-        try:
-            entries = body.get("entry", [])
-            for entry in entries:
-                await self._process_entry(entry)
-        except Exception as e:
-            logger.error("webhook_processing_error", error=str(e), exc_info=True)
-
-    async def _process_entry(self, entry: dict[str, Any]) -> None:
-        """
-        Process a single entry (webhook may have multiple).
-
-        Args:
-            entry: Entry dict from webhook
-        """
-        try:
-            phone_number_id = entry.get("id")
-            changes = entry.get("changes", [])
-
-            for change in changes:
-                value = change.get("value", {})
-
-                # Handle messages
-                messages = value.get("messages", [])
-                for message in messages:
-                    await self._handle_message(phone_number_id, message, value)
-
-                # Handle delivery/read status
-                statuses = value.get("statuses", [])
-                for status in statuses:
-                    await self._handle_status(phone_number_id, status)
-
-        except Exception as e:
-            logger.error("entry_processing_error", error=str(e), exc_info=True)
-
-    async def _handle_message(
+    def verify_webhook_signature(
         self,
-        phone_number_id: str,
-        message: dict[str, Any],
-        metadata: dict[str, Any],
-    ) -> None:
+        body: bytes,
+        x_hub_signature: str,
+    ) -> bool:
         """
-        Handle incoming message.
+        Verify Meta webhook signature (HMAC-SHA256).
 
         Args:
-            phone_number_id: Phone number ID receiving the message
-            message: Message dict from Meta
-            metadata: Metadata including contacts info
-        """
-        try:
-            sender_id = message.get("from")
-            message_id = message.get("id")
-            timestamp = int(message.get("timestamp", 0))
-
-            logger.info(
-                "whatsapp_message_received",
-                phone_number_id=phone_number_id,
-                sender_id=sender_id,
-                message_id=message_id,
-            )
-
-            # TODO: Route to message processor
-            # - Normalize message
-            # - Identify client
-            # - Fetch conversation
-            # - Call agent
-            # - Send response via WhatsApp API
-
-        except Exception as e:
-            logger.error(
-                "message_handling_error",
-                error=str(e),
-                exc_info=True,
-            )
-
-    async def _handle_status(
-        self,
-        phone_number_id: str,
-        status: dict[str, Any],
-    ) -> None:
-        """
-        Handle message status update (delivered, read, failed).
-
-        Args:
-            phone_number_id: Phone number ID
-            status: Status dict from Meta
-        """
-        try:
-            message_id = status.get("id")
-            status_type = status.get("status")  # sent, delivered, read, failed
-
-            logger.info(
-                "whatsapp_status_update",
-                message_id=message_id,
-                status=status_type,
-            )
-
-            # TODO: Update message status in database
-
-        except Exception as e:
-            logger.error(
-                "status_handling_error",
-                error=str(e),
-                exc_info=True,
-            )
-
-    def _validate_signature(self, body: dict[str, Any], signature: str) -> bool:
-        """
-        Validate webhook signature from Meta.
-
-        Meta sends: X-Hub-Signature-256: sha256=<hex_digest>
-
-        Args:
-            body: Request body
-            signature: X-Hub-Signature-256 header value
+            body: Request body bytes
+            x_hub_signature: X-Hub-Signature header (sha1=...)
 
         Returns:
             True if signature is valid
         """
         try:
-            import json
+            if not x_hub_signature or "=" not in x_hub_signature:
+                logger.warning("Invalid X-Hub-Signature format")
+                return False
 
-            body_string = json.dumps(body, separators=(",", ":"), sort_keys=True)
-            secret = os.getenv("META_ACCESS_TOKEN", "").encode()
+            _, provided_hash = x_hub_signature.split("=", 1)
 
-            computed_hash = hmac.new(
-                secret,
-                body_string.encode(),
-                hashlib.sha256,
+            expected_hash = hmac.new(
+                self.app_secret.encode(),
+                body,
+                hashlib.sha1,
             ).hexdigest()
 
-            expected_signature = f"sha256={computed_hash}"
+            if not hmac.compare_digest(provided_hash, expected_hash):
+                logger.warning("Signature validation failed")
+                return False
 
-            # Constant-time comparison
-            return hmac.compare_digest(signature, expected_signature)
+            logger.info("Webhook signature verified")
+            return True
 
         except Exception as e:
-            logger.error("signature_validation_error", error=str(e), exc_info=True)
+            logger.error(f"Error verifying signature: {e}")
             return False
+
+    async def handle_webhook(
+        self,
+        payload: dict[str, Any],
+        x_hub_signature: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """
+        Handle WhatsApp webhook payload.
+
+        Args:
+            payload: Webhook payload from Meta
+            x_hub_signature: X-Hub-Signature header for verification
+
+        Returns:
+            Response dict
+        """
+        try:
+            if x_hub_signature:
+                body_str = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+                if not self.verify_webhook_signature(body_str.encode(), x_hub_signature):
+                    logger.error("Webhook signature verification failed")
+                    return {"error": "Signature verification failed"}
+
+            logger.info(
+                "WhatsApp webhook received",
+                extra={"object": payload.get("object")},
+            )
+
+            if payload.get("object") == "whatsapp_business_account":
+                entries = payload.get("entry", [])
+                for entry in entries:
+                    await self._process_entry(entry)
+
+            return {"status": "ok"}
+
+        except Exception as e:
+            logger.error(f"Error handling webhook: {e}", exc_info=True)
+            return {"error": str(e)}
+
+    async def _process_entry(self, entry: dict[str, Any]) -> None:
+        """
+        Process webhook entry (contains messages, statuses, etc).
+
+        Args:
+            entry: Entry from webhook payload
+        """
+        try:
+            changes = entry.get("changes", [])
+
+            for change in changes:
+                value = change.get("value", {})
+                phone_number_id = value.get("metadata", {}).get("phone_number_id")
+
+                if not phone_number_id:
+                    logger.warning("Missing phone_number_id in webhook")
+                    continue
+
+                client_id = await self.router.identify_client(
+                    phone_number_id,
+                    "phone_number_id",
+                )
+
+                if not client_id:
+                    logger.warning(f"Could not identify client for {phone_number_id}")
+                    continue
+
+                messages = value.get("messages", [])
+                for message in messages:
+                    await self._handle_message(client_id, phone_number_id, message)
+
+                statuses = value.get("statuses", [])
+                for status in statuses:
+                    await self._handle_status(client_id, status)
+
+        except Exception as e:
+            logger.error(f"Error processing entry: {e}", exc_info=True)
+
+    async def _handle_message(
+        self,
+        client_id: str,
+        phone_number_id: str,
+        message: dict[str, Any],
+    ) -> None:
+        """
+        Handle inbound message from WhatsApp.
+
+        Args:
+            client_id: Client ID
+            phone_number_id: WhatsApp phone number ID
+            message: Message object from webhook
+        """
+        try:
+            sender_id = message.get("from", "")
+            timestamp = message.get("timestamp", "")
+
+            logger.info(
+                f"Processing WhatsApp message from {sender_id}",
+                extra={"client_id": client_id},
+            )
+
+            normalized = await self.normalizer.normalize_and_validate(
+                {
+                    "entry": [
+                        {
+                            "changes": [
+                                {
+                                    "value": {
+                                        "messages": [message],
+                                        "metadata": {
+                                            "phone_number_id": phone_number_id,
+                                        },
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "whatsapp",
+            )
+
+            if not normalized:
+                logger.warning("Failed to normalize message")
+                return
+
+            conversation = await self.memory.get_or_create_conversation(
+                client_id,
+                sender_id,
+                "whatsapp",
+            )
+
+            await self.memory.save_message(
+                client_id,
+                conversation["id"],
+                sender_id,
+                "user",
+                normalized["text"],
+                "whatsapp",
+                media_url=normalized.get("media_url"),
+                media_type=normalized.get("media_type"),
+            )
+
+            memory_context = await self.memory.get_context_for_agent(
+                client_id,
+                conversation["id"],
+            )
+
+            agent_response = await self.router.route_message(
+                client_id,
+                {
+                    "text": normalized["text"],
+                    "sender_id": sender_id,
+                    "channel": "whatsapp",
+                    "media_url": normalized.get("media_url"),
+                    "media_type": normalized.get("media_type"),
+                },
+                memory_context,
+            )
+
+            if agent_response.get("escalated"):
+                logger.warning(f"Message escalated for {client_id}")
+                return
+
+            response_text = agent_response.get("response_text", "")
+            await self.send_message(
+                phone_number_id,
+                sender_id,
+                response_text,
+                client_id,
+            )
+
+            await self.memory.save_message(
+                client_id,
+                conversation["id"],
+                "agent",
+                "agent",
+                response_text,
+                "whatsapp",
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling message: {e}", exc_info=True)
+
+    async def _handle_status(
+        self,
+        client_id: str,
+        status: dict[str, Any],
+    ) -> None:
+        """
+        Handle message status update (delivered, read, etc).
+
+        Args:
+            client_id: Client ID
+            status: Status object from webhook
+        """
+        try:
+            message_id = status.get("id", "")
+            status_type = status.get("status", "")
+
+            logger.info(
+                f"Message status update: {message_id} -> {status_type}",
+                extra={"client_id": client_id},
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling status: {e}")
 
     async def send_message(
         self,
         phone_number_id: str,
-        recipient_id: str,
-        message_text: str,
-        message_type: str = "text",
-    ) -> Optional[str]:
+        recipient_phone: str,
+        text: str,
+        client_id: str,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
+    ) -> bool:
         """
-        Send message via WhatsApp API.
+        Send message via WhatsApp Cloud API.
 
         Args:
-            phone_number_id: Sender phone number ID
-            recipient_id: Recipient phone number
-            message_text: Message content
-            message_type: Type of message (text, image, document, etc.)
+            phone_number_id: Sender's phone number ID
+            recipient_phone: Recipient's phone number
+            text: Message text
+            client_id: Client ID
+            media_url: Optional media URL
+            media_type: Optional media type
 
         Returns:
-            Message ID if sent successfully, None otherwise
+            True if sent successfully
         """
-        # TODO: Implement WhatsApp API call
-        # POST to /v{api_version}/{phone_number_id}/messages
-        # with message payload
+        try:
+            credentials = await self._get_client_credentials(client_id, "whatsapp")
 
-        logger.info(
-            "sending_whatsapp_message",
-            phone_number_id=phone_number_id,
-            recipient_id=recipient_id,
-        )
+            if not credentials:
+                logger.error(f"No WhatsApp credentials for client {client_id}")
+                return False
 
-        return None
+            access_token = credentials.get("access_token")
 
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": recipient_phone,
+                "type": "text",
+                "text": {"body": text},
+            }
 
-# Global instance
-whatsapp_router = WhatsAppHandler()
+            if media_url and media_type:
+                payload["type"] = "image" if media_type == "image" else "document"
+                payload[media_type] = {
+                    "link": media_url,
+                }
 
+            url = f"{self.api_base_url}/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
 
-# Handle imports that might fail
-try:
-    import asyncio
-except ImportError:
-    asyncio = None  # type: ignore
+            response = await self.http_client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+
+            if response.status_code in (200, 201):
+                result = response.json()
+                message_id = result.get("messages", [{}])[0].get("id", "")
+                logger.info(
+                    f"Message sent: {message_id}",
+                    extra={"client_id": client_id},
+                )
+                return True
+            else:
+                logger.error(
+                    f"Failed to send message: {response.status_code} {response.text}"
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Error sending message: {e}", exc_info=True)
+            return False
+
+    async def send_typing_indicator(
+        self,
+        phone_number_id: str,
+        recipient_phone: str,
+        client_id: str,
+    ) -> bool:
+        """
+        Send typing indicator.
+
+        Args:
+            phone_number_id: Sender's phone number ID
+            recipient_phone: Recipient's phone number
+            client_id: Client ID
+
+        Returns:
+            True if sent successfully
+        """
+        try:
+            credentials = await self._get_client_credentials(client_id, "whatsapp")
+
+            if not credentials:
+                return False
+
+            access_token = credentials.get("access_token")
+
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": recipient_phone,
+                "type": "typing",
+            }
+
+            url = f"{self.api_base_url}/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+
+            response = await self.http_client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+
+            return response.status_code in (200, 201)
+
+        except Exception as e:
+            logger.error(f"Error sending typing indicator: {e}")
+            return False
+
+    async def _get_client_credentials(
+        self,
+        client_id: str,
+        channel: str,
+    ) -> Optional[dict[str, str]]:
+        """
+        Get client's API credentials from Supabase.
+
+        Args:
+            client_id: Client ID
+            channel: Channel type
+
+        Returns:
+            Credentials dict or None
+        """
+        try:
+            response = self.supabase.table("client_channels").select(
+                "channel_credentials"
+            ).eq("client_id", client_id).eq("channel_type", channel).single().execute()
+
+            if response.data:
+                return response.data.get("channel_credentials", {})
+
+            logger.warning(f"No credentials found for {client_id} on {channel}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching credentials: {e}")
+            return None
+
+    async def send_template(
+        self,
+        phone_number_id: str,
+        recipient_phone: str,
+        template_name: str,
+        template_params: list[str],
+        client_id: str,
+    ) -> bool:
+        """
+        Send WhatsApp template message.
+
+        Args:
+            phone_number_id: Sender's phone number ID
+            recipient_phone: Recipient's phone number
+            template_name: Template name
+            template_params: Template parameters
+            client_id: Client ID
+
+        Returns:
+            True if sent successfully
+        """
+        try:
+            credentials = await self._get_client_credentials(client_id, "whatsapp")
+
+            if not credentials:
+                return False
+
+            access_token = credentials.get("access_token")
+
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": recipient_phone,
+                "type": "template",
+                "template": {
+                    "name": template_name,
+                    "language": {"code": "es"},
+                    "parameters": {"body": {"parameters": template_params}},
+                },
+            }
+
+            url = f"{self.api_base_url}/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+
+            response = await self.http_client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+
+            return response.status_code in (200, 201)
+
+        except Exception as e:
+            logger.error(f"Error sending template: {e}")
+            return False

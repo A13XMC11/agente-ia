@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
 
 # Python
 __pycache__/
@@ -85,3 +87,17 @@ docker-compose.override.yml
 .secrets/
 credentials.json
 service-account-key.json
+token.json
+google_token.json
+*.pem
+*.p12
+*.pfx
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Claude AI context
+.claude/
+
+# Docker
+docker-start.sh.local

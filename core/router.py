@@ -1,289 +1,309 @@
 """
-Message router: identifies client and routes messages to correct agent.
+Router module: routes normalized messages to correct agent per client.
 
-Routes normalized messages to the appropriate agent based on:
-- Phone number ID (WhatsApp)
-- Page ID (Instagram/Facebook)
-- Email address (Email)
+Handles client identification, agent instantiation, and message processing.
 """
 
-import os
-from typing import Optional, Any
-import structlog
-from supabase import create_client, Client
+import logging
+from typing import Any, Optional
 
-from config.modelos import ChannelTypeEnum, WebhookEvent
-from core.normalizer import MessageNormalizer
-from core.memory import ConversationMemory
-from core.buffer import MessageBuffer
+from core.agent import AgentEngine
 
-
-logger = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MessageRouter:
-    """
-    Routes incoming messages to correct agent based on channel and client.
+    """Routes messages to correct agent instance per client."""
 
-    Responsibilities:
-    - Map channel identifiers (phone number ID, page ID, email) to client
-    - Fetch client configuration
-    - Delegate to appropriate channel handler
-    - Track message flow
-    """
-
-    def __init__(
-        self,
-        supabase_url: str | None = None,
-        supabase_key: str | None = None,
-        redis_url: str | None = None,
-    ):
+    def __init__(self, supabase_client: Any):
         """
         Initialize message router.
 
         Args:
-            supabase_url: Supabase URL (from env if not provided)
-            supabase_key: Supabase key (from env if not provided)
-            redis_url: Redis URL (from env if not provided)
+            supabase_client: Supabase client instance
         """
-        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL", "")
-        self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY", "")
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-        self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
-        self.memory: Optional[ConversationMemory] = None
-        self.buffer: Optional[MessageBuffer] = None
-        self.normalizer = MessageNormalizer()
+        self.supabase = supabase_client
+        self.agent_instances = {}  # Cache of AgentEngine instances by client_id
 
     async def initialize(self) -> None:
-        """Initialize sub-components (memory, buffer)."""
-        self.memory = ConversationMemory(self.supabase_url, self.supabase_key)
-        self.buffer = MessageBuffer(self.redis_url)
-        await self.buffer.initialize()
-
+        """Initialize message router. Supabase client is already initialized."""
         logger.info("message_router_initialized")
 
     async def close(self) -> None:
-        """Close connections."""
-        if self.buffer:
-            await self.buffer.close()
-
+        """Cleanup and close message router."""
+        self.agent_instances.clear()
         logger.info("message_router_closed")
+
+    async def _get_client_config(self, client_id: str) -> dict[str, Any]:
+        """
+        Fetch client configuration from Supabase.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Client config with agent settings
+        """
+        try:
+            response = self.supabase.table("client_config").select("*").eq(
+                "client_id", client_id
+            ).single().execute()
+
+            config = response.data
+
+            # Merge with defaults
+            defaults = {
+                "system_prompt": "You are a helpful business assistant.",
+                "temperature": 0.7,
+                "max_tokens": 4000,
+                "active_modules": {
+                    "ventas": True,
+                    "agendamiento": True,
+                    "cobros": True,
+                    "links_pago": True,
+                    "calificacion": True,
+                    "campanas": False,
+                    "alertas": True,
+                    "seguimientos": True,
+                    "documentos": True,
+                },
+                "business_hours_start": "08:00",
+                "business_hours_end": "18:00",
+                "business_hours_timezone": "America/Guayaquil",
+            }
+
+            # Merge config with defaults (config takes precedence)
+            merged = {**defaults, **config}
+
+            return merged
+
+        except Exception as e:
+            logger.warning(f"Could not fetch config for {client_id}: {e}, using defaults")
+            return {
+                "client_id": client_id,
+                "system_prompt": "You are a helpful business assistant.",
+                "temperature": 0.7,
+                "max_tokens": 4000,
+                "active_modules": {
+                    "ventas": True,
+                    "agendamiento": True,
+                    "cobros": True,
+                    "links_pago": True,
+                    "calificacion": True,
+                    "campanas": False,
+                    "alertas": True,
+                    "seguimientos": True,
+                    "documentos": True,
+                },
+                "business_hours_start": "08:00",
+                "business_hours_end": "18:00",
+                "business_hours_timezone": "America/Guayaquil",
+            }
+
+    async def _get_or_create_agent(self, client_id: str) -> AgentEngine:
+        """
+        Get cached agent instance or create new one.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            AgentEngine instance for this client
+        """
+        if client_id in self.agent_instances:
+            return self.agent_instances[client_id]
+
+        # Fetch client config
+        config = await self._get_client_config(client_id)
+        config["client_id"] = client_id
+
+        # Create agent instance
+        agent = AgentEngine(config)
+        self.agent_instances[client_id] = agent
+
+        logger.info(f"Agent instance created for client {client_id}")
+
+        return agent
 
     async def identify_client(
         self,
-        channel: ChannelTypeEnum,
-        channel_identifier: str,
+        identifier: str,
+        identifier_type: str = "id",
     ) -> Optional[str]:
         """
-        Map channel identifier to client ID.
+        Identify client from webhook identifier.
 
-        Different channels use different IDs:
-        - WhatsApp: phone_number_id
-        - Instagram/Facebook: page_id
-        - Email: incoming email address
+        identifier_type can be:
+        - "id": Direct client ID
+        - "phone_number_id": WhatsApp phone_number_id
+        - "page_id": Instagram/Facebook page_id
+        - "sender_email": Email sender domain
 
         Args:
-            channel: Channel type
-            channel_identifier: Channel-specific identifier
+            identifier: The identifier value
+            identifier_type: Type of identifier
 
         Returns:
             Client ID if found, None otherwise
         """
         try:
-            if channel == ChannelTypeEnum.WHATSAPP:
-                # Look up phone number ID in channel_credentials
-                response = self.supabase.table("channel_credentials").select(
+            if identifier_type == "id":
+                return identifier
+
+            elif identifier_type == "phone_number_id":
+                # Map WhatsApp phone_number_id to client
+                response = self.supabase.table("client_channels").select(
                     "client_id"
-                ).eq("channel", "whatsapp").eq("phone_number_id", channel_identifier).execute()
+                ).eq("channel_type", "whatsapp").eq(
+                    "channel_identifier", identifier
+                ).single().execute()
 
-            elif channel == ChannelTypeEnum.INSTAGRAM:
-                response = self.supabase.table("channel_credentials").select(
+                return response.data["client_id"] if response.data else None
+
+            elif identifier_type == "page_id":
+                # Map Instagram/Facebook page_id to client
+                response = self.supabase.table("client_channels").select(
                     "client_id"
-                ).eq("channel", "instagram").eq("page_id", channel_identifier).execute()
+                ).eq("channel_type", "instagram").eq(
+                    "channel_identifier", identifier
+                ).single().execute()
 
-            elif channel == ChannelTypeEnum.FACEBOOK:
-                response = self.supabase.table("channel_credentials").select(
+                return response.data["client_id"] if response.data else None
+
+            elif identifier_type == "sender_email":
+                # Map email domain to client
+                response = self.supabase.table("client_channels").select(
                     "client_id"
-                ).eq("channel", "facebook").eq("page_id", channel_identifier).execute()
+                ).eq("channel_type", "email").eq(
+                    "channel_identifier", identifier
+                ).single().execute()
 
-            elif channel == ChannelTypeEnum.EMAIL:
-                response = self.supabase.table("channel_credentials").select(
-                    "client_id"
-                ).eq("channel", "email").eq("email_address", channel_identifier).execute()
-
-            else:
-                logger.warning("unknown_channel", channel=channel.value)
-                return None
-
-            if response.data:
-                client_id = response.data[0]["client_id"]
-                logger.info(
-                    "client_identified",
-                    channel=channel.value,
-                    client_id=client_id,
-                )
-                return client_id
-
-            logger.warning(
-                "client_not_found_for_channel",
-                channel=channel.value,
-                identifier=channel_identifier,
-            )
-            return None
+                return response.data["client_id"] if response.data else None
 
         except Exception as e:
-            logger.error(
-                "client_identification_error",
-                channel=channel.value,
-                error=str(e),
-                exc_info=True,
-            )
-            return None
+            logger.warning(f"Could not identify client: {e}")
 
-    async def get_client_config(
-        self,
-        client_id: str,
-    ) -> Optional[dict[str, Any]]:
-        """
-        Fetch client configuration.
-
-        Args:
-            client_id: Client ID
-
-        Returns:
-            Config dict with agent settings, active modules, etc.
-        """
-        try:
-            response = self.supabase.table("agent_config").select("*").eq(
-                "client_id", client_id
-            ).execute()
-
-            if response.data:
-                config = response.data[0]
-                logger.info("client_config_fetched", client_id=client_id)
-                return config
-
-            logger.warning("client_config_not_found", client_id=client_id)
-            return None
-
-        except Exception as e:
-            logger.error(
-                "config_fetch_error",
-                client_id=client_id,
-                error=str(e),
-                exc_info=True,
-            )
-            return None
+        return None
 
     async def route_message(
         self,
-        channel: ChannelTypeEnum,
-        channel_identifier: str,
-        webhook_data: dict[str, Any],
-    ) -> Optional[dict[str, Any]]:
-        """
-        Main routing entry point.
-
-        Normalizes message, identifies client, fetches config, returns routing info.
-
-        Args:
-            channel: Channel type
-            channel_identifier: Channel-specific identifier
-            webhook_data: Raw webhook payload
-
-        Returns:
-            Routing dict with client_id, config, normalized_event; or None on error
-        """
-        logger.info(
-            "routing_message",
-            channel=channel.value,
-            identifier=channel_identifier,
-        )
-
-        # Normalize message
-        normalized_event = self.normalizer.normalize(channel, webhook_data)
-        if not normalized_event:
-            logger.warning("message_normalization_failed")
-            return None
-
-        # Identify client
-        client_id = await self.identify_client(channel, channel_identifier)
-        if not client_id:
-            logger.warning("client_identification_failed")
-            return None
-
-        # Fetch client config
-        config = await self.get_client_config(client_id)
-        if not config:
-            logger.warning("client_config_unavailable")
-            return None
-
-        # Check if client is active
-        # (You would add client status check here)
-
-        return {
-            "client_id": client_id,
-            "channel": channel,
-            "normalized_event": normalized_event,
-            "config": config,
-        }
-
-    async def get_conversation_context(
-        self,
         client_id: str,
-        user_id: str,
-        channel: ChannelTypeEnum,
-        max_messages: int = 10,
+        mensaje_normalizado: dict[str, Any],
+        memory_context: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
         """
-        Get conversation context for agent processing.
+        Route message to agent and get response.
 
-        Retrieves or creates conversation, fetches message history.
+        Args:
+            client_id: Client ID (from webhook or header)
+            mensaje_normalizado: Normalized message dict with:
+                - text: str
+                - sender_id: str
+                - channel: str
+                - media_url: Optional[str]
+                - media_type: Optional[str]
+            memory_context: Previous conversation turns (from memory.py)
+
+        Returns:
+            Agent response with:
+                - response_text: str
+                - function_calls: list[dict]
+                - typing_indicator_ms: int
+                - message_delay_ms: int
+                - split_messages: list[str]
+                - escalated: bool
+        """
+        try:
+            logger.info(
+                f"Routing message from {mensaje_normalizado.get('sender_id')}",
+                extra={
+                    "client_id": client_id,
+                    "channel": mensaje_normalizado.get("channel"),
+                },
+            )
+
+            # Validate client exists
+            client_response = self.supabase.table("clients").select("id, status").eq(
+                "id", client_id
+            ).single().execute()
+
+            if not client_response.data:
+                logger.error(f"Client not found: {client_id}")
+                return {
+                    "error": "Client not found",
+                    "escalated": True,
+                }
+
+            client = client_response.data
+
+            # Check if client is active
+            if client.get("status") != "active":
+                logger.warning(f"Client {client_id} is not active: {client.get('status')}")
+                return {
+                    "response_text": "El servicio está temporalmente inactivo. Intenta más tarde.",
+                    "escalated": True,
+                }
+
+            # Get agent instance for this client
+            agent = await self._get_or_create_agent(client_id)
+
+            # Process message
+            response = await agent.process_message(
+                mensaje_normalizado, client_id, memory_context
+            )
+
+            logger.info(
+                f"Message processed",
+                extra={
+                    "client_id": client_id,
+                    "request_id": response.get("request_id"),
+                    "escalated": response.get("escalated", False),
+                },
+            )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error routing message: {e}", exc_info=True)
+
+            return {
+                "response_text": "Disculpa, hubo un error procesando tu mensaje.",
+                "function_calls": [],
+                "typing_indicator_ms": 1000,
+                "message_delay_ms": 500,
+                "split_messages": [
+                    "Disculpa, hubo un error procesando tu mensaje.",
+                    "Un agente humano te contactará pronto.",
+                ],
+                "escalated": True,
+                "error": str(e),
+            }
+
+    def invalidate_agent_cache(self, client_id: str) -> None:
+        """
+        Invalidate cached agent instance (e.g., after config change).
 
         Args:
             client_id: Client ID
-            user_id: End user ID
-            channel: Channel type
-            max_messages: Max messages to fetch for context
+        """
+        if client_id in self.agent_instances:
+            del self.agent_instances[client_id]
+            logger.info(f"Agent cache invalidated for client {client_id}")
+
+    def get_agent_status(self, client_id: str) -> dict[str, Any]:
+        """
+        Get status of agent instance for a client.
+
+        Args:
+            client_id: Client ID
 
         Returns:
-            Context dict with conversation and messages
+            Status dict with cached status
         """
-        if not self.memory:
-            raise RuntimeError("Router not initialized")
+        is_cached = client_id in self.agent_instances
 
-        try:
-            # Get or create conversation
-            conversation = await self.memory.get_or_create_conversation(
-                client_id=client_id,
-                user_id=user_id,
-                channel=channel,
-            )
-
-            # Fetch context messages
-            messages = await self.memory.get_context(
-                conversation_id=conversation["id"],
-                max_messages=max_messages,
-            )
-
-            # Fetch user profile
-            user_profile = await self.memory.get_user_profile(client_id, user_id)
-
-            return {
-                "conversation_id": conversation["id"],
-                "messages": messages,
-                "user_profile": user_profile,
-                "lead_score": conversation.get("lead_score", 0.0),
-                "lead_state": conversation.get("lead_state", "curioso"),
-            }
-
-        except Exception as e:
-            logger.error(
-                "context_fetch_error",
-                client_id=client_id,
-                user_id=user_id,
-                error=str(e),
-                exc_info=True,
-            )
-            return {}
+        return {
+            "client_id": client_id,
+            "agent_cached": is_cached,
+            "total_agents_cached": len(self.agent_instances),
+        }

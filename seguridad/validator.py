@@ -6,12 +6,44 @@ Uses HMAC-SHA256 to validate webhook authenticity.
 
 import hmac
 import hashlib
+import html
 import json
 from typing import Any
+from urllib.parse import parse_qsl
 import structlog
 
 
 logger = structlog.get_logger(__name__)
+
+
+class WebhookValidator:
+    """Validates webhook signatures from Meta and SendGrid."""
+
+    def __init__(self):
+        """Initialize webhook validator."""
+        pass
+
+    def validate_meta_signature(
+        self,
+        payload: bytes,
+        signature: str,
+        app_secret: str,
+    ) -> bool:
+        """Validate Meta webhook signature (WhatsApp, Instagram, Facebook)."""
+        return validate_webhook_signature(payload, signature, app_secret, "sha256")
+
+    def validate_sendgrid_signature(
+        self,
+        payload: bytes,
+        signature: str,
+        api_key: str,
+    ) -> bool:
+        """Validate SendGrid webhook signature."""
+        return validate_webhook_signature(payload, signature, api_key, "sha256")
+
+    def detect_injection(self, text: str) -> bool:
+        """Detect prompt injection attempts."""
+        return detect_prompt_injection(text)
 
 
 def validate_webhook_signature(
@@ -135,18 +167,67 @@ def sanitize_html(html_content: str) -> str:
     """
     Sanitize HTML to prevent XSS.
 
+    Uses html.escape() from stdlib for safe conversion of HTML entities.
+    This prevents script injection by converting special characters.
+
     Args:
         html_content: HTML string
 
     Returns:
-        Sanitized HTML
+        Escaped HTML safe for rendering as plain text
     """
-    # TODO: Use nh3 or bleach for production
-    # For now, just escape dangerous tags
-    dangerous_tags = ["<script", "<iframe", "onerror=", "onload="]
+    return html.escape(html_content)
 
-    result = html_content
-    for tag in dangerous_tags:
-        result = result.replace(tag, "")
 
-    return result
+def validate_twilio_signature(
+    payload: str,
+    signature: str,
+    auth_token: str,
+    url: str,
+) -> bool:
+    """
+    Validate Twilio webhook signature.
+
+    Twilio signs requests with HMAC-SHA1 of the URL + sorted POST params.
+
+    Args:
+        payload: Request body as URL-encoded string
+        signature: X-Twilio-Signature header value
+        auth_token: Twilio Auth Token
+        url: Full request URL (e.g., https://example.com/webhook)
+
+    Returns:
+        True if signature is valid
+    """
+    try:
+        # Parse URL-encoded body into dict
+        params = dict(parse_qsl(payload))
+
+        # Build signed content: URL + sorted params
+        signed_content = url
+
+        for key in sorted(params.keys()):
+            signed_content += key + params[key]
+
+        # Generate expected signature (HMAC-SHA1)
+        expected = hmac.new(
+            auth_token.encode(),
+            signed_content.encode(),
+            hashlib.sha1,
+        ).digest()
+
+        # Signature from Twilio is base64-encoded
+        import base64
+
+        expected_signature = base64.b64encode(expected).decode()
+
+        # Constant-time comparison
+        return hmac.compare_digest(signature, expected_signature)
+
+    except Exception as e:
+        logger.error(
+            "twilio_signature_validation_error",
+            error=str(e),
+            exc_info=True,
+        )
+        return False
