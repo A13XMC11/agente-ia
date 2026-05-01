@@ -9,9 +9,9 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request, HTTPException, status, Depends
+from fastapi import FastAPI, Request, HTTPException, Query, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBearer
 import structlog
 from supabase import create_client
@@ -452,9 +452,9 @@ async def instagram_webhook(request: Request):
 
 @app.get("/webhooks/instagram/verify")
 async def instagram_verify(
-    mode: str | None = None,
-    token: str | None = None,
-    challenge: str | None = None,
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
 ):
     """
     Instagram webhook verification endpoint.
@@ -465,7 +465,7 @@ async def instagram_verify(
 
     if mode == "subscribe" and token == expected_token:
         logger.info("instagram_webhook_verified")
-        return challenge
+        return PlainTextResponse(content=challenge)
     else:
         logger.warning("instagram_webhook_verification_failed", token=token)
         raise HTTPException(status_code=403, detail="Verification failed")
@@ -494,9 +494,9 @@ async def facebook_webhook(request: Request):
 
 @app.get("/webhooks/facebook/verify")
 async def facebook_verify(
-    mode: str | None = None,
-    token: str | None = None,
-    challenge: str | None = None,
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
 ):
     """
     Facebook webhook verification endpoint.
@@ -507,7 +507,7 @@ async def facebook_verify(
 
     if mode == "subscribe" and token == expected_token:
         logger.info("facebook_webhook_verified")
-        return challenge
+        return PlainTextResponse(content=challenge)
     else:
         logger.warning("facebook_webhook_verification_failed", token=token)
         raise HTTPException(status_code=403, detail="Verification failed")
@@ -535,9 +535,9 @@ async def email_webhook(request: Request):
 
 @app.get("/webhooks/whatsapp/verify")
 async def whatsapp_verify(
-    mode: str | None = None,
-    token: str | None = None,
-    challenge: str | None = None,
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
 ):
     """
     WhatsApp webhook verification endpoint.
@@ -548,7 +548,7 @@ async def whatsapp_verify(
 
     if mode == "subscribe" and token == expected_token:
         logger.info("whatsapp_webhook_verified")
-        return challenge
+        return PlainTextResponse(content=challenge)
     else:
         logger.warning("whatsapp_webhook_verification_failed", token=token)
         raise HTTPException(status_code=403, detail="Verification failed")
