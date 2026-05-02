@@ -135,7 +135,7 @@ class AuthManager:
                     logger.warning("rate_limit_check_failed", error=str(e))
 
             # Query user by email
-            response = self.supabase.table("users").select("*").eq(
+            response = self.supabase.table("usuarios").select("*").eq(
                 "email", email.lower()
             ).execute()
 

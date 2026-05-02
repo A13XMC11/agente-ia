@@ -338,7 +338,7 @@ class EmailHandler:
             Email address or None
         """
         try:
-            response = self.supabase.table("clients").select(
+            response = self.supabase.table("clientes").select(
                 "email"
             ).eq("id", client_id).single().execute()
 

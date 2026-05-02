@@ -57,7 +57,7 @@ class UsageTracker:
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("token_logs").insert(log_entry).execute()
+            self.supabase.table("uso_tokens").insert(log_entry).execute()
 
             logger.info(
                 f"Logged {tokens_used} tokens for {client_id}",
@@ -87,7 +87,7 @@ class UsageTracker:
             month_end = datetime.utcnow().isoformat()
 
             # Get usage logs
-            response = self.supabase.table("token_logs").select(
+            response = self.supabase.table("uso_tokens").select(
                 "tokens_used"
             ).eq("client_id", client_id).gte(
                 "created_at", f"{month_start}T00:00:00"
@@ -98,7 +98,7 @@ class UsageTracker:
             total_tokens = sum(log.get("tokens_used", 0) for log in logs)
 
             # Get client limit
-            client_response = self.supabase.table("clients").select(
+            client_response = self.supabase.table("clientes").select(
                 "monthly_token_limit"
             ).eq("id", client_id).single().execute()
 
@@ -181,7 +181,7 @@ class UsageTracker:
 
             if check.get("blocked"):
                 # Update client status
-                self.supabase.table("clients").update({
+                self.supabase.table("clientes").update({
                     "status": "usage_limit_exceeded",
                     "usage_limited_date": datetime.utcnow().isoformat(),
                 }).eq("id", client_id).execute()
@@ -215,14 +215,14 @@ class UsageTracker:
             month_start = today.replace(day=1).isoformat()
 
             # Archive logs
-            self.supabase.table("token_logs").update({
+            self.supabase.table("uso_tokens").update({
                 "archived": True,
             }).eq("client_id", client_id).lt(
                 "created_at", f"{month_start}T00:00:00"
             ).execute()
 
             # Update client if was limited
-            self.supabase.table("clients").update({
+            self.supabase.table("clientes").update({
                 "status": "active",
             }).eq("id", client_id).eq(
                 "status", "usage_limit_exceeded"
@@ -250,7 +250,7 @@ class UsageTracker:
             Dict of operation -> tokens
         """
         try:
-            response = self.supabase.table("token_logs").select(
+            response = self.supabase.table("uso_tokens").select(
                 "operation, tokens_used"
             ).eq("client_id", client_id).gte(
                 "created_at",
@@ -291,7 +291,7 @@ class UsageTracker:
         try:
             cutoff_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
 
-            response = self.supabase.table("token_logs").select(
+            response = self.supabase.table("uso_tokens").select(
                 "created_at, tokens_used"
             ).eq("client_id", client_id).gte(
                 "created_at", cutoff_date
@@ -352,7 +352,7 @@ class UsageTracker:
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("alerts").insert(alert).execute()
+            self.supabase.table("alertas").insert(alert).execute()
 
             logger.info(f"Alert created for {client_id}")
 
@@ -380,7 +380,7 @@ class UsageTracker:
         try:
             cutoff_date = (datetime.utcnow() - timedelta(days=30 * months)).isoformat()
 
-            response = self.supabase.table("token_logs").select(
+            response = self.supabase.table("uso_tokens").select(
                 "created_at, tokens_used"
             ).eq("client_id", client_id).gte(
                 "created_at", cutoff_date

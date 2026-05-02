@@ -286,14 +286,14 @@ class CalificacionModule:
             lead = lead_response.data
 
             # Fetch conversation metrics
-            conversation_response = self.supabase.table("conversations").select(
+            conversation_response = self.supabase.table("conversaciones").select(
                 "id"
             ).eq("client_id", client_id).eq("user_id", usuario_id).execute()
 
             num_conversations = len(conversation_response.data or [])
 
             # Fetch message count
-            messages_response = self.supabase.table("messages").select(
+            messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
             ).eq("client_id", client_id).eq("user_id", usuario_id).execute()
 

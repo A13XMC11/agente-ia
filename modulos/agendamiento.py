@@ -234,7 +234,7 @@ class AgendamientoModule:
                 "updated_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("appointments").insert(appointment).execute()
+            self.supabase.table("citas").insert(appointment).execute()
 
             logger.info(
                 f"Appointment created: {appointment['id']} for user {user_id}",
@@ -274,7 +274,7 @@ class AgendamientoModule:
         """
         try:
             # Fetch appointment
-            response = self.supabase.table("appointments").select("*").eq(
+            response = self.supabase.table("citas").select("*").eq(
                 "id", cita_id
             ).eq("client_id", client_id).single().execute()
 
@@ -287,7 +287,7 @@ class AgendamientoModule:
                 ).execute()
 
             # Update database
-            self.supabase.table("appointments").update(
+            self.supabase.table("citas").update(
                 {
                     "status": "cancelled",
                     "cancellation_reason": motivo,
@@ -331,7 +331,7 @@ class AgendamientoModule:
         """
         try:
             # Fetch appointment
-            response = self.supabase.table("appointments").select("*").eq(
+            response = self.supabase.table("citas").select("*").eq(
                 "id", cita_id
             ).eq("client_id", client_id).single().execute()
 
@@ -361,7 +361,7 @@ class AgendamientoModule:
                 ).execute()
 
             # Update database
-            self.supabase.table("appointments").update(
+            self.supabase.table("citas").update(
                 {
                     "start_time": new_start.isoformat(),
                     "end_time": new_end.isoformat(),
@@ -405,7 +405,7 @@ class AgendamientoModule:
         try:
             future_date = (datetime.utcnow() + timedelta(days=days_ahead)).isoformat()
 
-            response = self.supabase.table("appointments").select("*").eq(
+            response = self.supabase.table("citas").select("*").eq(
                 "client_id", client_id
             ).eq("status", "scheduled").lt("start_time", future_date).gte(
                 "start_time", datetime.utcnow().isoformat()

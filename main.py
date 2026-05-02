@@ -670,7 +670,7 @@ async def get_conversations(client_id: str, request: Request):
 
     # Fetch conversations from Supabase
     try:
-        response = supabase_client.table("conversations").select(
+        response = supabase_client.table("conversaciones").select(
             "id, user_id, channel, lead_state, lead_score, last_message_at, message_count"
         ).eq("client_id", client_id).order(
             "last_message_at", desc=True

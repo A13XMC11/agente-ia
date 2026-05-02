@@ -360,7 +360,7 @@ class InstagramHandler:
             Credentials dict or None
         """
         try:
-            response = self.supabase.table("client_channels").select(
+            response = self.supabase.table("canales_config").select(
                 "channel_credentials"
             ).eq("client_id", client_id).eq("channel_type", channel).single().execute()
 

@@ -272,7 +272,7 @@ class RateLimiter:
             limit = 1000000  # Default fallback
             if self.supabase:
                 try:
-                    response = self.supabase.table("clients").select(
+                    response = self.supabase.table("clientes").select(
                         "monthly_token_limit"
                     ).eq("id", client_id).single().execute()
 
@@ -341,7 +341,7 @@ class RateLimiter:
                     # Insert alert into Supabase if available
                     if self.supabase:
                         try:
-                            self.supabase.table("alerts").insert({
+                            self.supabase.table("alertas").insert({
                                 "client_id": client_id,
                                 "type": "token_usage_threshold",
                                 "severity": "warning",

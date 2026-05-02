@@ -274,19 +274,19 @@ Responde en JSON:
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("payments").insert(payment).execute()
+            self.supabase.table("pagos").insert(payment).execute()
 
             # Update user balance if valid
             if is_valid:
                 # Fetch user's account
-                user_response = self.supabase.table("users").select(
+                user_response = self.supabase.table("usuarios").select(
                     "account_balance"
                 ).eq("id", user_id).eq("client_id", client_id).single().execute()
 
                 current_balance = user_response.data.get("account_balance", 0)
                 new_balance = current_balance + monto
 
-                self.supabase.table("users").update(
+                self.supabase.table("usuarios").update(
                     {"account_balance": new_balance}
                 ).eq("id", user_id).execute()
 
@@ -327,7 +327,7 @@ Responde en JSON:
             List of payments ordered by date (newest first)
         """
         try:
-            response = self.supabase.table("payments").select("*").eq(
+            response = self.supabase.table("pagos").select("*").eq(
                 "client_id", client_id
             ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
 
@@ -353,7 +353,7 @@ Responde en JSON:
             Payment status and details
         """
         try:
-            response = self.supabase.table("payments").select("*").eq(
+            response = self.supabase.table("pagos").select("*").eq(
                 "client_id", client_id
             ).eq("reference", referencia).single().execute()
 

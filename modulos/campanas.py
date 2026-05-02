@@ -66,7 +66,7 @@ class CampanasModule:
                 "updated_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("campaigns").insert(campaign).execute()
+            self.supabase.table("campanas").insert(campaign).execute()
 
             logger.info(
                 f"Campaign created: {titulo} (ID: {campaign['id']})",
@@ -188,7 +188,7 @@ class CampanasModule:
         """
         try:
             # Fetch campaign
-            response = self.supabase.table("campaigns").select("*").eq(
+            response = self.supabase.table("campanas").select("*").eq(
                 "id", campaign_id
             ).eq("client_id", client_id).single().execute()
 
@@ -205,7 +205,7 @@ class CampanasModule:
                 return {"error": "Campaign has no recipients"}
 
             # Update campaign status
-            self.supabase.table("campaigns").update(
+            self.supabase.table("campanas").update(
                 {
                     "status": "scheduled",
                     "recipients_count": recipients_count,
@@ -247,7 +247,7 @@ class CampanasModule:
             now = datetime.utcnow()
 
             # Fetch scheduled campaigns due now
-            response = self.supabase.table("campaigns").select("*").eq(
+            response = self.supabase.table("campanas").select("*").eq(
                 "client_id", client_id
             ).eq("status", "scheduled").lte(
                 "scheduled_for", now.isoformat()
@@ -275,7 +275,7 @@ class CampanasModule:
                         ).eq("id", recipient["id"]).execute()
 
                     # Mark campaign as sent
-                    self.supabase.table("campaigns").update(
+                    self.supabase.table("campanas").update(
                         {
                             "status": "sent",
                             "sent_at": datetime.utcnow().isoformat(),
@@ -358,7 +358,7 @@ class CampanasModule:
             List of campaigns
         """
         try:
-            query = self.supabase.table("campaigns").select("*").eq(
+            query = self.supabase.table("campanas").select("*").eq(
                 "client_id", client_id
             )
 
@@ -389,7 +389,7 @@ class CampanasModule:
             Cancellation confirmation
         """
         try:
-            self.supabase.table("campaigns").update(
+            self.supabase.table("campanas").update(
                 {"status": "cancelled", "cancelled_at": datetime.utcnow().isoformat()}
             ).eq("id", campaign_id).eq("client_id", client_id).execute()
 

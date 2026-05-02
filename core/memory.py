@@ -56,7 +56,7 @@ class MemoryManager:
         """
         try:
             # Check if conversation exists for this user+channel+client
-            response = self.supabase.table("conversations").select("*").eq(
+            response = self.supabase.table("conversaciones").select("*").eq(
                 "client_id", client_id
             ).eq("user_id", user_id).eq("channel", channel).eq(
                 "status", "active"
@@ -83,7 +83,7 @@ class MemoryManager:
                 "last_message_at": None,
             }
 
-            self.supabase.table("conversations").insert(conversation).execute()
+            self.supabase.table("conversaciones").insert(conversation).execute()
 
             logger.info(
                 f"Conversation created: {conversation['id']}",
@@ -143,10 +143,10 @@ class MemoryManager:
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("messages").insert(message).execute()
+            self.supabase.table("mensajes").insert(message).execute()
 
             # Update conversation's last_message_at
-            self.supabase.table("conversations").update(
+            self.supabase.table("conversaciones").update(
                 {"last_message_at": message["created_at"]}
             ).eq("id", conversation_id).execute()
 
@@ -181,7 +181,7 @@ class MemoryManager:
         """
         try:
             # Fetch full conversation
-            response = self.supabase.table("messages").select("*").eq(
+            response = self.supabase.table("mensajes").select("*").eq(
                 "client_id", client_id
             ).eq("conversation_id", conversation_id).order(
                 "created_at", desc=True
@@ -250,7 +250,7 @@ class MemoryManager:
             if status is not None:
                 update_data["status"] = status
 
-            response = self.supabase.table("conversations").update(
+            response = self.supabase.table("conversaciones").update(
                 update_data
             ).eq("id", conversation_id).execute()
 
@@ -280,7 +280,7 @@ class MemoryManager:
             List of messages in chronological order
         """
         try:
-            response = self.supabase.table("messages").select("*").eq(
+            response = self.supabase.table("mensajes").select("*").eq(
                 "client_id", client_id
             ).eq("conversation_id", conversation_id).order(
                 "created_at", desc=False
@@ -318,7 +318,7 @@ class MemoryManager:
         """
         try:
             # Get latest conversation
-            conv_response = self.supabase.table("conversations").select(
+            conv_response = self.supabase.table("conversaciones").select(
                 "*"
             ).eq("client_id", client_id).eq("user_id", user_id).order(
                 "created_at", desc=True
@@ -327,7 +327,7 @@ class MemoryManager:
             latest_conversation = conv_response.data[0] if conv_response.data else None
 
             # Count messages
-            messages_response = self.supabase.table("messages").select(
+            messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
             ).eq("client_id", client_id).eq("sender_id", user_id).execute()
 

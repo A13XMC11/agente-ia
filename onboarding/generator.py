@@ -44,7 +44,7 @@ class ConfigGenerator:
         """
         try:
             # Get client
-            client_response = self.supabase.table("clients").select(
+            client_response = self.supabase.table("clientes").select(
                 "*"
             ).eq("id", client_id).single().execute()
 
@@ -415,7 +415,7 @@ Agente IA
         """
         try:
             # Update client status
-            self.supabase.table("clients").update({
+            self.supabase.table("clientes").update({
                 "status": "active",
             }).eq("id", client_id).execute()
 

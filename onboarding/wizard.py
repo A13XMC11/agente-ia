@@ -235,7 +235,7 @@ class OnboardingWizard:
                 "created_at": __import__("datetime").datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("clients").insert(client).execute()
+            self.supabase.table("clientes").insert(client).execute()
 
             # Create client config
             modules = self._parse_modules(wizard_data.get("modules", ""))
@@ -262,7 +262,7 @@ class OnboardingWizard:
                 "channel_credentials": {},
             }
 
-            self.supabase.table("client_channels").insert(
+            self.supabase.table("canales_config").insert(
                 whatsapp_channel
             ).execute()
 

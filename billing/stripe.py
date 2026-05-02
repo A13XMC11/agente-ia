@@ -231,7 +231,7 @@ class StripeBilling:
             }).eq("client_id", client_id).execute()
 
             # Reactivate client if paused
-            self.supabase.table("clients").update({
+            self.supabase.table("clientes").update({
                 "status": "active",
             }).eq("id", client_id).eq("status", "paused").execute()
 
@@ -279,7 +279,7 @@ class StripeBilling:
 
             if failed_count >= 3:
                 # Pause client after 3 failed payments (3 days)
-                self.supabase.table("clients").update({
+                self.supabase.table("clientes").update({
                     "status": "paused",
                     "paused_reason": "payment_failed",
                     "paused_date": datetime.utcnow().isoformat(),
@@ -320,7 +320,7 @@ class StripeBilling:
             }).eq("client_id", client_id).execute()
 
             # Pause client
-            self.supabase.table("clients").update({
+            self.supabase.table("clientes").update({
                 "status": "paused",
                 "paused_reason": "subscription_cancelled",
             }).eq("id", client_id).execute()

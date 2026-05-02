@@ -43,14 +43,14 @@ class AnalyticsModule:
             cutoff_date = (datetime.utcnow() - timedelta(days=dias)).isoformat()
 
             # Get message count
-            messages_response = self.supabase.table("messages").select(
+            messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 
             message_count = messages_response.count or 0
 
             # Get unique users
-            users_response = self.supabase.table("conversations").select(
+            users_response = self.supabase.table("conversaciones").select(
                 "user_id"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 
@@ -84,7 +84,7 @@ class AnalyticsModule:
             )
 
             # Get payments
-            payments_response = self.supabase.table("payments").select(
+            payments_response = self.supabase.table("pagos").select(
                 "amount"
             ).eq("client_id", client_id).eq("status", "verified").gte(
                 "created_at", cutoff_date
@@ -94,7 +94,7 @@ class AnalyticsModule:
             payments_total = sum(p.get("amount", 0) for p in payments)
 
             # Get appointments
-            appointments_response = self.supabase.table("appointments").select(
+            appointments_response = self.supabase.table("citas").select(
                 "id"
             ).eq("client_id", client_id).eq("status", "scheduled").gte(
                 "created_at", cutoff_date
@@ -210,7 +210,7 @@ class AnalyticsModule:
             cutoff_date = (datetime.utcnow() - timedelta(days=dias)).isoformat()
 
             # Messages by day
-            messages_response = self.supabase.table("messages").select(
+            messages_response = self.supabase.table("mensajes").select(
                 "created_at, sender_type"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 
@@ -227,7 +227,7 @@ class AnalyticsModule:
                     by_day[day]["agent"] += 1
 
             # Conversations
-            conversations_response = self.supabase.table("conversations").select(
+            conversations_response = self.supabase.table("conversaciones").select(
                 "id, created_at"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 
@@ -269,7 +269,7 @@ class AnalyticsModule:
             cutoff_date = (datetime.utcnow() - timedelta(dias=dias)).isoformat()
 
             # Messages by channel
-            messages_response = self.supabase.table("messages").select(
+            messages_response = self.supabase.table("mensajes").select(
                 "channel"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 
@@ -380,7 +380,7 @@ class AnalyticsModule:
             cutoff_date = (datetime.utcnow() - timedelta(dias=dias)).isoformat()
 
             # Verified payments
-            payments_response = self.supabase.table("payments").select(
+            payments_response = self.supabase.table("pagos").select(
                 "amount, created_at, status"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 
@@ -444,7 +444,7 @@ class AnalyticsModule:
             cutoff_date = (datetime.utcnow() - timedelta(dias=dias)).isoformat()
 
             # Token logs
-            logs_response = self.supabase.table("token_logs").select(
+            logs_response = self.supabase.table("uso_tokens").select(
                 "tokens_used, created_at"
             ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
 

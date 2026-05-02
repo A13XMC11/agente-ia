@@ -152,7 +152,7 @@ class MessageRouter:
 
             elif identifier_type == "phone_number_id":
                 # Map WhatsApp phone_number_id to client
-                response = self.supabase.table("client_channels").select(
+                response = self.supabase.table("canales_config").select(
                     "client_id"
                 ).eq("channel_type", "whatsapp").eq(
                     "channel_identifier", identifier
@@ -162,7 +162,7 @@ class MessageRouter:
 
             elif identifier_type == "page_id":
                 # Map Instagram/Facebook page_id to client
-                response = self.supabase.table("client_channels").select(
+                response = self.supabase.table("canales_config").select(
                     "client_id"
                 ).eq("channel_type", "instagram").eq(
                     "channel_identifier", identifier
@@ -172,7 +172,7 @@ class MessageRouter:
 
             elif identifier_type == "sender_email":
                 # Map email domain to client
-                response = self.supabase.table("client_channels").select(
+                response = self.supabase.table("canales_config").select(
                     "client_id"
                 ).eq("channel_type", "email").eq(
                     "channel_identifier", identifier
@@ -223,7 +223,7 @@ class MessageRouter:
             )
 
             # Validate client exists
-            client_response = self.supabase.table("clients").select("id, status").eq(
+            client_response = self.supabase.table("clientes").select("id, status").eq(
                 "id", client_id
             ).single().execute()
 

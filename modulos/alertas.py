@@ -186,10 +186,10 @@ class AlertasModule:
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("alerts").insert(alert).execute()
+            self.supabase.table("alertas").insert(alert).execute()
 
             # Route alert to admin
-            admin_response = self.supabase.table("users").select(
+            admin_response = self.supabase.table("usuarios").select(
                 "id, phone, email"
             ).eq("client_id", client_id).eq("role", "admin").single().execute()
 
@@ -376,7 +376,7 @@ Recuerda confirmar asistencia.
             Update confirmation
         """
         try:
-            self.supabase.table("alerts").update(
+            self.supabase.table("alertas").update(
                 {"read": True, "read_at": datetime.utcnow().isoformat()}
             ).eq("id", alert_id).execute()
 
@@ -403,7 +403,7 @@ Recuerda confirmar asistencia.
             List of unread alerts
         """
         try:
-            response = self.supabase.table("alerts").select("*").eq(
+            response = self.supabase.table("alertas").select("*").eq(
                 "client_id", client_id
             ).eq("read", False).order("created_at", desc=True).limit(limit).execute()
 
@@ -431,7 +431,7 @@ Recuerda confirmar asistencia.
             List of alerts
         """
         try:
-            query = self.supabase.table("alerts").select("*").eq(
+            query = self.supabase.table("alertas").select("*").eq(
                 "client_id", client_id
             )
 
