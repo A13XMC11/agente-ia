@@ -218,27 +218,48 @@ class WhatsAppHandler:
                 logger.warning("Failed to normalize message")
                 return
 
-            conversation = await self.memory.get_or_create_conversation(
-                client_id,
-                sender_id,
-                "whatsapp",
-            )
+            # Memory operations are best-effort — Supabase may be unavailable.
+            conversation_id = None
+            memory_context: dict = {}
 
-            await self.memory.save_message(
-                client_id,
-                conversation["id"],
-                sender_id,
-                "user",
-                normalized["text"],
-                "whatsapp",
-                media_url=normalized.get("media_url"),
-                media_type=normalized.get("media_type"),
-            )
+            if self.memory:
+                try:
+                    conversation = await self.memory.get_or_create_conversation(
+                        client_id,
+                        sender_id,
+                        "whatsapp",
+                    )
+                    conversation_id = conversation["id"]
 
-            memory_context = await self.memory.get_context_for_agent(
-                client_id,
-                conversation["id"],
-            )
+                    await self.memory.save_message(
+                        client_id,
+                        conversation_id,
+                        sender_id,
+                        "user",
+                        normalized["text"],
+                        "whatsapp",
+                        media_url=normalized.get("media_url"),
+                        media_type=normalized.get("media_type"),
+                    )
+
+                    memory_context = await self.memory.get_context_for_agent(
+                        client_id,
+                        conversation_id,
+                    )
+                except Exception as mem_err:
+                    logger.warning(
+                        "memory_unavailable_degraded_mode",
+                        error=str(mem_err),
+                        client_id=client_id,
+                        sender_id=sender_id,
+                    )
+                    memory_context = {}
+            else:
+                logger.warning(
+                    "memory_not_initialized_degraded_mode",
+                    client_id=client_id,
+                    sender_id=sender_id,
+                )
 
             agent_response = await self.router.route_message(
                 client_id,
@@ -264,14 +285,22 @@ class WhatsAppHandler:
                 client_id,
             )
 
-            await self.memory.save_message(
-                client_id,
-                conversation["id"],
-                "agent",
-                "agent",
-                response_text,
-                "whatsapp",
-            )
+            if self.memory and conversation_id:
+                try:
+                    await self.memory.save_message(
+                        client_id,
+                        conversation_id,
+                        "agent",
+                        "agent",
+                        response_text,
+                        "whatsapp",
+                    )
+                except Exception as mem_err:
+                    logger.warning(
+                        "memory_save_response_failed",
+                        error=str(mem_err),
+                        client_id=client_id,
+                    )
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)

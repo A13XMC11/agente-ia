@@ -172,11 +172,30 @@ async def lifespan(app: FastAPI):
             logger.error("message_router_initialize_error", error=str(e))
 
         # 5. Initialize channel handlers
+        # Log degraded state before attempting — helps diagnose startup failures
+        _service_status = {
+            "message_router": message_router is not None,
+            "normalizer": normalizer is not None,
+            "buffer": buffer is not None,
+            "memory": memory is not None,
+            "supabase": supabase_client is not None,
+        }
+        _missing = [k for k, v in _service_status.items() if not v]
+        if _missing:
+            logger.warning(
+                "channel_handlers_degraded_mode",
+                missing_services=_missing,
+                available_services=[k for k, v in _service_status.items() if v],
+            )
+
         try:
             meta_verify_token = os.getenv("META_VERIFY_TOKEN", "")
             meta_app_secret = os.getenv("META_APP_SECRET", "")
 
-            if message_router and normalizer and buffer and memory:
+            # Create handlers whenever the core router and normalizer are available.
+            # buffer and memory may be None (Redis/Supabase degraded) — handlers
+            # perform None-safe checks internally and process messages best-effort.
+            if message_router and normalizer:
                 try:
                     whatsapp_handler = WhatsAppHandler(
                         verify_token=meta_verify_token,
@@ -187,7 +206,7 @@ async def lifespan(app: FastAPI):
                         buffer=buffer,
                         memory=memory,
                     )
-                    logger.info("whatsapp_handler_created")
+                    logger.info("whatsapp_handler_created", degraded=bool(_missing))
                 except Exception as e:
                     logger.error("whatsapp_handler_init_error", error=str(e))
                     whatsapp_handler = None
@@ -202,7 +221,7 @@ async def lifespan(app: FastAPI):
                         buffer=buffer,
                         memory=memory,
                     )
-                    logger.info("instagram_handler_created")
+                    logger.info("instagram_handler_created", degraded=bool(_missing))
                 except Exception as e:
                     logger.error("instagram_handler_init_error", error=str(e))
                     instagram_handler = None
@@ -217,7 +236,7 @@ async def lifespan(app: FastAPI):
                         buffer=buffer,
                         memory=memory,
                     )
-                    logger.info("facebook_handler_created")
+                    logger.info("facebook_handler_created", degraded=bool(_missing))
                 except Exception as e:
                     logger.error("facebook_handler_init_error", error=str(e))
                     facebook_handler = None
@@ -231,16 +250,17 @@ async def lifespan(app: FastAPI):
                         buffer=buffer,
                         memory=memory,
                     )
-                    logger.info("email_handler_created")
+                    logger.info("email_handler_created", degraded=bool(_missing))
                 except Exception as e:
                     logger.error("email_handler_init_error", error=str(e))
                     email_handler = None
 
-                logger.info("channel_handlers_initialized")
+                logger.info("channel_handlers_initialized", missing_services=_missing)
             else:
-                logger.warning(
-                    "skipping_channel_handlers",
-                    reason="missing_required_dependencies",
+                logger.error(
+                    "channel_handlers_skipped_critical_missing",
+                    missing_services=_missing,
+                    reason="message_router and normalizer are required",
                 )
         except Exception as e:
             logger.error("channel_handlers_init_error", error=str(e))
@@ -435,6 +455,17 @@ async def whatsapp_webhook(request: Request):
     Handles: incoming messages, delivery confirmations, read receipts.
     """
     if not whatsapp_handler:
+        _missing = {
+            "message_router": message_router is None,
+            "normalizer": normalizer is None,
+            "buffer": buffer is None,
+            "memory": memory is None,
+            "supabase": supabase_client is None,
+        }
+        logger.error(
+            "whatsapp_webhook_handler_unavailable",
+            missing_services={k for k, v in _missing.items() if v},
+        )
         raise HTTPException(status_code=503, detail="Service not ready")
 
     body = await request.json()
