@@ -72,7 +72,7 @@ class LinksPagoModule:
                     }
                 ],
                 metadata={
-                    "client_id": client_id,
+                    "cliente_id": client_id,
                     "user_id": usuario_id,
                     **(metadatos or {}),
                 },
@@ -84,7 +84,7 @@ class LinksPagoModule:
             # Save to database
             payment_link = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": usuario_id,
                 "provider": "stripe",
                 "amount": monto,
@@ -146,7 +146,7 @@ class LinksPagoModule:
 
             payment_link = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": usuario_id,
                 "provider": "mercadopago",
                 "amount": monto,
@@ -207,7 +207,7 @@ class LinksPagoModule:
 
             payment_link = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": usuario_id,
                 "provider": "paypal",
                 "amount": monto,
@@ -356,7 +356,7 @@ class LinksPagoModule:
         try:
             # Fetch pending payment links
             response = self.supabase.table("payment_links").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("status", "pending").execute()
 
             pending_links = response.data or []
@@ -405,7 +405,7 @@ class LinksPagoModule:
         """
         try:
             response = self.supabase.table("payment_links").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("user_id", usuario_id).order(
                 "created_at", desc=True
             ).execute()

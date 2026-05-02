@@ -672,7 +672,7 @@ async def get_conversations(client_id: str, request: Request):
     try:
         response = supabase_client.table("conversaciones").select(
             "id, user_id, channel, lead_state, lead_score, last_message_at, message_count"
-        ).eq("client_id", client_id).order(
+        ).eq("cliente_id", client_id).order(
             "last_message_at", desc=True
         ).limit(50).execute()
 
@@ -717,7 +717,7 @@ async def get_leads(client_id: str, request: Request):
     try:
         response = supabase_client.table("leads").select(
             "id, user_id, conversation_id, lead_score, lead_state, last_activity, channel"
-        ).eq("client_id", client_id).order(
+        ).eq("cliente_id", client_id).order(
             "lead_score", desc=True
         ).limit(100).execute()
 

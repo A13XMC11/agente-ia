@@ -65,7 +65,7 @@ class SeguimientoModule:
 
             followup = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": usuario_id,
                 "type": tipo,
                 "title": titulo,
@@ -142,7 +142,7 @@ class SeguimientoModule:
 
                 followup = {
                     "id": str(uuid4()),
-                    "client_id": client_id,
+                    "cliente_id": client_id,
                     "user_id": usuario_id,
                     "type": "follow_up_sequence",
                     "sequence_id": sequence_id,
@@ -219,7 +219,7 @@ class SeguimientoModule:
 
                 followup = {
                     "id": str(uuid4()),
-                    "client_id": client_id,
+                    "cliente_id": client_id,
                     "user_id": usuario_id,
                     "type": "post_sale_sequence",
                     "sequence_id": sequence_id,
@@ -301,7 +301,7 @@ class SeguimientoModule:
 
                 followup = {
                     "id": str(uuid4()),
-                    "client_id": client_id,
+                    "cliente_id": client_id,
                     "user_id": usuario_id,
                     "type": "reactivation_sequence",
                     "sequence_id": sequence_id,
@@ -349,7 +349,7 @@ class SeguimientoModule:
 
             # Fetch due follow-ups
             response = self.supabase.table("followups").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("status", "scheduled").lte(
                 "scheduled_for", now.isoformat()
             ).execute()
@@ -406,7 +406,7 @@ class SeguimientoModule:
             now = datetime.utcnow()
 
             response = self.supabase.table("followups").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("status", "scheduled").lte(
                 "scheduled_for", now.isoformat()
             ).order("scheduled_for", desc=True).limit(limit).execute()
@@ -434,7 +434,7 @@ class SeguimientoModule:
         """
         try:
             response = self.supabase.table("followups").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("user_id", usuario_id).order(
                 "scheduled_for", desc=True
             ).execute()

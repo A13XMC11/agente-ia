@@ -45,21 +45,21 @@ class AnalyticsModule:
             # Get message count
             messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             message_count = messages_response.count or 0
 
             # Get unique users
             users_response = self.supabase.table("conversaciones").select(
                 "user_id"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             unique_users = len(set(c["user_id"] for c in users_response.data or []))
 
             # Get lead stats
             leads_response = self.supabase.table("leads").select(
                 "state, score"
-            ).eq("client_id", client_id).gte("updated_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("updated_at", cutoff_date).execute()
 
             leads = leads_response.data or []
 
@@ -74,7 +74,7 @@ class AnalyticsModule:
             # Get sales quotes
             quotes_response = self.supabase.table("quotes").select(
                 "total, status"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             quotes = quotes_response.data or []
 
@@ -86,7 +86,7 @@ class AnalyticsModule:
             # Get payments
             payments_response = self.supabase.table("pagos").select(
                 "amount"
-            ).eq("client_id", client_id).eq("status", "verified").gte(
+            ).eq("cliente_id", client_id).eq("estado", "verificado").gte(
                 "created_at", cutoff_date
             ).execute()
 
@@ -96,7 +96,7 @@ class AnalyticsModule:
             # Get appointments
             appointments_response = self.supabase.table("citas").select(
                 "id"
-            ).eq("client_id", client_id).eq("status", "scheduled").gte(
+            ).eq("cliente_id", client_id).eq("estado", "confirmada").gte(
                 "created_at", cutoff_date
             ).execute()
 
@@ -157,7 +157,7 @@ class AnalyticsModule:
             # Quotes by status
             quotes_response = self.supabase.table("quotes").select(
                 "status, total, created_at"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             quotes = quotes_response.data or []
 
@@ -212,7 +212,7 @@ class AnalyticsModule:
             # Messages by day
             messages_response = self.supabase.table("mensajes").select(
                 "created_at, sender_type"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             messages = messages_response.data or []
 
@@ -229,7 +229,7 @@ class AnalyticsModule:
             # Conversations
             conversations_response = self.supabase.table("conversaciones").select(
                 "id, created_at"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             conversations = conversations_response.data or []
 
@@ -271,7 +271,7 @@ class AnalyticsModule:
             # Messages by channel
             messages_response = self.supabase.table("mensajes").select(
                 "channel"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             messages = messages_response.data or []
 
@@ -311,7 +311,7 @@ class AnalyticsModule:
         try:
             leads_response = self.supabase.table("leads").select(
                 "state, score"
-            ).eq("client_id", client_id).execute()
+            ).eq("cliente_id", client_id).execute()
 
             leads = leads_response.data or []
 
@@ -382,7 +382,7 @@ class AnalyticsModule:
             # Verified payments
             payments_response = self.supabase.table("pagos").select(
                 "amount, created_at, status"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             payments = payments_response.data or []
 
@@ -446,7 +446,7 @@ class AnalyticsModule:
             # Token logs
             logs_response = self.supabase.table("uso_tokens").select(
                 "tokens_used, created_at"
-            ).eq("client_id", client_id).gte("created_at", cutoff_date).execute()
+            ).eq("cliente_id", client_id).gte("created_at", cutoff_date).execute()
 
             logs = logs_response.data or []
 
@@ -489,7 +489,7 @@ class AnalyticsModule:
         """
         try:
             report = {
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "report_type": tipo,
                 "periodo_dias": dias,
                 "fecha_generacion": datetime.utcnow().isoformat(),

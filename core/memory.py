@@ -57,9 +57,9 @@ class MemoryManager:
         try:
             # Check if conversation exists for this user+channel+client
             response = self.supabase.table("conversaciones").select("*").eq(
-                "client_id", client_id
-            ).eq("user_id", user_id).eq("channel", channel).eq(
-                "status", "active"
+                "cliente_id", client_id
+            ).eq("usuario_id", user_id).eq("canal", channel).eq(
+                "estado", "activa"
             ).order("created_at", desc=True).limit(1).execute()
 
             if response.data:
@@ -72,7 +72,7 @@ class MemoryManager:
             # Create new conversation
             conversation = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": user_id,
                 "channel": channel,
                 "status": "active",
@@ -130,7 +130,7 @@ class MemoryManager:
         try:
             message = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "conversation_id": conversation_id,
                 "sender_id": sender_id,
                 "sender_type": sender_type,
@@ -182,8 +182,8 @@ class MemoryManager:
         try:
             # Fetch full conversation
             response = self.supabase.table("mensajes").select("*").eq(
-                "client_id", client_id
-            ).eq("conversation_id", conversation_id).order(
+                "cliente_id", client_id
+            ).eq("conversacion_id", conversation_id).order(
                 "created_at", desc=True
             ).limit(20).execute()
 
@@ -281,8 +281,8 @@ class MemoryManager:
         """
         try:
             response = self.supabase.table("mensajes").select("*").eq(
-                "client_id", client_id
-            ).eq("conversation_id", conversation_id).order(
+                "cliente_id", client_id
+            ).eq("conversacion_id", conversation_id).order(
                 "created_at", desc=False
             ).limit(limit).execute()
 
@@ -320,7 +320,7 @@ class MemoryManager:
             # Get latest conversation
             conv_response = self.supabase.table("conversaciones").select(
                 "*"
-            ).eq("client_id", client_id).eq("user_id", user_id).order(
+            ).eq("cliente_id", client_id).eq("user_id", user_id).order(
                 "created_at", desc=True
             ).limit(1).execute()
 
@@ -329,7 +329,7 @@ class MemoryManager:
             # Count messages
             messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
-            ).eq("client_id", client_id).eq("sender_id", user_id).execute()
+            ).eq("cliente_id", client_id).eq("sender_id", user_id).execute()
 
             message_count = messages_response.count or 0
 

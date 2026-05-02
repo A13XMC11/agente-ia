@@ -241,7 +241,7 @@ class OnboardingWizard:
             modules = self._parse_modules(wizard_data.get("modules", ""))
 
             config = {
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "system_prompt": await self._generate_system_prompt(wizard_data),
                 "temperature": 0.7,
                 "max_tokens": 4000,
@@ -255,8 +255,8 @@ class OnboardingWizard:
 
             # Create client channels record for WhatsApp
             whatsapp_channel = {
-                "client_id": client_id,
-                "channel_type": "whatsapp",
+                "cliente_id": client_id,
+                "canal": "whatsapp",
                 "channel_identifier": wizard_data.get("whatsapp_number", ""),
                 "status": "pending_verification",
                 "channel_credentials": {},
@@ -269,7 +269,7 @@ class OnboardingWizard:
             # Mark onboarding as complete
             self.supabase.table("onboarding_sessions").update({
                 "current_step": "complete",
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "completed_at": __import__("datetime").datetime.utcnow().isoformat(),
             }).eq("phone_number", phone_number).execute()
 

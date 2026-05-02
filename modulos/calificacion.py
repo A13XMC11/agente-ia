@@ -61,11 +61,11 @@ class CalificacionModule:
         try:
             # Check if lead exists
             existing_response = self.supabase.table("leads").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("user_id", usuario_id).execute()
 
             lead_data = {
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": usuario_id,
                 "name": nombre,
                 "email": email,
@@ -156,7 +156,7 @@ class CalificacionModule:
 
             # Fetch lead
             lead_response = self.supabase.table("leads").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("user_id", usuario_id).single().execute()
 
             lead = lead_response.data
@@ -238,7 +238,7 @@ class CalificacionModule:
         try:
             notification = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "type": "hot_lead",
                 "lead_id": lead["id"],
                 "lead_name": lead.get("name"),
@@ -280,7 +280,7 @@ class CalificacionModule:
         try:
             # Fetch lead
             lead_response = self.supabase.table("leads").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("user_id", usuario_id).single().execute()
 
             lead = lead_response.data
@@ -288,14 +288,14 @@ class CalificacionModule:
             # Fetch conversation metrics
             conversation_response = self.supabase.table("conversaciones").select(
                 "id"
-            ).eq("client_id", client_id).eq("user_id", usuario_id).execute()
+            ).eq("cliente_id", client_id).eq("user_id", usuario_id).execute()
 
             num_conversations = len(conversation_response.data or [])
 
             # Fetch message count
             messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
-            ).eq("client_id", client_id).eq("user_id", usuario_id).execute()
+            ).eq("cliente_id", client_id).eq("user_id", usuario_id).execute()
 
             num_messages = messages_response.count or 0
 
@@ -348,7 +348,7 @@ class CalificacionModule:
         """
         try:
             response = self.supabase.table("leads").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).gte("score", self.score_threshold_hot).order(
                 "score", desc=True
             ).limit(limit).execute()
@@ -378,7 +378,7 @@ class CalificacionModule:
         """
         try:
             response = self.supabase.table("leads").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("state", state).order(
                 "score", desc=True
             ).limit(limit).execute()
@@ -405,7 +405,7 @@ class CalificacionModule:
         try:
             response = self.supabase.table("leads").select(
                 "state, score"
-            ).eq("client_id", client_id).execute()
+            ).eq("cliente_id", client_id).execute()
 
             leads = response.data or []
 

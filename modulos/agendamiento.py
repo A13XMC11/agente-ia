@@ -74,7 +74,7 @@ class AgendamientoModule:
             # Fetch client config for business hours and timezone
             config_response = self.supabase.table("client_config").select(
                 "business_hours_start,business_hours_end,business_hours_timezone"
-            ).eq("client_id", client_id).single().execute()
+            ).eq("cliente_id", client_id).single().execute()
 
             config = config_response.data or {}
             tz_name = config.get("business_hours_timezone", "America/Guayaquil")
@@ -220,7 +220,7 @@ class AgendamientoModule:
             # Save to database
             appointment = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": user_id,
                 "calendar_event_id": calendar_event["id"],
                 "title": f"Cita - {cliente_nombre}",
@@ -276,7 +276,7 @@ class AgendamientoModule:
             # Fetch appointment
             response = self.supabase.table("citas").select("*").eq(
                 "id", cita_id
-            ).eq("client_id", client_id).single().execute()
+            ).eq("cliente_id", client_id).single().execute()
 
             appointment = response.data
 
@@ -333,7 +333,7 @@ class AgendamientoModule:
             # Fetch appointment
             response = self.supabase.table("citas").select("*").eq(
                 "id", cita_id
-            ).eq("client_id", client_id).single().execute()
+            ).eq("cliente_id", client_id).single().execute()
 
             old_appointment = response.data
 
@@ -406,7 +406,7 @@ class AgendamientoModule:
             future_date = (datetime.utcnow() + timedelta(days=days_ahead)).isoformat()
 
             response = self.supabase.table("citas").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("status", "scheduled").lt("start_time", future_date).gte(
                 "start_time", datetime.utcnow().isoformat()
             ).order("start_time", desc=False).execute()

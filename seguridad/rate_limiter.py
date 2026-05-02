@@ -342,7 +342,7 @@ class RateLimiter:
                     if self.supabase:
                         try:
                             self.supabase.table("alertas").insert({
-                                "client_id": client_id,
+                                "cliente_id": client_id,
                                 "type": "token_usage_threshold",
                                 "severity": "warning",
                                 "message": f"Token usage at {round(usage_pct * 100, 2)}% of monthly limit",

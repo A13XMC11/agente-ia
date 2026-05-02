@@ -148,7 +148,7 @@ class StripeBilling:
 
             # Save to Supabase
             self.supabase.table("subscription").insert({
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "stripe_subscription_id": subscription["id"],
                 "stripe_customer_id": customer_id,
                 "monthly_amount": monthly_amount,
@@ -215,25 +215,25 @@ class StripeBilling:
 
             # Get client from subscription
             sub_response = self.supabase.table("subscription").select(
-                "client_id"
+                "cliente_id"
             ).eq("stripe_subscription_id", subscription_id).single().execute()
 
             if not sub_response.data:
                 logger.warning(f"Subscription not found: {subscription_id}")
                 return {"status": "ok"}
 
-            client_id = sub_response.data["client_id"]
+            client_id = sub_response.data["cliente_id"]
 
             # Update subscription status
             self.supabase.table("subscription").update({
                 "status": "active",
                 "last_payment_date": datetime.utcnow().isoformat(),
-            }).eq("client_id", client_id).execute()
+            }).eq("cliente_id", client_id).execute()
 
             # Reactivate client if paused
             self.supabase.table("clientes").update({
-                "status": "active",
-            }).eq("id", client_id).eq("status", "paused").execute()
+                "estado": "activo",
+            }).eq("id", client_id).eq("estado", "pausado").execute()
 
             logger.info(f"Payment succeeded for {client_id}")
 
@@ -251,38 +251,36 @@ class StripeBilling:
 
             # Get client from subscription
             sub_response = self.supabase.table("subscription").select(
-                "client_id"
+                "cliente_id"
             ).eq("stripe_subscription_id", subscription_id).single().execute()
 
             if not sub_response.data:
                 logger.warning(f"Subscription not found: {subscription_id}")
                 return {"status": "ok"}
 
-            client_id = sub_response.data["client_id"]
+            client_id = sub_response.data["cliente_id"]
 
             # Update subscription status
             self.supabase.table("subscription").update({
                 "status": "past_due",
                 "payment_failed_count": (
                     self.supabase.table("subscription").select("payment_failed_count").eq(
-                        "client_id", client_id
+                        "cliente_id", client_id
                     ).single().execute().data.get("payment_failed_count", 0) + 1
                 ),
-            }).eq("client_id", client_id).execute()
+            }).eq("cliente_id", client_id).execute()
 
             # Check if we should pause the client
             sub_data = self.supabase.table("subscription").select(
                 "payment_failed_count"
-            ).eq("client_id", client_id).single().execute().data
+            ).eq("cliente_id", client_id).single().execute().data
 
             failed_count = sub_data.get("payment_failed_count", 0)
 
             if failed_count >= 3:
                 # Pause client after 3 failed payments (3 days)
                 self.supabase.table("clientes").update({
-                    "status": "paused",
-                    "paused_reason": "payment_failed",
-                    "paused_date": datetime.utcnow().isoformat(),
+                    "estado": "pausado",
                 }).eq("id", client_id).execute()
 
                 logger.info(f"Client paused due to failed payment: {client_id}")
@@ -304,25 +302,24 @@ class StripeBilling:
 
             # Get client
             sub_response = self.supabase.table("subscription").select(
-                "client_id"
+                "cliente_id"
             ).eq("stripe_subscription_id", subscription_id).single().execute()
 
             if not sub_response.data:
                 logger.warning(f"Subscription not found: {subscription_id}")
                 return {"status": "ok"}
 
-            client_id = sub_response.data["client_id"]
+            client_id = sub_response.data["cliente_id"]
 
             # Update subscription status
             self.supabase.table("subscription").update({
                 "status": "cancelled",
                 "cancelled_date": datetime.utcnow().isoformat(),
-            }).eq("client_id", client_id).execute()
+            }).eq("cliente_id", client_id).execute()
 
             # Pause client
             self.supabase.table("clientes").update({
-                "status": "paused",
-                "paused_reason": "subscription_cancelled",
+                "estado": "pausado",
             }).eq("id", client_id).execute()
 
             logger.info(f"Client paused due to subscription cancellation: {client_id}")
@@ -349,7 +346,7 @@ class StripeBilling:
         try:
             response = self.supabase.table("subscription").select(
                 "*"
-            ).eq("client_id", client_id).single().execute()
+            ).eq("cliente_id", client_id).single().execute()
 
             return response.data
 

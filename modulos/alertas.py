@@ -63,7 +63,7 @@ class AlertasModule:
             # Create reminder record
             reminder = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": usuario_id,
                 "type": tipo,
                 "message": mensaje,
@@ -176,7 +176,7 @@ class AlertasModule:
         try:
             alert = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "level": nivel.value,
                 "title": titulo,
                 "message": mensaje,
@@ -191,7 +191,7 @@ class AlertasModule:
             # Route alert to admin
             admin_response = self.supabase.table("usuarios").select(
                 "id, phone, email"
-            ).eq("client_id", client_id).eq("role", "admin").single().execute()
+            ).eq("cliente_id", client_id).eq("rol", "admin").single().execute()
 
             if admin_response.data:
                 admin = admin_response.data
@@ -404,7 +404,7 @@ Recuerda confirmar asistencia.
         """
         try:
             response = self.supabase.table("alertas").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("read", False).order("created_at", desc=True).limit(limit).execute()
 
             return response.data or []
@@ -432,7 +432,7 @@ Recuerda confirmar asistencia.
         """
         try:
             query = self.supabase.table("alertas").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             )
 
             if nivel:

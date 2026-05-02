@@ -51,7 +51,7 @@ class UsageTracker:
         try:
             log_entry = {
                 "id": str(__import__("uuid").uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "tokens_used": tokens_used,
                 "operation": operation,
                 "created_at": datetime.utcnow().isoformat(),
@@ -89,7 +89,7 @@ class UsageTracker:
             # Get usage logs
             response = self.supabase.table("uso_tokens").select(
                 "tokens_used"
-            ).eq("client_id", client_id).gte(
+            ).eq("cliente_id", client_id).gte(
                 "created_at", f"{month_start}T00:00:00"
             ).lte("created_at", month_end).execute()
 
@@ -217,7 +217,7 @@ class UsageTracker:
             # Archive logs
             self.supabase.table("uso_tokens").update({
                 "archived": True,
-            }).eq("client_id", client_id).lt(
+            }).eq("cliente_id", client_id).lt(
                 "created_at", f"{month_start}T00:00:00"
             ).execute()
 
@@ -252,7 +252,7 @@ class UsageTracker:
         try:
             response = self.supabase.table("uso_tokens").select(
                 "operation, tokens_used"
-            ).eq("client_id", client_id).gte(
+            ).eq("cliente_id", client_id).gte(
                 "created_at",
                 (datetime.utcnow() - timedelta(days=30)).isoformat(),
             ).execute()
@@ -293,7 +293,7 @@ class UsageTracker:
 
             response = self.supabase.table("uso_tokens").select(
                 "created_at, tokens_used"
-            ).eq("client_id", client_id).gte(
+            ).eq("cliente_id", client_id).gte(
                 "created_at", cutoff_date
             ).order("created_at").execute()
 
@@ -345,7 +345,7 @@ class UsageTracker:
             # Log as alert
             alert = {
                 "id": str(__import__("uuid").uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "type": "usage_limit_exceeded",
                 "severity": "warning",
                 "message": f"Client exceeded monthly token limit: {usage.get('total_tokens'):,} / {usage.get('limit'):,}",
@@ -382,7 +382,7 @@ class UsageTracker:
 
             response = self.supabase.table("uso_tokens").select(
                 "created_at, tokens_used"
-            ).eq("client_id", client_id).gte(
+            ).eq("cliente_id", client_id).gte(
                 "created_at", cutoff_date
             ).order("created_at").execute()
 

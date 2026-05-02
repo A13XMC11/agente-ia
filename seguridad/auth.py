@@ -163,9 +163,9 @@ class AuthManager:
             return {
                 "id": user["id"],
                 "email": user["email"],
-                "client_id": user.get("client_id"),
-                "role": user.get("role", RoleEnum.OPERADOR.value),
-                "full_name": user.get("full_name"),
+                "client_id": user.get("cliente_id"),
+                "role": user.get("rol", RoleEnum.OPERADOR.value),
+                "full_name": user.get("nombre_completo"),
             }
 
         except Exception as e:

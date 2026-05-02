@@ -352,7 +352,7 @@ class FacebookHandler:
         try:
             response = self.supabase.table("canales_config").select(
                 "channel_credentials"
-            ).eq("client_id", client_id).eq("channel_type", channel).single().execute()
+            ).eq("cliente_id", client_id).eq("canal", channel).single().execute()
 
             if response.data:
                 return response.data.get("channel_credentials", {})

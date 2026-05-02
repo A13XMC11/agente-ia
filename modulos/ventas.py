@@ -38,7 +38,7 @@ class SalesModule:
         """
         try:
             response = self.supabase.table("product_catalog").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).execute()
             return response.data or []
         except Exception as e:
@@ -104,7 +104,7 @@ class SalesModule:
 
             quote = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": user_id,
                 "items": quote_items,
                 "subtotal": round(subtotal, 2),
@@ -232,7 +232,7 @@ class SalesModule:
         """
         try:
             response = self.supabase.table("quotes").select("status, total").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).execute()
 
             quotes = response.data or []

@@ -46,7 +46,7 @@ class MessageRouter:
         """
         try:
             response = self.supabase.table("client_config").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).single().execute()
 
             config = response.data
@@ -153,32 +153,32 @@ class MessageRouter:
             elif identifier_type == "phone_number_id":
                 # Map WhatsApp phone_number_id to client
                 response = self.supabase.table("canales_config").select(
-                    "client_id"
-                ).eq("channel_type", "whatsapp").eq(
-                    "channel_identifier", identifier
+                    "cliente_id"
+                ).eq("canal", "whatsapp").eq(
+                    "phone_number_id", identifier
                 ).single().execute()
 
-                return response.data["client_id"] if response.data else None
+                return response.data["cliente_id"] if response.data else None
 
             elif identifier_type == "page_id":
                 # Map Instagram/Facebook page_id to client
                 response = self.supabase.table("canales_config").select(
-                    "client_id"
-                ).eq("channel_type", "instagram").eq(
-                    "channel_identifier", identifier
+                    "cliente_id"
+                ).eq("canal", "instagram").eq(
+                    "page_id", identifier
                 ).single().execute()
 
-                return response.data["client_id"] if response.data else None
+                return response.data["cliente_id"] if response.data else None
 
             elif identifier_type == "sender_email":
                 # Map email domain to client
                 response = self.supabase.table("canales_config").select(
-                    "client_id"
-                ).eq("channel_type", "email").eq(
-                    "channel_identifier", identifier
+                    "cliente_id"
+                ).eq("canal", "email").eq(
+                    "email_address", identifier
                 ).single().execute()
 
-                return response.data["client_id"] if response.data else None
+                return response.data["cliente_id"] if response.data else None
 
         except Exception as e:
             logger.warning(f"Could not identify client: {e}")
@@ -223,7 +223,7 @@ class MessageRouter:
             )
 
             # Validate client exists
-            client_response = self.supabase.table("clientes").select("id, status").eq(
+            client_response = self.supabase.table("clientes").select("id, estado").eq(
                 "id", client_id
             ).single().execute()
 
@@ -237,8 +237,8 @@ class MessageRouter:
             client = client_response.data
 
             # Check if client is active
-            if client.get("status") != "active":
-                logger.warning(f"Client {client_id} is not active: {client.get('status')}")
+            if client.get("estado") != "activo":
+                logger.warning(f"Client {client_id} is not active: {client.get('estado')}")
                 return {
                     "response_text": "El servicio está temporalmente inactivo. Intenta más tarde.",
                     "escalated": True,

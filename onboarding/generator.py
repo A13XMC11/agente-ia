@@ -57,7 +57,7 @@ class ConfigGenerator:
             # Get onboarding session
             session_response = self.supabase.table("onboarding_sessions").select(
                 "*"
-            ).eq("client_id", client_id).single().execute()
+            ).eq("cliente_id", client_id).single().execute()
 
             session = session_response.data or {}
             wizard_data = session.get("data", {})
@@ -73,7 +73,7 @@ class ConfigGenerator:
 
             # Build complete config
             config = {
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "name": client.get("name", ""),
                 "system_prompt": system_prompt,
                 "parameters": {
@@ -103,7 +103,7 @@ class ConfigGenerator:
 
             # Save config to Supabase
             self.supabase.table("client_config_full").insert({
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "config": config,
                 "status": "pending_review",
                 "created_at": datetime.utcnow().isoformat(),
@@ -422,7 +422,7 @@ Agente IA
             # Update config status
             self.supabase.table("client_config_full").update({
                 "status": "approved",
-            }).eq("client_id", client_id).execute()
+            }).eq("cliente_id", client_id).execute()
 
             logger.info(f"Config approved for {client_id}")
 

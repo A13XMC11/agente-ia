@@ -55,7 +55,7 @@ class CampanasModule:
 
             campaign = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "title": titulo,
                 "message": mensaje,
                 "target_segment": target_segment,
@@ -116,7 +116,7 @@ class CampanasModule:
             else:
                 # Build query based on criteria
                 query = self.supabase.table("leads").select("user_id").eq(
-                    "client_id", client_id
+                    "cliente_id", client_id
                 )
 
                 if criterios:
@@ -190,7 +190,7 @@ class CampanasModule:
             # Fetch campaign
             response = self.supabase.table("campanas").select("*").eq(
                 "id", campaign_id
-            ).eq("client_id", client_id).single().execute()
+            ).eq("cliente_id", client_id).single().execute()
 
             campaign = response.data
 
@@ -248,7 +248,7 @@ class CampanasModule:
 
             # Fetch scheduled campaigns due now
             response = self.supabase.table("campanas").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("status", "scheduled").lte(
                 "scheduled_for", now.isoformat()
             ).execute()
@@ -359,7 +359,7 @@ class CampanasModule:
         """
         try:
             query = self.supabase.table("campanas").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             )
 
             if status:
@@ -391,7 +391,7 @@ class CampanasModule:
         try:
             self.supabase.table("campanas").update(
                 {"status": "cancelled", "cancelled_at": datetime.utcnow().isoformat()}
-            ).eq("id", campaign_id).eq("client_id", client_id).execute()
+            ).eq("id", campaign_id).eq("cliente_id", client_id).execute()
 
             logger.info(
                 f"Campaign cancelled: {campaign_id}",

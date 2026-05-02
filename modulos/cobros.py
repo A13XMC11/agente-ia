@@ -61,7 +61,7 @@ class CobrosModule:
         try:
             payment_request = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": user_id,
                 "account_number": numero_cuenta,
                 "bank_name": nombre_banco,
@@ -261,7 +261,7 @@ Responde en JSON:
             # Register payment
             payment = {
                 "id": str(uuid4()),
-                "client_id": client_id,
+                "cliente_id": client_id,
                 "user_id": user_id,
                 "amount": monto,
                 "currency": "USD",
@@ -281,7 +281,7 @@ Responde en JSON:
                 # Fetch user's account
                 user_response = self.supabase.table("usuarios").select(
                     "account_balance"
-                ).eq("id", user_id).eq("client_id", client_id).single().execute()
+                ).eq("id", user_id).eq("cliente_id", client_id).single().execute()
 
                 current_balance = user_response.data.get("account_balance", 0)
                 new_balance = current_balance + monto
@@ -328,7 +328,7 @@ Responde en JSON:
         """
         try:
             response = self.supabase.table("pagos").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
 
             return response.data or []
@@ -354,7 +354,7 @@ Responde en JSON:
         """
         try:
             response = self.supabase.table("pagos").select("*").eq(
-                "client_id", client_id
+                "cliente_id", client_id
             ).eq("reference", referencia).single().execute()
 
             payment = response.data
