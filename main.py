@@ -407,6 +407,25 @@ async def readiness_check():
 # WEBHOOK ENDPOINTS: Message routing from channels
 # ============================================================================
 
+@app.get("/webhooks/whatsapp/messages")
+async def whatsapp_verify(
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    """
+    WhatsApp webhook verification endpoint.
+
+    Called by Meta to verify webhook URL ownership during setup.
+    """
+    meta_verify_token = os.getenv("META_VERIFY_TOKEN", "")
+    if mode == "subscribe" and token == meta_verify_token:
+        logger.info("whatsapp_webhook_verified")
+        return PlainTextResponse(challenge)
+    logger.warning("whatsapp_webhook_verification_failed", extra={"token": token})
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
 @app.post("/webhooks/whatsapp/messages")
 async def whatsapp_webhook(request: Request):
     """
