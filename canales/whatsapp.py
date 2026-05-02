@@ -65,15 +65,21 @@ class WhatsAppHandler:
         Verify Meta webhook signature (HMAC-SHA256).
 
         Args:
-            body: Request body bytes
-            x_hub_signature: X-Hub-Signature header (sha1=...)
+            body: Raw request body bytes
+            x_hub_signature: X-Hub-Signature-256 header value (sha256=...)
 
         Returns:
-            True if signature is valid
+            True if signature is valid or verification is skipped
         """
+        if not self.app_secret or self.app_secret in ("", "pendiente", "your_app_secret"):
+            logger.warning("meta_app_secret_not_configured_skipping_signature_check")
+            return True
+
         try:
+            logger.info("verifying_signature", header=x_hub_signature[:20] if x_hub_signature else "missing")
+
             if not x_hub_signature or "=" not in x_hub_signature:
-                logger.warning("Invalid X-Hub-Signature format")
+                logger.warning("invalid_x_hub_signature_format", header=x_hub_signature)
                 return False
 
             _, provided_hash = x_hub_signature.split("=", 1)
@@ -81,14 +87,14 @@ class WhatsAppHandler:
             expected_hash = hmac.new(
                 self.app_secret.encode(),
                 body,
-                hashlib.sha1,
+                hashlib.sha256,
             ).hexdigest()
 
             if not hmac.compare_digest(provided_hash, expected_hash):
-                logger.warning("Signature validation failed")
+                logger.warning("signature_mismatch")
                 return False
 
-            logger.info("Webhook signature verified")
+            logger.info("webhook_signature_verified")
             return True
 
         except Exception as e:
@@ -99,23 +105,23 @@ class WhatsAppHandler:
         self,
         payload: dict[str, Any],
         x_hub_signature: Optional[str] = None,
+        raw_body: bytes = b"",
     ) -> dict[str, Any]:
         """
         Handle WhatsApp webhook payload.
 
         Args:
             payload: Webhook payload from Meta
-            x_hub_signature: X-Hub-Signature header for verification
+            x_hub_signature: X-Hub-Signature-256 header for verification
+            raw_body: Original raw request bytes (required for correct HMAC)
 
         Returns:
             Response dict
         """
         try:
-            if x_hub_signature:
-                body_str = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-                if not self.verify_webhook_signature(body_str.encode(), x_hub_signature):
-                    logger.error("Webhook signature verification failed")
-                    return {"error": "Signature verification failed"}
+            if not self.verify_webhook_signature(raw_body, x_hub_signature or ""):
+                logger.error("webhook_signature_verification_failed")
+                return {"error": "Signature verification failed"}
 
             logger.info(
                 "WhatsApp webhook received",

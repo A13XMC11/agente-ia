@@ -468,11 +468,13 @@ async def whatsapp_webhook(request: Request):
         )
         raise HTTPException(status_code=503, detail="Service not ready")
 
+    raw_body = await request.body()
     body = await request.json()
-    x_hub_signature = request.headers.get("X-Hub-Signature", "")
+    x_hub_signature = request.headers.get("X-Hub-Signature-256", "")
+    logger.info("whatsapp_webhook_incoming", has_signature=bool(x_hub_signature))
 
     # Route to WhatsApp handler
-    response = await whatsapp_handler.handle_webhook(body, x_hub_signature)
+    response = await whatsapp_handler.handle_webhook(body, x_hub_signature, raw_body=raw_body)
 
     logger.info("whatsapp_webhook_processed", entry_id=body.get("entry", [{}])[0].get("id"))
 
