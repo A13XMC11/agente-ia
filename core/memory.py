@@ -128,13 +128,14 @@ class MemoryManager:
             Message object with ID and timestamp
         """
         try:
+            now = datetime.utcnow().isoformat()
             message = {
                 "id": str(uuid4()),
                 "conversacion_id": conversation_id,
                 "rol": sender_type,
                 "contenido": message_text,
                 "tipo": media_type or "texto",
-                "timestamp": datetime.utcnow().isoformat(),
+                "created_at": now,
                 "tokens_usados": 0,
             }
 
@@ -142,7 +143,7 @@ class MemoryManager:
 
             # Update conversation's fecha_ultimo_mensaje
             self.supabase.table("conversaciones").update(
-                {"fecha_ultimo_mensaje": message["created_at"]}
+                {"fecha_ultimo_mensaje": now}
             ).eq("id", conversation_id).execute()
 
             logger.debug(
@@ -179,7 +180,7 @@ class MemoryManager:
             response = self.supabase.table("mensajes").select("*").eq(
                 "conversacion_id", conversation_id
             ).order(
-                "timestamp", desc=True
+                "created_at", desc=True
             ).limit(20).execute()
 
             messages = list(reversed(response.data or []))
@@ -278,7 +279,7 @@ class MemoryManager:
             response = self.supabase.table("mensajes").select("*").eq(
                 "conversacion_id", conversation_id
             ).order(
-                "timestamp", desc=False
+                "created_at", desc=False
             ).limit(limit).execute()
 
             messages = response.data or []

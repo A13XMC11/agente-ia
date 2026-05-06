@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 from typing import Any, Optional
 
 import httpx
@@ -353,12 +354,14 @@ class WhatsAppHandler:
         """
         try:
             credentials = await self._get_client_credentials(client_id, "whatsapp")
+            access_token = credentials.get("access_token") if credentials else None
 
-            if not credentials:
-                logger.error(f"No WhatsApp credentials for client {client_id}")
+            if not access_token:
+                access_token = os.getenv("META_ACCESS_TOKEN")
+
+            if not access_token:
+                logger.error(f"No WhatsApp access token for client {client_id}")
                 return False
-
-            access_token = credentials.get("access_token")
 
             payload = {
                 "messaging_product": "whatsapp",
@@ -422,11 +425,13 @@ class WhatsAppHandler:
         """
         try:
             credentials = await self._get_client_credentials(client_id, "whatsapp")
+            access_token = credentials.get("access_token") if credentials else None
 
-            if not credentials:
+            if not access_token:
+                access_token = os.getenv("META_ACCESS_TOKEN")
+
+            if not access_token:
                 return False
-
-            access_token = credentials.get("access_token")
 
             payload = {
                 "messaging_product": "whatsapp",
@@ -510,11 +515,13 @@ class WhatsAppHandler:
         """
         try:
             credentials = await self._get_client_credentials(client_id, "whatsapp")
+            access_token = credentials.get("access_token") if credentials else None
 
-            if not credentials:
+            if not access_token:
+                access_token = os.getenv("META_ACCESS_TOKEN")
+
+            if not access_token:
                 return False
-
-            access_token = credentials.get("access_token")
 
             payload = {
                 "messaging_product": "whatsapp",
