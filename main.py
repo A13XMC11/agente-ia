@@ -93,17 +93,22 @@ async def lifespan(app: FastAPI):
         # 1. Initialize Supabase (CRITICAL)
         supabase_url = os.getenv("SUPABASE_URL", "").strip()
         supabase_key = os.getenv("SUPABASE_KEY", "").strip()
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
 
         if not supabase_url or not supabase_key:
             logger.error("startup_error", error="SUPABASE_URL or SUPABASE_KEY not set")
             raise ValueError("Missing required Supabase credentials")
 
         supabase_client = create_client(supabase_url, supabase_key)
+        # Service client bypasses RLS — used only for internal server-side reads
+        supabase_service_client = create_client(
+            supabase_url, supabase_service_key or supabase_key
+        )
         logger.info("supabase_initialized")
 
         # 2. Initialize core services
         try:
-            message_router = MessageRouter(supabase_client=supabase_client)
+            message_router = MessageRouter(supabase_client=supabase_service_client)
             logger.info("message_router_created")
         except Exception as e:
             logger.error("message_router_init_error", error=str(e))
