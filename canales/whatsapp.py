@@ -50,7 +50,7 @@ class WhatsAppHandler:
         self.normalizer = normalizer
         self.buffer = buffer
         self.memory = memory
-        self.api_base_url = "https://graph.instagram.com/v18.0"
+        self.api_base_url = "https://graph.facebook.com/v21.0"
         self.http_client = httpx.AsyncClient(timeout=30.0)
 
     async def close(self) -> None:
@@ -382,11 +382,17 @@ class WhatsAppHandler:
                 "Content-Type": "application/json",
             }
 
+            logger.info(f"[WA_DEBUG] URL: {url}")
+            logger.info(f"[WA_DEBUG] token_prefix: {access_token[:20] if access_token else 'MISSING'}")
+            logger.info(f"[WA_DEBUG] payload: {payload}")
+
             response = await self.http_client.post(
                 url,
                 json=payload,
                 headers=headers,
             )
+
+            logger.info(f"[WA_DEBUG] response_status: {response.status_code} body: {response.text[:200]}")
 
             if response.status_code in (200, 201):
                 result = response.json()
