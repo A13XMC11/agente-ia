@@ -31,15 +31,15 @@ class AgendamientoModule:
         Args:
             supabase_client: Supabase client instance
             google_credentials_json: Google service account JSON (raw or base64).
-                Falls back to GOOGLE_CREDENTIALS_JSON env var if not provided.
+                Falls back to GOOGLE_CALENDAR_CREDENTIALS_JSON env var if not provided.
         """
         self.supabase = supabase_client
         self._calendar_service = None
-        credentials = google_credentials_json or os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+        credentials = google_credentials_json or os.getenv("GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
         if credentials:
             self._init_google_calendar(credentials)
         else:
-            logger.warning("GOOGLE_CREDENTIALS_JSON not set — Google Calendar disabled")
+            logger.warning("GOOGLE_CALENDAR_CREDENTIALS_JSON not set — Google Calendar disabled")
 
     def _init_google_calendar(self, credentials_json: str) -> None:
         """Initialize Google Calendar API client. Accepts raw JSON or base64-encoded JSON."""
