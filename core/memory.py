@@ -130,17 +130,12 @@ class MemoryManager:
         try:
             message = {
                 "id": str(uuid4()),
-                "cliente_id": client_id,
-                "conversation_id": conversation_id,
-                "sender_id": sender_id,
-                "sender_type": sender_type,
-                "message_text": message_text,
-                "channel": channel,
-                "media_url": media_url,
-                "media_type": media_type,
-                "function_calls": function_calls or [],
-                "metadata": metadata or {},
-                "created_at": datetime.utcnow().isoformat(),
+                "conversacion_id": conversation_id,
+                "rol": sender_type,
+                "contenido": message_text,
+                "tipo": media_type or "texto",
+                "timestamp": datetime.utcnow().isoformat(),
+                "tokens_usados": 0,
             }
 
             self.supabase.table("mensajes").insert(message).execute()
@@ -182,9 +177,9 @@ class MemoryManager:
         try:
             # Fetch full conversation
             response = self.supabase.table("mensajes").select("*").eq(
-                "cliente_id", client_id
-            ).eq("conversacion_id", conversation_id).order(
-                "created_at", desc=True
+                "conversacion_id", conversation_id
+            ).order(
+                "timestamp", desc=True
             ).limit(20).execute()
 
             messages = list(reversed(response.data or []))
@@ -194,9 +189,9 @@ class MemoryManager:
             token_estimate = 0
 
             for msg in messages:
-                sender_type = msg.get("sender_type", "user")
-                role = "user" if sender_type == "user" else "assistant"
-                content = msg.get("message_text", "")
+                rol = msg.get("rol", "user")
+                role = "user" if rol == "user" else "assistant"
+                content = msg.get("contenido", "")
 
                 # Estimate tokens (rough: 1 token per 4 chars)
                 tokens = len(content) // 4
@@ -281,9 +276,9 @@ class MemoryManager:
         """
         try:
             response = self.supabase.table("mensajes").select("*").eq(
-                "cliente_id", client_id
-            ).eq("conversacion_id", conversation_id).order(
-                "created_at", desc=False
+                "conversacion_id", conversation_id
+            ).order(
+                "timestamp", desc=False
             ).limit(limit).execute()
 
             messages = response.data or []
@@ -326,12 +321,7 @@ class MemoryManager:
 
             latest_conversation = conv_response.data[0] if conv_response.data else None
 
-            # Count messages
-            messages_response = self.supabase.table("mensajes").select(
-                "id", count="exact"
-            ).eq("cliente_id", client_id).eq("sender_id", user_id).execute()
-
-            message_count = messages_response.count or 0
+            message_count = 0
 
             profile = {
                 "user_id": user_id,

@@ -469,11 +469,16 @@ class WhatsAppHandler:
         """
         try:
             response = self.supabase.table("canales_config").select(
-                "channel_credentials"
-            ).eq("cliente_id", client_id).eq("canal", channel).single().execute()
+                "token, phone_number_id, waba_id"
+            ).eq("cliente_id", client_id).eq("canal", channel).limit(1).execute()
 
             if response.data:
-                return response.data.get("channel_credentials", {})
+                row = response.data[0]
+                return {
+                    "access_token": row.get("token"),
+                    "phone_number_id": row.get("phone_number_id"),
+                    "waba_id": row.get("waba_id"),
+                }
 
             logger.warning(f"No credentials found for {client_id} on {channel}")
             return None

@@ -44,38 +44,40 @@ class MessageRouter:
         Returns:
             Client config with agent settings
         """
+        defaults = {
+            "client_id": client_id,
+            "system_prompt": "You are a helpful business assistant.",
+            "temperature": 0.7,
+            "max_tokens": 4000,
+            "active_modules": {
+                "ventas": True,
+                "agendamiento": True,
+                "cobros": True,
+                "links_pago": True,
+                "calificacion": True,
+                "campanas": False,
+                "alertas": True,
+                "seguimientos": True,
+                "documentos": True,
+            },
+            "business_hours_start": "08:00",
+            "business_hours_end": "18:00",
+            "business_hours_timezone": "America/Guayaquil",
+        }
+
         try:
             response = self.supabase.table("agentes").select("*").eq(
                 "cliente_id", client_id
-            ).single().execute()
+            ).limit(1).execute()
 
-            config = response.data
+            if not response.data:
+                logger.warning(f"No agentes config for {client_id}, using defaults")
+                return defaults
 
-            # Merge with defaults
-            defaults = {
-                "system_prompt": "You are a helpful business assistant.",
-                "temperature": 0.7,
-                "max_tokens": 4000,
-                "active_modules": {
-                    "ventas": True,
-                    "agendamiento": True,
-                    "cobros": True,
-                    "links_pago": True,
-                    "calificacion": True,
-                    "campanas": False,
-                    "alertas": True,
-                    "seguimientos": True,
-                    "documentos": True,
-                },
-                "business_hours_start": "08:00",
-                "business_hours_end": "18:00",
-                "business_hours_timezone": "America/Guayaquil",
-            }
+            config = response.data[0]
 
             # Merge config with defaults (config takes precedence)
-            merged = {**defaults, **config}
-
-            return merged
+            return {**defaults, **config}
 
         except Exception as e:
             logger.warning(f"Could not fetch config for {client_id}: {e}, using defaults")
