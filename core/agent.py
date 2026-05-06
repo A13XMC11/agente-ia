@@ -532,6 +532,17 @@ class AgentEngine:
             # Check if escalation was triggered
             escalated = any(call["name"] == "escalar_a_humano" for call in function_calls)
 
+            # When GPT-4o calls a tool it returns content=None; provide fallback so
+            # downstream channels never receive an empty body.
+            if not response_text and function_calls and not escalated:
+                response_text = "Procesando tu solicitud, en un momento te respondo."
+
+            if not response_text:
+                logger.warning(
+                    f"GPT-4o returned empty content for client={cliente_id} sender={sender_id}"
+                )
+                response_text = "Disculpa, hubo un problema. ¿Puedes repetir tu pregunta?"
+
             return {
                 "response_text": response_text,
                 "function_calls": function_calls,

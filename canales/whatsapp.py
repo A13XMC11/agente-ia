@@ -279,7 +279,13 @@ class WhatsAppHandler:
                 logger.warning(f"Message escalated for {client_id}")
                 return
 
-            response_text = agent_response.get("response_text", "")
+            response_text = agent_response.get("response_text") or ""
+            if not response_text.strip():
+                logger.warning(
+                    f"Agent returned empty response_text for client={client_id} sender={sender_id}; using fallback"
+                )
+                response_text = "Disculpa, hubo un problema. ¿Puedes repetir tu pregunta?"
+
             await self.send_message(
                 phone_number_id,
                 sender_id,
@@ -353,6 +359,12 @@ class WhatsAppHandler:
             True if sent successfully
         """
         try:
+            if not text or not text.strip():
+                logger.error(
+                    f"send_message called with empty text for client={client_id} recipient={recipient_phone}"
+                )
+                text = "Disculpa, hubo un problema. ¿Puedes repetir tu pregunta?"
+
             credentials = await self._get_client_credentials(client_id, "whatsapp")
             access_token = credentials.get("access_token") if credentials else None
 
