@@ -49,6 +49,19 @@ class AgentEngine:
         self.client_id = client_config.get("client_id", "unknown")
         self.system_prompt = client_config.get("system_prompt", "")
         self.active_modules = client_config.get("active_modules", {})
+
+        if not self.system_prompt:
+            logger.warning(
+                f"AgentEngine for client_id={self.client_id}: "
+                f"system_prompt is empty/None — will use blank prompt. "
+                f"client_config keys: {list(client_config.keys())}"
+            )
+        else:
+            logger.info(
+                f"AgentEngine for client_id={self.client_id}: "
+                f"system_prompt loaded ({len(self.system_prompt)} chars): "
+                f"{self.system_prompt[:100]!r}"
+            )
         self.temperature = client_config.get("temperature", 0.7)
         self.max_tokens = client_config.get("max_tokens", 4000)
 

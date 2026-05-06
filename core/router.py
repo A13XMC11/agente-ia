@@ -71,13 +71,33 @@ class MessageRouter:
             ).limit(1).execute()
 
             if not response.data:
-                logger.warning(f"No agentes config for {client_id}, using defaults")
+                logger.warning(
+                    f"No agentes config found for client_id={client_id}, using defaults. "
+                    f"system_prompt (default): {defaults['system_prompt'][:100]!r}"
+                )
                 return defaults
 
             config = response.data[0]
+            logger.info(
+                f"agentes row fetched for client_id={client_id}: keys={list(config.keys())}"
+            )
 
-            # Merge config with defaults (config takes precedence)
-            return {**defaults, **config}
+            # Map Spanish column names to internal keys
+            if "prompt_sistema" in config and config["prompt_sistema"]:
+                config["system_prompt"] = config["prompt_sistema"]
+            if "temperatura" in config and config["temperatura"] is not None:
+                config["temperature"] = config["temperatura"]
+            if "max_tokens" not in config and "tokens_maximos" in config:
+                config["max_tokens"] = config["tokens_maximos"]
+
+            merged = {**defaults, **config}
+            system_prompt = merged.get("system_prompt", "")
+            logger.info(
+                f"system_prompt for client_id={client_id} "
+                f"({'from agentes' if system_prompt != defaults['system_prompt'] else 'DEFAULT fallback'}): "
+                f"{system_prompt[:100]!r}"
+            )
+            return merged
 
         except Exception as e:
             logger.warning(f"Could not fetch config for {client_id}: {e}, using defaults")
