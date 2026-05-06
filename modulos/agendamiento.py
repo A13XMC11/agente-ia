@@ -9,14 +9,9 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 from typing import Any, Optional
 from uuid import uuid4
-
-from google.auth.transport.requests import Request
-from google.oauth2.service_account import Credentials
-from googleapiclient import discovery
-import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +21,11 @@ class AgendamientoModule:
 
     def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None):
         """
-        Initialize booking module with Google Calendar access.
+        Initialize booking module.
 
         Args:
             supabase_client: Supabase client instance
-            google_credentials_json: Google service account JSON (raw or base64).
+            google_credentials_json: Google credentials JSON (raw or base64).
                 Falls back to GOOGLE_CALENDAR_CREDENTIALS_JSON env var if not provided.
         """
         self.supabase = supabase_client
@@ -42,12 +37,27 @@ class AgendamientoModule:
             logger.warning("GOOGLE_CALENDAR_CREDENTIALS_JSON not set — Google Calendar disabled")
 
     def _init_google_calendar(self, credentials_json: str) -> None:
-        """Initialize Google Calendar API client. Accepts raw JSON or base64-encoded JSON."""
+        """
+        Attempt to initialize Google Calendar. Skips OAuth2 'web' credentials —
+        those require an interactive authorization flow not supported here.
+        """
         try:
             try:
                 credentials_dict = json.loads(credentials_json)
             except json.JSONDecodeError:
                 credentials_dict = json.loads(base64.b64decode(credentials_json))
+
+            cred_type = credentials_dict.get("type", "")
+            if cred_type == "web" or ("client_secret" in credentials_dict and cred_type != "service_account"):
+                logger.warning(
+                    "Google Calendar requiere configuración OAuth2 adicional — "
+                    "las credenciales tipo 'web' necesitan autorización interactiva del usuario. "
+                    "Las citas se guardarán solo en Supabase."
+                )
+                return
+
+            from google.oauth2.service_account import Credentials
+            from googleapiclient import discovery
 
             credentials = Credentials.from_service_account_info(
                 credentials_dict,
