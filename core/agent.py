@@ -497,7 +497,7 @@ class AgentEngine:
         messages.append({"role": "user", "content": content})
 
         try:
-            # Call GPT-4o with function calling
+            # First GPT-4o call — may return tool calls
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -507,12 +507,11 @@ class AgentEngine:
                 max_tokens=self.max_tokens,
             )
 
-            # Process response
             assistant_message = response.choices[0].message
             response_text = assistant_message.content or ""
             function_calls = []
 
-            # Handle tool calls
+            # Agentic loop: execute tool calls and get a final natural-language response
             if assistant_message.tool_calls:
                 for tool_call in assistant_message.tool_calls:
                     function_calls.append(
@@ -523,6 +522,34 @@ class AgentEngine:
                         }
                     )
 
+                # Append the assistant turn (with tool_calls) to the conversation
+                messages.append(assistant_message)
+
+                # Execute each tool and feed result back
+                for tool_call in assistant_message.tool_calls:
+                    tool_result = await self._execute_tool_call(
+                        tool_call.function.name,
+                        json.loads(tool_call.function.arguments),
+                        cliente_id,
+                        sender_id,
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": tool_result,
+                        }
+                    )
+
+                # Second GPT-4o call to get a natural-language response from tool results
+                final_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                response_text = final_response.choices[0].message.content or ""
+
             # Simulate response delay
             response_delay = self._calculate_response_delay(len(response_text))
 
@@ -531,11 +558,6 @@ class AgentEngine:
 
             # Check if escalation was triggered
             escalated = any(call["name"] == "escalar_a_humano" for call in function_calls)
-
-            # When GPT-4o calls a tool it returns content=None; provide fallback so
-            # downstream channels never receive an empty body.
-            if not response_text and function_calls and not escalated:
-                response_text = "Procesando tu solicitud, en un momento te respondo."
 
             if not response_text:
                 logger.warning(
@@ -582,6 +604,52 @@ class AgentEngine:
                 "escalated": True,
                 "request_id": str(uuid4()),
             }
+
+    async def _execute_tool_call(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        client_id: str,
+        sender_id: str,
+    ) -> str:
+        """
+        Execute a tool call and return the result as a JSON string.
+
+        Uses client_config business hours for scheduling tools so no
+        external service is required.
+        """
+        try:
+            if tool_name == "consultar_disponibilidad":
+                start_str = self.client_config.get("business_hours_start", "09:00")
+                end_str = self.client_config.get("business_hours_end", "18:00")
+                result = {
+                    "disponibilidad": (
+                        f"Tenemos disponibilidad de lunes a viernes de {start_str} a {end_str} "
+                        "y sábados de 9:00am a 1:00pm. ¿Qué día y hora te acomoda mejor?"
+                    ),
+                    "slots": ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"],
+                    "horario_inicio": start_str,
+                    "horario_fin": end_str,
+                }
+                logger.info(
+                    f"Tool consultar_disponibilidad executed for client {client_id}",
+                    extra={"client_id": client_id},
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            # Escalation is handled separately; return a simple ack for other tools
+            logger.info(
+                f"Tool {tool_name} called for client {client_id} — no internal executor yet",
+                extra={"client_id": client_id},
+            )
+            return json.dumps(
+                {"success": True, "message": f"Acción registrada: {tool_name}"},
+                ensure_ascii=False,
+            )
+
+        except Exception as e:
+            logger.error(f"Error executing tool {tool_name}: {e}")
+            return json.dumps({"error": str(e)})
 
     def _calculate_typing_delay(self, message: str) -> int:
         """

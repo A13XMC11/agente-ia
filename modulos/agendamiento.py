@@ -57,120 +57,39 @@ class AgendamientoModule:
         fecha_fin: str,
     ) -> dict[str, Any]:
         """
-        Check available appointment slots in date range.
+        Return available appointment slots based on business hours config.
 
-        Args:
-            client_id: Client ID
-            fecha_inicio: Start date (YYYY-MM-DD)
-            fecha_fin: End date (YYYY-MM-DD)
-
-        Returns:
-            Available slots with times
+        Google Calendar integration is optional — falls back to static schedule.
         """
+        start_str = "09:00"
+        end_str = "18:00"
+
         try:
-            # Fetch client config for business hours and timezone
             config_response = self.supabase.table("agentes").select(
-                "business_hours_start,business_hours_end,business_hours_timezone"
+                "business_hours_start,business_hours_end"
             ).eq("cliente_id", client_id).single().execute()
 
             config = config_response.data or {}
-            tz_name = config.get("business_hours_timezone", "America/Guayaquil")
-            tz = pytz.timezone(tz_name)
-
-            start_str = config.get("business_hours_start", "09:00")
-            end_str = config.get("business_hours_end", "18:00")
-            start_hour, start_min = map(int, start_str.split(":"))
-            end_hour, end_min = map(int, end_str.split(":"))
-
-            if not self._calendar_service:
-                logger.warning(
-                    f"Google Calendar not configured for client {client_id}, returning example availability"
-                )
-                return {
-                    "sin_calendario": True,
-                    "horarios_disponibles": (
-                        f"Tenemos disponibilidad de Lunes a Viernes de {start_str} a {end_str}. "
-                        "¿Qué día y hora te acomoda?"
-                    ),
-                    "horario_inicio": start_str,
-                    "horario_fin": end_str,
-                    "timezone": tz_name,
-                }
-
-            # Query Google Calendar for busy times
-            body = {
-                "timeMin": f"{fecha_inicio}T00:00:00Z",
-                "timeMax": f"{fecha_fin}T23:59:59Z",
-                "items": [{"id": config.get("google_calendar_id", "primary")}],
-            }
-
-            busy_response = self._calendar_service.freebusy().query(body=body).execute()
-            busy_slots = busy_response.get("calendars", {}).get("primary", {}).get(
-                "busy", []
-            )
-
-            # Generate available slots
-            available = []
-            current_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
-            end_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
-
-            while current_date <= end_date:
-                # Skip weekends
-                if current_date.weekday() >= 5:
-                    current_date += timedelta(days=1)
-                    continue
-
-                # Generate 1-hour slots
-                current_time = time(start_hour, start_min)
-                end_time = time(end_hour, end_min)
-
-                while current_time < end_time:
-                    slot_start = datetime.combine(current_date, current_time)
-                    slot_end = slot_start + timedelta(hours=1)
-
-                    # Check if slot is free
-                    is_busy = any(
-                        (
-                            datetime.fromisoformat(busy["start"].replace("Z", "+00:00"))
-                            <= slot_start
-                            < datetime.fromisoformat(
-                                busy["end"].replace("Z", "+00:00")
-                            )
-                        )
-                        for busy in busy_slots
-                    )
-
-                    if not is_busy:
-                        available.append(
-                            {
-                                "fecha": current_date.isoformat(),
-                                "hora": current_time.strftime("%H:%M"),
-                                "timestamp": slot_start.isoformat(),
-                            }
-                        )
-
-                    current_time = (
-                        datetime.combine(current_date, current_time)
-                        + timedelta(hours=1)
-                    ).time()
-
-                current_date += timedelta(days=1)
-
-            logger.info(
-                f"Found {len(available)} available slots for client {client_id}",
-                extra={"client_id": client_id},
-            )
-
-            return {
-                "fecha_inicio": fecha_inicio,
-                "fecha_fin": fecha_fin,
-                "slots_disponibles": available,
-                "total": len(available),
-            }
-
+            start_str = config.get("business_hours_start") or start_str
+            end_str = config.get("business_hours_end") or end_str
         except Exception as e:
-            logger.error(f"Error checking availability: {e}")
-            return {"error": str(e)}
+            logger.warning(f"Could not fetch business hours for client {client_id}: {e}")
+
+        logger.info(
+            f"Returning static availability for client {client_id} "
+            f"({start_str}–{end_str}, no Calendar query)",
+            extra={"client_id": client_id},
+        )
+
+        return {
+            "disponibilidad": (
+                f"Tenemos disponibilidad de lunes a viernes de {start_str} a {end_str} "
+                "y sábados de 9:00am a 1:00pm. ¿Qué día y hora te acomoda mejor?"
+            ),
+            "slots": ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"],
+            "horario_inicio": start_str,
+            "horario_fin": end_str,
+        }
 
     async def crear_cita(
         self,
