@@ -17,6 +17,8 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
+from modulos.agendamiento import AgendamientoModule
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,7 @@ class AgentEngine:
     - Error handling and graceful escalation
     """
 
-    def __init__(self, client_config: dict[str, Any]):
+    def __init__(self, client_config: dict[str, Any], supabase_client: Any = None):
         """
         Initialize the agent engine.
 
@@ -79,6 +81,7 @@ class AgentEngine:
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
         self._tools_cache = None
+        self.agendamiento = AgendamientoModule(supabase_client) if supabase_client else None
 
     def _get_available_tools(self) -> list[dict[str, Any]]:
         """
@@ -641,6 +644,43 @@ class AgentEngine:
                 logger.info(
                     f"Tool consultar_disponibilidad executed for client {client_id}",
                     extra={"client_id": client_id},
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "crear_cita":
+                if not self.agendamiento:
+                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
+                result = await self.agendamiento.crear_cita(
+                    client_id=client_id,
+                    user_id=sender_id,
+                    fecha=arguments.get("fecha", ""),
+                    hora=arguments.get("hora", ""),
+                    duracion_minutos=arguments.get("duracion_minutos", 30),
+                    cliente_nombre=arguments.get("cliente_nombre", ""),
+                    cliente_email=arguments.get("cliente_email", ""),
+                    descripcion=arguments.get("descripcion"),
+                    servicio_nombre=arguments.get("servicio_nombre"),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "cancelar_cita":
+                if not self.agendamiento:
+                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
+                result = await self.agendamiento.cancelar_cita(
+                    client_id=client_id,
+                    cita_id=arguments.get("cita_id", ""),
+                    motivo=arguments.get("motivo"),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "reagendar_cita":
+                if not self.agendamiento:
+                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
+                result = await self.agendamiento.reagendar_cita(
+                    client_id=client_id,
+                    cita_id=arguments.get("cita_id", ""),
+                    nueva_fecha=arguments.get("nueva_fecha", ""),
+                    nueva_hora=arguments.get("nueva_hora", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)
 

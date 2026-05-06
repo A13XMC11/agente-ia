@@ -139,8 +139,8 @@ class MessageRouter:
         config = await self._get_client_config(client_id)
         config["client_id"] = client_id
 
-        # Create agent instance
-        agent = AgentEngine(config)
+        # Create agent instance with service client so AgendamientoModule can bypass RLS
+        agent = AgentEngine(config, supabase_client=self.supabase)
         self.agent_instances[client_id] = agent
 
         logger.info(f"Agent instance created for client {client_id}")

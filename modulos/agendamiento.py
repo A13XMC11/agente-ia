@@ -76,12 +76,16 @@ class AgendamientoModule:
 
         try:
             config_response = self.supabase.table("agentes").select(
-                "business_hours_start,business_hours_end"
+                "horario_atencion_inicio,horario_atencion_fin"
             ).eq("cliente_id", client_id).single().execute()
 
             config = config_response.data or {}
-            start_str = config.get("business_hours_start") or start_str
-            end_str = config.get("business_hours_end") or end_str
+            raw_start = config.get("horario_atencion_inicio")
+            raw_end = config.get("horario_atencion_fin")
+            if raw_start:
+                start_str = str(raw_start)[:5]
+            if raw_end:
+                end_str = str(raw_end)[:5]
         except Exception as e:
             logger.warning(f"Could not fetch business hours for client {client_id}: {e}")
 
@@ -181,11 +185,10 @@ class AgendamientoModule:
                     f"Saving appointment to Supabase only for client {client_id}"
                 )
                 try:
-                    self.supabase.table("alerts_log").insert({
+                    self.supabase.table("alertas").insert({
                         "id": str(uuid4()),
                         "cliente_id": client_id,
-                        "prioridad": "importante",
-                        "titulo": "Cita guardada sin Google Calendar",
+                        "tipo": "importante",
                         "mensaje": (
                             f"No se pudo sincronizar la cita de {cliente_nombre} "
                             f"({fecha} {hora}) con Google Calendar. "
@@ -200,23 +203,28 @@ class AgendamientoModule:
             appointment = {
                 "id": str(uuid4()),
                 "cliente_id": client_id,
-                "user_id": user_id,
-                "calendar_event_id": calendar_event_id,
-                "title": summary,
-                "description": descripcion,
-                "start_time": start_datetime.isoformat(),
-                "end_time": end_datetime.isoformat(),
-                "timezone": "UTC",
-                "status": "scheduled",
-                "google_calendar_url": google_calendar_url,
+                "nombre_cliente": cliente_nombre,
+                "email_cliente": cliente_email,
+                "servicio": servicio_nombre or "Cita general",
+                "fecha": fecha,
+                "hora": hora,
+                "duracion_minutos": duracion_minutos,
+                "estado": "pendiente",
+                "google_event_id": calendar_event_id,
+                "notas": descripcion,
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("citas").insert(appointment).execute()
+            logger.info(f"Intentando crear cita: {appointment}")
+
+            resultado = self.supabase.table("citas").insert(appointment).execute()
+
+            logger.info(f"Resultado Supabase: {resultado}")
 
             logger.info(
-                f"Appointment created: {appointment['id']} for user {user_id}",
+                f"Appointment created: {appointment['id']} for client {client_id} "
+                f"({cliente_nombre} — {fecha} {hora})",
                 extra={"client_id": client_id},
             )
 
@@ -260,16 +268,16 @@ class AgendamientoModule:
             appointment = response.data
 
             # Cancel in Google Calendar
-            if self._calendar_service:
+            if self._calendar_service and appointment.get("google_event_id"):
                 self._calendar_service.events().delete(
-                    calendarId="primary", eventId=appointment["calendar_event_id"]
+                    calendarId="primary", eventId=appointment["google_event_id"]
                 ).execute()
 
             # Update database
             self.supabase.table("citas").update(
                 {
-                    "status": "cancelled",
-                    "cancellation_reason": motivo,
+                    "estado": "cancelada",
+                    "notas": motivo,
                     "updated_at": datetime.utcnow().isoformat(),
                 }
             ).eq("id", cita_id).execute()
@@ -316,17 +324,14 @@ class AgendamientoModule:
 
             old_appointment = response.data
 
-            # Calculate new time
-            new_start = datetime.fromisoformat(f"{nueva_fecha}T{nueva_hora}:00")
-            duration = datetime.fromisoformat(old_appointment["end_time"]) - datetime.fromisoformat(
-                old_appointment["start_time"]
-            )
-            new_end = new_start + duration
-
             # Update in Google Calendar
-            if self._calendar_service:
+            if self._calendar_service and old_appointment.get("google_event_id"):
+                duracion = old_appointment.get("duracion_minutos", 30)
+                new_start = datetime.fromisoformat(f"{nueva_fecha}T{nueva_hora}:00")
+                new_end = new_start + timedelta(minutes=duracion)
+
                 event = self._calendar_service.events().get(
-                    calendarId="primary", eventId=old_appointment["calendar_event_id"]
+                    calendarId="primary", eventId=old_appointment["google_event_id"]
                 ).execute()
 
                 event["start"] = {"dateTime": new_start.isoformat(), "timeZone": "UTC"}
@@ -334,7 +339,7 @@ class AgendamientoModule:
 
                 self._calendar_service.events().update(
                     calendarId="primary",
-                    eventId=old_appointment["calendar_event_id"],
+                    eventId=old_appointment["google_event_id"],
                     body=event,
                     sendNotifications=True,
                 ).execute()
@@ -342,9 +347,9 @@ class AgendamientoModule:
             # Update database
             self.supabase.table("citas").update(
                 {
-                    "start_time": new_start.isoformat(),
-                    "end_time": new_end.isoformat(),
-                    "status": "rescheduled",
+                    "fecha": nueva_fecha,
+                    "hora": nueva_hora,
+                    "estado": "confirmada",
                     "updated_at": datetime.utcnow().isoformat(),
                 }
             ).eq("id", cita_id).execute()
@@ -357,8 +362,8 @@ class AgendamientoModule:
             return {
                 "success": True,
                 "appointment_id": cita_id,
-                "new_start": new_start.isoformat(),
-                "new_end": new_end.isoformat(),
+                "nueva_fecha": nueva_fecha,
+                "nueva_hora": nueva_hora,
                 "message": f"Cita reprogramada para {nueva_fecha} a las {nueva_hora}",
             }
 
