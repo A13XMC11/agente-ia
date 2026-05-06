@@ -135,7 +135,7 @@ def update_module_status(client_id: str, module_name: str, enabled: bool):
         supabase = st.session_state.supabase
 
         # Get current config
-        response = supabase.table("client_config").select(
+        response = supabase.table("agentes").select(
             "active_modules"
         ).eq("cliente_id", client_id).single().execute()
 
@@ -143,7 +143,7 @@ def update_module_status(client_id: str, module_name: str, enabled: bool):
         active_modules[module_name] = enabled
 
         # Update
-        supabase.table("client_config").update({
+        supabase.table("agentes").update({
             "active_modules": active_modules,
         }).eq("cliente_id", client_id).execute()
 

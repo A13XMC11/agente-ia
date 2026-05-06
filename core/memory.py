@@ -60,7 +60,7 @@ class MemoryManager:
                 "cliente_id", client_id
             ).eq("usuario_id", user_id).eq("canal", channel).eq(
                 "estado", "activa"
-            ).order("created_at", desc=True).limit(1).execute()
+            ).order("fecha_inicio", desc=True).limit(1).execute()
 
             if response.data:
                 logger.debug(
@@ -78,9 +78,9 @@ class MemoryManager:
                 "estado": "activa",
                 "lead_state": "curioso",
                 "lead_score": 0.0,
-                "created_at": datetime.utcnow().isoformat(),
+                "fecha_inicio": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
-                "last_message_at": None,
+                "fecha_ultimo_mensaje": None,
             }
 
             self.supabase.table("conversaciones").insert(conversation).execute()
@@ -145,9 +145,9 @@ class MemoryManager:
 
             self.supabase.table("mensajes").insert(message).execute()
 
-            # Update conversation's last_message_at
+            # Update conversation's fecha_ultimo_mensaje
             self.supabase.table("conversaciones").update(
-                {"last_message_at": message["created_at"]}
+                {"fecha_ultimo_mensaje": message["created_at"]}
             ).eq("id", conversation_id).execute()
 
             logger.debug(
@@ -321,7 +321,7 @@ class MemoryManager:
             conv_response = self.supabase.table("conversaciones").select(
                 "*"
             ).eq("cliente_id", client_id).eq("usuario_id", user_id).order(
-                "created_at", desc=True
+                "fecha_inicio", desc=True
             ).limit(1).execute()
 
             latest_conversation = conv_response.data[0] if conv_response.data else None
@@ -342,7 +342,7 @@ class MemoryManager:
                 "lead_state": latest_conversation.get("lead_state", "curioso")
                 if latest_conversation
                 else "curioso",
-                "last_interaction": latest_conversation.get("last_message_at")
+                "last_interaction": latest_conversation.get("fecha_ultimo_mensaje")
                 if latest_conversation
                 else None,
             }

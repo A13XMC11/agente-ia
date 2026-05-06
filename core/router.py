@@ -45,7 +45,7 @@ class MessageRouter:
             Client config with agent settings
         """
         try:
-            response = self.supabase.table("client_config").select("*").eq(
+            response = self.supabase.table("agentes").select("*").eq(
                 "cliente_id", client_id
             ).single().execute()
 

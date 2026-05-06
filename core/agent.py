@@ -466,7 +466,7 @@ class AgentEngine:
         typing_delay = self._calculate_typing_delay(user_message)
 
         # Build conversation history for context
-        messages = []
+        messages = [{"role": "system", "content": self.system_prompt}]
         if memory_context:
             for turn in memory_context:
                 messages.append(
@@ -488,7 +488,6 @@ class AgentEngine:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                system=self.system_prompt,
                 tools=self._get_available_tools(),
                 tool_choice="auto",
                 temperature=self.temperature,

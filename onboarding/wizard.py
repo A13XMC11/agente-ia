@@ -251,7 +251,7 @@ class OnboardingWizard:
                 "business_hours_timezone": wizard_data.get("timezone", "America/Guayaquil"),
             }
 
-            self.supabase.table("client_config").insert(config).execute()
+            self.supabase.table("agentes").insert(config).execute()
 
             # Create client channels record for WhatsApp
             whatsapp_channel = {

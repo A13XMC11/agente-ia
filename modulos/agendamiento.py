@@ -72,7 +72,7 @@ class AgendamientoModule:
                 return {"error": "Google Calendar not configured"}
 
             # Fetch client config for business hours and timezone
-            config_response = self.supabase.table("client_config").select(
+            config_response = self.supabase.table("agentes").select(
                 "business_hours_start,business_hours_end,business_hours_timezone"
             ).eq("cliente_id", client_id).single().execute()
 
