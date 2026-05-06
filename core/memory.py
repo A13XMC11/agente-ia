@@ -77,7 +77,7 @@ class MemoryManager:
                 "canal": channel,
                 "estado": "activa",
                 "lead_state": "curioso",
-                "lead_score": 0.0,
+                "lead_score": 0,
                 "fecha_inicio": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
                 "fecha_ultimo_mensaje": None,
