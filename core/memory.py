@@ -6,6 +6,7 @@ Fetches last N messages for context window, with token awareness.
 Identifies cross-channel users and consolidates conversations.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Optional, Any
@@ -78,9 +79,6 @@ class MemoryManager:
                 "estado": "activa",
                 "lead_state": "curioso",
                 "lead_score": 0,
-                "fecha_inicio": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-                "fecha_ultimo_mensaje": None,
             }
 
             self.supabase.table("conversaciones").insert(conversation).execute()
@@ -129,15 +127,23 @@ class MemoryManager:
         """
         try:
             now = datetime.utcnow().isoformat()
-            message = {
+            message: dict[str, Any] = {
                 "id": str(uuid4()),
                 "conversacion_id": conversation_id,
-                "rol": sender_type,
+                "cliente_id": client_id,
+                "sender_id": sender_id,
+                "sender_type": sender_type,
                 "contenido": message_text,
                 "tipo": media_type or "texto",
-                "created_at": now,
-                "tokens_usados": 0,
+                "tokens_utilizados": 0,
             }
+
+            if media_url:
+                message["media_url"] = media_url
+            if media_type:
+                message["media_type"] = media_type
+            if function_calls:
+                message["function_calls"] = json.dumps(function_calls)
 
             self.supabase.table("mensajes").insert(message).execute()
 
@@ -190,8 +196,8 @@ class MemoryManager:
             token_estimate = 0
 
             for msg in messages:
-                rol = msg.get("rol", "user")
-                role = "user" if rol == "user" else "assistant"
+                sender_type = msg.get("sender_type", "user")
+                role = "user" if sender_type == "user" else "assistant"
                 content = msg.get("contenido", "")
 
                 # Estimate tokens (rough: 1 token per 4 chars)
