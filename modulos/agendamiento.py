@@ -68,9 +68,6 @@ class AgendamientoModule:
             Available slots with times
         """
         try:
-            if not self._calendar_service:
-                return {"error": "Google Calendar not configured"}
-
             # Fetch client config for business hours and timezone
             config_response = self.supabase.table("agentes").select(
                 "business_hours_start,business_hours_end,business_hours_timezone"
@@ -80,10 +77,25 @@ class AgendamientoModule:
             tz_name = config.get("business_hours_timezone", "America/Guayaquil")
             tz = pytz.timezone(tz_name)
 
-            start_str = config.get("business_hours_start", "08:00")
+            start_str = config.get("business_hours_start", "09:00")
             end_str = config.get("business_hours_end", "18:00")
             start_hour, start_min = map(int, start_str.split(":"))
             end_hour, end_min = map(int, end_str.split(":"))
+
+            if not self._calendar_service:
+                logger.warning(
+                    f"Google Calendar not configured for client {client_id}, returning example availability"
+                )
+                return {
+                    "sin_calendario": True,
+                    "horarios_disponibles": (
+                        f"Tenemos disponibilidad de Lunes a Viernes de {start_str} a {end_str}. "
+                        "¿Qué día y hora te acomoda?"
+                    ),
+                    "horario_inicio": start_str,
+                    "horario_fin": end_str,
+                    "timezone": tz_name,
+                }
 
             # Query Google Calendar for busy times
             body = {
@@ -188,48 +200,53 @@ class AgendamientoModule:
             Appointment details with Google Calendar ID
         """
         try:
-            if not self._calendar_service:
-                return {"error": "Google Calendar not configured"}
-
-            # Build event
             start_datetime = datetime.fromisoformat(f"{fecha}T{hora}:00")
             end_datetime = start_datetime + timedelta(minutes=duracion_minutos)
 
-            event = {
-                "summary": f"Cita - {cliente_nombre}",
-                "description": descripcion or f"Cita agendada para {cliente_nombre}",
-                "start": {"dateTime": start_datetime.isoformat(), "timeZone": "UTC"},
-                "end": {"dateTime": end_datetime.isoformat(), "timeZone": "UTC"},
-                "attendees": [{"email": cliente_email, "responseStatus": "needsAction"}],
-                "reminders": {
-                    "useDefault": False,
-                    "overrides": [
-                        {"method": "email", "minutes": 24 * 60},
-                        {"method": "popup", "minutes": 30},
-                    ],
-                },
-            }
+            calendar_event_id = None
+            google_calendar_url = None
 
-            # Create in Google Calendar
-            calendar_event = (
-                self._calendar_service.events()
-                .insert(calendarId="primary", body=event, sendNotifications=True)
-                .execute()
-            )
+            if self._calendar_service:
+                event = {
+                    "summary": f"Cita - {cliente_nombre}",
+                    "description": descripcion or f"Cita agendada para {cliente_nombre}",
+                    "start": {"dateTime": start_datetime.isoformat(), "timeZone": "UTC"},
+                    "end": {"dateTime": end_datetime.isoformat(), "timeZone": "UTC"},
+                    "attendees": [{"email": cliente_email, "responseStatus": "needsAction"}],
+                    "reminders": {
+                        "useDefault": False,
+                        "overrides": [
+                            {"method": "email", "minutes": 24 * 60},
+                            {"method": "popup", "minutes": 30},
+                        ],
+                    },
+                }
 
-            # Save to database
+                calendar_event = (
+                    self._calendar_service.events()
+                    .insert(calendarId="primary", body=event, sendNotifications=True)
+                    .execute()
+                )
+                calendar_event_id = calendar_event["id"]
+                google_calendar_url = calendar_event.get("htmlLink")
+            else:
+                logger.warning(
+                    f"Google Calendar not configured for client {client_id}, saving appointment to Supabase only"
+                )
+
+            # Save to database (with or without Google Calendar)
             appointment = {
                 "id": str(uuid4()),
                 "cliente_id": client_id,
                 "user_id": user_id,
-                "calendar_event_id": calendar_event["id"],
+                "calendar_event_id": calendar_event_id,
                 "title": f"Cita - {cliente_nombre}",
                 "description": descripcion,
                 "start_time": start_datetime.isoformat(),
                 "end_time": end_datetime.isoformat(),
                 "timezone": "UTC",
                 "status": "scheduled",
-                "google_calendar_url": calendar_event.get("htmlLink"),
+                "google_calendar_url": google_calendar_url,
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
             }
@@ -244,10 +261,10 @@ class AgendamientoModule:
             return {
                 "success": True,
                 "appointment_id": appointment["id"],
-                "calendar_event_id": calendar_event["id"],
+                "calendar_event_id": calendar_event_id,
                 "start": start_datetime.isoformat(),
                 "end": end_datetime.isoformat(),
-                "google_calendar_url": calendar_event.get("htmlLink"),
+                "google_calendar_url": google_calendar_url,
                 "message": f"Cita agendada para {fecha} a las {hora}",
             }
 
