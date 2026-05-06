@@ -73,9 +73,9 @@ class MemoryManager:
             conversation = {
                 "id": str(uuid4()),
                 "cliente_id": client_id,
-                "user_id": user_id,
-                "channel": channel,
-                "status": "active",
+                "usuario_id": user_id,
+                "canal": channel,
+                "estado": "activa",
                 "lead_state": "curioso",
                 "lead_score": 0.0,
                 "created_at": datetime.utcnow().isoformat(),
@@ -248,7 +248,7 @@ class MemoryManager:
                 update_data["lead_score"] = lead_score
 
             if status is not None:
-                update_data["status"] = status
+                update_data["estado"] = status
 
             response = self.supabase.table("conversaciones").update(
                 update_data
@@ -320,7 +320,7 @@ class MemoryManager:
             # Get latest conversation
             conv_response = self.supabase.table("conversaciones").select(
                 "*"
-            ).eq("cliente_id", client_id).eq("user_id", user_id).order(
+            ).eq("cliente_id", client_id).eq("usuario_id", user_id).order(
                 "created_at", desc=True
             ).limit(1).execute()
 

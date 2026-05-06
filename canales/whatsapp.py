@@ -76,7 +76,7 @@ class WhatsAppHandler:
             return True
 
         try:
-            logger.info("verifying_signature", header=x_hub_signature[:20] if x_hub_signature else "missing")
+            logger.info(f"verifying_signature: {x_hub_signature[:20] if x_hub_signature else 'missing'}")
 
             if not x_hub_signature or "=" not in x_hub_signature:
                 logger.warning("invalid_x_hub_signature_format", header=x_hub_signature)
@@ -254,17 +254,12 @@ class WhatsAppHandler:
                     )
                 except Exception as mem_err:
                     logger.warning(
-                        "memory_unavailable_degraded_mode",
-                        error=str(mem_err),
-                        client_id=client_id,
-                        sender_id=sender_id,
+                        f"memory_unavailable_degraded_mode: {mem_err} client_id={client_id} sender_id={sender_id}"
                     )
                     memory_context = {}
             else:
                 logger.warning(
-                    "memory_not_initialized_degraded_mode",
-                    client_id=client_id,
-                    sender_id=sender_id,
+                    f"memory_not_initialized_degraded_mode client_id={client_id} sender_id={sender_id}"
                 )
 
             agent_response = await self.router.route_message(
@@ -303,9 +298,7 @@ class WhatsAppHandler:
                     )
                 except Exception as mem_err:
                     logger.warning(
-                        "memory_save_response_failed",
-                        error=str(mem_err),
-                        client_id=client_id,
+                        f"memory_save_response_failed: {mem_err} client_id={client_id}"
                     )
 
         except Exception as e:
