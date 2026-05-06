@@ -8,6 +8,7 @@ and calendar synchronization per client.
 import base64
 import json
 import logging
+import os
 from datetime import datetime, timedelta, time
 from typing import Any, Optional
 from uuid import uuid4
@@ -23,22 +24,31 @@ logger = logging.getLogger(__name__)
 class AgendamientoModule:
     """Booking and calendar operations."""
 
-    def __init__(self, supabase_client: Any, google_credentials_json: str):
+    def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None):
         """
         Initialize booking module with Google Calendar access.
 
         Args:
             supabase_client: Supabase client instance
-            google_credentials_json: Base64-encoded Google service account JSON
+            google_credentials_json: Google service account JSON (raw or base64).
+                Falls back to GOOGLE_CREDENTIALS_JSON env var if not provided.
         """
         self.supabase = supabase_client
         self._calendar_service = None
-        self._init_google_calendar(google_credentials_json)
+        credentials = google_credentials_json or os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+        if credentials:
+            self._init_google_calendar(credentials)
+        else:
+            logger.warning("GOOGLE_CREDENTIALS_JSON not set — Google Calendar disabled")
 
     def _init_google_calendar(self, credentials_json: str) -> None:
-        """Initialize Google Calendar API client."""
+        """Initialize Google Calendar API client. Accepts raw JSON or base64-encoded JSON."""
         try:
-            credentials_dict = json.loads(base64.b64decode(credentials_json))
+            try:
+                credentials_dict = json.loads(credentials_json)
+            except json.JSONDecodeError:
+                credentials_dict = json.loads(base64.b64decode(credentials_json))
+
             credentials = Credentials.from_service_account_info(
                 credentials_dict,
                 scopes=["https://www.googleapis.com/auth/calendar"],
@@ -101,9 +111,12 @@ class AgendamientoModule:
         cliente_nombre: str,
         cliente_email: str,
         descripcion: Optional[str] = None,
+        servicio_nombre: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Create appointment in Google Calendar.
+        Create appointment in Google Calendar and Supabase.
+
+        Falls back to Supabase-only on Google Calendar failure and notifies the owner.
 
         Args:
             client_id: Client ID
@@ -113,45 +126,75 @@ class AgendamientoModule:
             duracion_minutos: Duration in minutes
             cliente_nombre: Customer name
             cliente_email: Customer email
-            descripcion: Optional description
+            descripcion: Optional appointment description
+            servicio_nombre: Optional service name (included in calendar event title)
 
         Returns:
-            Appointment details with Google Calendar ID
+            Appointment details with Google Calendar ID if available
         """
         try:
             start_datetime = datetime.fromisoformat(f"{fecha}T{hora}:00")
             end_datetime = start_datetime + timedelta(minutes=duracion_minutos)
 
+            summary = (
+                f"{servicio_nombre} - {cliente_nombre}"
+                if servicio_nombre
+                else f"Cita - {cliente_nombre}"
+            )
+
             calendar_event_id = None
             google_calendar_url = None
+            google_calendar_ok = False
 
             if self._calendar_service:
-                event = {
-                    "summary": f"Cita - {cliente_nombre}",
-                    "description": descripcion or f"Cita agendada para {cliente_nombre}",
-                    "start": {"dateTime": start_datetime.isoformat(), "timeZone": "UTC"},
-                    "end": {"dateTime": end_datetime.isoformat(), "timeZone": "UTC"},
-                    "attendees": [{"email": cliente_email, "responseStatus": "needsAction"}],
-                    "reminders": {
-                        "useDefault": False,
-                        "overrides": [
-                            {"method": "email", "minutes": 24 * 60},
-                            {"method": "popup", "minutes": 30},
-                        ],
-                    },
-                }
+                try:
+                    event = {
+                        "summary": summary,
+                        "description": descripcion or f"Cliente: {cliente_nombre}\nEmail: {cliente_email}",
+                        "start": {"dateTime": start_datetime.isoformat(), "timeZone": "UTC"},
+                        "end": {"dateTime": end_datetime.isoformat(), "timeZone": "UTC"},
+                        "attendees": [{"email": cliente_email, "responseStatus": "needsAction"}],
+                        "reminders": {
+                            "useDefault": False,
+                            "overrides": [
+                                {"method": "email", "minutes": 24 * 60},
+                                {"method": "popup", "minutes": 30},
+                            ],
+                        },
+                    }
 
-                calendar_event = (
-                    self._calendar_service.events()
-                    .insert(calendarId="primary", body=event, sendNotifications=True)
-                    .execute()
-                )
-                calendar_event_id = calendar_event["id"]
-                google_calendar_url = calendar_event.get("htmlLink")
-            else:
+                    calendar_event = (
+                        self._calendar_service.events()
+                        .insert(calendarId="primary", body=event, sendNotifications=True)
+                        .execute()
+                    )
+                    calendar_event_id = calendar_event["id"]
+                    google_calendar_url = calendar_event.get("htmlLink")
+                    google_calendar_ok = True
+                except Exception as gc_error:
+                    logger.error(
+                        f"Google Calendar event creation failed for client {client_id}: {gc_error}"
+                    )
+
+            if not google_calendar_ok:
                 logger.warning(
-                    f"Google Calendar not configured for client {client_id}, saving appointment to Supabase only"
+                    f"Saving appointment to Supabase only for client {client_id}"
                 )
+                try:
+                    self.supabase.table("alerts_log").insert({
+                        "id": str(uuid4()),
+                        "cliente_id": client_id,
+                        "prioridad": "importante",
+                        "titulo": "Cita guardada sin Google Calendar",
+                        "mensaje": (
+                            f"No se pudo sincronizar la cita de {cliente_nombre} "
+                            f"({fecha} {hora}) con Google Calendar. "
+                            "Guardada solo en Supabase — revisa la configuración de credenciales."
+                        ),
+                        "created_at": datetime.utcnow().isoformat(),
+                    }).execute()
+                except Exception as alert_error:
+                    logger.error(f"Failed to insert alert for owner: {alert_error}")
 
             # Save to database (with or without Google Calendar)
             appointment = {
@@ -159,7 +202,7 @@ class AgendamientoModule:
                 "cliente_id": client_id,
                 "user_id": user_id,
                 "calendar_event_id": calendar_event_id,
-                "title": f"Cita - {cliente_nombre}",
+                "title": summary,
                 "description": descripcion,
                 "start_time": start_datetime.isoformat(),
                 "end_time": end_datetime.isoformat(),

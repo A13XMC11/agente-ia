@@ -50,7 +50,14 @@ class AgentEngine:
         self.system_prompt = client_config.get("system_prompt", "")
         self.active_modules = client_config.get("active_modules", {})
 
-        if not self.system_prompt:
+        _OFF_TOPIC_RULE = (
+            "\n\nSi el usuario hace preguntas que no tienen relación con nuestros servicios, "
+            "responde amablemente que solo puedes ayudar con temas relacionados al negocio "
+            "y ofrece retomar la conversación sobre los servicios."
+        )
+        self.system_prompt = (self.system_prompt or "") + _OFF_TOPIC_RULE
+
+        if not client_config.get("system_prompt"):
             logger.warning(
                 f"AgentEngine for client_id={self.client_id}: "
                 f"system_prompt is empty/None — will use blank prompt. "
