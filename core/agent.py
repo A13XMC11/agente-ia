@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
+import pytz
 from openai import AsyncOpenAI
 
 from modulos.agendamiento import AgendamientoModule
@@ -52,12 +53,25 @@ class AgentEngine:
         self.system_prompt = client_config.get("system_prompt", "")
         self.active_modules = client_config.get("active_modules", {})
 
+        # Inject current date and time
+        tz = pytz.timezone(client_config.get("business_hours_timezone", "America/Guayaquil"))
+        now = datetime.now(tz)
+        fecha_actual = now.strftime("%A %d de %B de %Y, %H:%M")
+
+        _DATE_RULE = (
+            f"\n\nFECHA Y HORA ACTUAL: {fecha_actual}\n\n"
+            f"REGLAS DE FECHA:\n"
+            f"- Hoy es {fecha_actual}\n"
+            f"- Usa esta fecha para calcular 'mañana', 'este viernes', etc.\n"
+            f"- Nunca inventes fechas\n"
+            f"- Nunca digas que enviaste correos o tomaste acciones si no puedes hacerlo"
+        )
         _OFF_TOPIC_RULE = (
             "\n\nSi el usuario hace preguntas que no tienen relación con nuestros servicios, "
             "responde amablemente que solo puedes ayudar con temas relacionados al negocio "
             "y ofrece retomar la conversación sobre los servicios."
         )
-        self.system_prompt = (self.system_prompt or "") + _OFF_TOPIC_RULE
+        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE
 
         if not client_config.get("system_prompt"):
             logger.warning(
