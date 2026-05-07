@@ -1,8 +1,14 @@
 """
-Booking module: Google Calendar integration and appointment management.
+Appointment management module with Google Calendar integration.
 
-Handles appointment scheduling with real availability checking,
-Google Calendar synchronization, and comprehensive error handling.
+Handles appointment scheduling, availability checking, rescheduling,
+and cancellation with robust error handling and automatic fallback to Supabase.
+
+Key guarantees:
+- Never escalates to human for calendar errors
+- Google Calendar failures don't block appointment creation
+- All operations logged with detailed context
+- Availability slots in 30-minute increments (9am-6pm default)
 """
 
 import base64
@@ -16,41 +22,50 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 
-class AgendamientoModule:
-    """Booking and calendar operations with availability verification."""
+class AppointmentError(Exception):
+    """Base exception for appointment operations."""
 
-    def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None):
+
+class AppointmentNotFoundError(AppointmentError):
+    """Raised when appointment is not found in database."""
+
+
+class InvalidSlotError(AppointmentError):
+    """Raised when requested time slot is not available."""
+
+
+class GoogleCalendarService:
+    """Wrapper for Google Calendar operations with error handling."""
+
+    def __init__(self, credentials_json: Optional[str] = None):
         """
-        Initialize booking module.
+        Initialize Google Calendar service.
 
         Args:
-            supabase_client: Supabase client instance
-            google_credentials_json: Google credentials JSON (raw or base64).
-                Falls back to GOOGLE_CALENDAR_CREDENTIALS_JSON env var if not provided.
+            credentials_json: Google Service Account JSON (raw or base64).
+                Falls back to GOOGLE_CALENDAR_CREDENTIALS_JSON env var.
         """
-        self.supabase = supabase_client
-        self._calendar_service = None
-        credentials = google_credentials_json or os.getenv("GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
-        if credentials:
-            self._init_google_calendar(credentials)
-        else:
-            logger.warning("GOOGLE_CALENDAR_CREDENTIALS_JSON not set — Google Calendar disabled")
+        self._service = None
+        self._calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+        self._timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Guayaquil")
+        self._is_available = False
 
-    def _init_google_calendar(self, credentials_json: str) -> None:
-        """Initialize Google Calendar using Service Account credentials."""
+        credentials = credentials_json or os.getenv("GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
+        if credentials:
+            self._init_service(credentials)
+        else:
+            logger.warning("Google Calendar credentials not found — calendar operations will use Supabase only")
+
+    def _init_service(self, credentials_json: str) -> None:
+        """Initialize Google Calendar API client."""
         try:
             try:
                 credentials_dict = json.loads(credentials_json)
             except json.JSONDecodeError:
                 credentials_dict = json.loads(base64.b64decode(credentials_json))
 
-            cred_type = credentials_dict.get("type", "")
-            if cred_type != "service_account":
-                logger.warning(
-                    "Google Calendar requiere Service Account — "
-                    "credenciales tipo 'web' necesitan autorización interactiva. "
-                    "Las citas se guardarán solo en Supabase."
-                )
+            if credentials_dict.get("type") != "service_account":
+                logger.warning("Google Calendar requires Service Account credentials")
                 return
 
             from google.oauth2 import service_account
@@ -60,10 +75,286 @@ class AgendamientoModule:
                 credentials_dict,
                 scopes=["https://www.googleapis.com/auth/calendar"]
             )
-            self._calendar_service = build("calendar", "v3", credentials=credentials)
-            logger.info("Google Calendar service initialized")
+            self._service = build("calendar", "v3", credentials=credentials)
+            self._is_available = True
+            logger.info("Google Calendar service initialized successfully")
+
         except Exception as e:
-            logger.error(f"Error initializing Google Calendar: {e}")
+            logger.warning(f"Failed to initialize Google Calendar service: {e}")
+            self._is_available = False
+
+    def is_available(self) -> bool:
+        """Check if Google Calendar service is available."""
+        return self._is_available
+
+    def list_events(self, date_str: str, start_time: str, end_time: str) -> list[dict]:
+        """
+        List events for a specific date range.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+            start_time: Start time in HH:MM format
+            end_time: End time in HH:MM format
+
+        Returns:
+            List of events (empty list if service unavailable or error)
+        """
+        if not self._is_available:
+            return []
+
+        try:
+            start_dt = datetime.fromisoformat(f"{date_str}T{start_time}:00")
+            end_dt = datetime.fromisoformat(f"{date_str}T{end_time}:00")
+
+            result = self._service.events().list(
+                calendarId=self._calendar_id,
+                timeMin=start_dt.isoformat() + "Z",
+                timeMax=end_dt.isoformat() + "Z",
+                singleEvents=True,
+                orderBy="startTime",
+            ).execute()
+
+            events = [
+                e for e in result.get("items", [])
+                if e.get("status") != "cancelled"
+            ]
+            logger.debug(f"Google Calendar: found {len(events)} events on {date_str}")
+            return events
+
+        except Exception as e:
+            logger.warning(f"Error listing Google Calendar events for {date_str}: {e}")
+            return []
+
+    def create_event(
+        self,
+        date_str: str,
+        start_time: str,
+        end_time: str,
+        summary: str,
+        description: str = "",
+    ) -> Optional[str]:
+        """
+        Create event in Google Calendar.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+            start_time: Start time in HH:MM format
+            end_time: End time in HH:MM format
+            summary: Event title
+            description: Event description
+
+        Returns:
+            Event ID if successful, None if failed (no exception raised)
+        """
+        if not self._is_available:
+            return None
+
+        try:
+            event = {
+                "summary": summary,
+                "description": description,
+                "start": {
+                    "dateTime": f"{date_str}T{start_time}:00",
+                    "timeZone": self._timezone,
+                },
+                "end": {
+                    "dateTime": f"{date_str}T{end_time}:00",
+                    "timeZone": self._timezone,
+                },
+            }
+
+            result = self._service.events().insert(
+                calendarId=self._calendar_id,
+                body=event
+            ).execute()
+
+            event_id = result.get("id")
+            logger.info(f"Google Calendar event created: {event_id} ({summary})")
+            return event_id
+
+        except Exception as e:
+            logger.warning(f"Failed to create Google Calendar event: {e}")
+            return None
+
+    def delete_event(self, event_id: str) -> bool:
+        """
+        Delete event from Google Calendar.
+
+        Args:
+            event_id: Event ID to delete
+
+        Returns:
+            True if successful, False if failed (no exception raised)
+        """
+        if not self._is_available or not event_id:
+            return False
+
+        try:
+            self._service.events().delete(
+                calendarId=self._calendar_id,
+                eventId=event_id
+            ).execute()
+            logger.info(f"Google Calendar event deleted: {event_id}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to delete Google Calendar event {event_id}: {e}")
+            return False
+
+
+class AgendamientoModule:
+    """Appointment management with Google Calendar integration."""
+
+    # Default business hours: 9am to 6pm
+    DEFAULT_START_HOUR = 9
+    DEFAULT_END_HOUR = 18
+    SLOT_DURATION_MINUTES = 30
+
+    def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None):
+        """
+        Initialize appointment module.
+
+        Args:
+            supabase_client: Supabase client instance
+            google_credentials_json: Optional Google credentials JSON (raw or base64)
+        """
+        self.supabase = supabase_client
+        self.google = GoogleCalendarService(google_credentials_json)
+        logger.info("Appointment module initialized")
+
+    def _get_business_hours(self, client_id: str) -> tuple[int, int, int, int]:
+        """
+        Get business hours for a client.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Tuple of (start_hour, start_min, end_hour, end_min)
+        """
+        try:
+            response = self.supabase.table("agentes").select(
+                "horario_atencion_inicio,horario_atencion_fin"
+            ).eq("cliente_id", client_id).single().execute()
+
+            data = response.data or {}
+            start_str = str(data.get("horario_atencion_inicio", "09:00"))[:5]
+            end_str = str(data.get("horario_atencion_fin", "18:00"))[:5]
+
+            start_h, start_m = map(int, start_str.split(":"))
+            end_h, end_m = map(int, end_str.split(":"))
+
+            return start_h, start_m, end_h, end_m
+
+        except Exception as e:
+            logger.debug(f"Error fetching business hours for {client_id}: {e}, using defaults")
+            return self.DEFAULT_START_HOUR, 0, self.DEFAULT_END_HOUR, 0
+
+    def _generate_slots(self, start_hour: int, start_min: int, end_hour: int, end_min: int) -> list[str]:
+        """
+        Generate 30-minute time slots between start and end times.
+
+        Args:
+            start_hour: Start hour (0-23)
+            start_min: Start minute (0-59)
+            end_hour: End hour (0-23)
+            end_min: End minute (0-59)
+
+        Returns:
+            List of time slots in HH:MM format
+        """
+        slots = []
+        current = datetime.combine(date.today(), time(start_hour, start_min))
+        end = datetime.combine(date.today(), time(end_hour, end_min))
+
+        while current < end:
+            slots.append(f"{current.hour:02d}:{current.minute:02d}")
+            current += timedelta(minutes=self.SLOT_DURATION_MINUTES)
+
+        return slots
+
+    def _get_booked_slots(self, client_id: str, date_str: str) -> set[str]:
+        """
+        Get all booked time slots for a date from both Supabase and Google Calendar.
+
+        Args:
+            client_id: Client ID
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            Set of booked time slots in HH:MM format
+        """
+        booked = set()
+
+        try:
+            response = self.supabase.table("citas").select(
+                "hora,duracion_minutos"
+            ).eq("cliente_id", client_id).eq("fecha", date_str).neq(
+                "estado", "cancelada"
+            ).execute()
+
+            for cita in response.data or []:
+                hora = str(cita.get("hora", ""))[:5]
+                duracion = int(cita.get("duracion_minutos", 30))
+                booked.update(self._block_slots(hora, duracion))
+                logger.debug(f"Blocked slots from Supabase: {hora} + {duracion}min")
+
+        except Exception as e:
+            logger.warning(f"Error fetching booked appointments from Supabase: {e}")
+
+        if self.google.is_available():
+            start_h, start_m, end_h, end_m = self._get_business_hours(client_id)
+            start_str = f"{start_h:02d}:{start_m:02d}"
+            end_str = f"{end_h:02d}:{end_m:02d}"
+
+            try:
+                events = self.google.list_events(date_str, start_str, end_str)
+                for event in events:
+                    start_iso = event.get("start", {}).get("dateTime", "")
+                    end_iso = event.get("end", {}).get("dateTime", "")
+
+                    if start_iso and end_iso:
+                        start_time = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+                        end_time = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+
+                        event_start = start_time.strftime("%H:%M")
+                        duration_min = int((end_time - start_time).total_seconds() / 60)
+
+                        booked.update(self._block_slots(event_start, duration_min))
+                        logger.debug(f"Blocked slots from Google Calendar: {event_start} + {duration_min}min")
+
+            except Exception as e:
+                logger.warning(f"Error fetching Google Calendar events: {e}")
+
+        return booked
+
+    def _block_slots(self, start_time: str, duration_minutes: int) -> set[str]:
+        """
+        Get all 30-minute slots blocked by an appointment.
+
+        Args:
+            start_time: Start time in HH:MM format
+            duration_minutes: Duration in minutes
+
+        Returns:
+            Set of blocked time slots
+        """
+        try:
+            hour, minute = map(int, start_time.split(":"))
+            start = datetime.combine(date.today(), time(hour, minute))
+            end = start + timedelta(minutes=duration_minutes)
+
+            blocked = set()
+            current = start
+            while current < end:
+                blocked.add(f"{current.hour:02d}:{current.minute:02d}")
+                current += timedelta(minutes=self.SLOT_DURATION_MINUTES)
+
+            return blocked
+
+        except Exception as e:
+            logger.error(f"Error calculating blocked slots for {start_time}: {e}")
+            return set()
 
     async def consultar_disponibilidad(
         self,
@@ -71,163 +362,60 @@ class AgendamientoModule:
         fecha: str,
     ) -> dict[str, Any]:
         """
-        Check real availability for a specific date by querying:
-        1. Google Calendar events for the day
-        2. Supabase citas table for confirmed/pending appointments
+        Check real availability for a specific date.
+
+        Queries both Google Calendar and Supabase to determine available slots.
 
         Args:
             client_id: Client ID
-            fecha: Date (YYYY-MM-DD)
+            fecha: Date in YYYY-MM-DD format
 
         Returns:
-            Dict with available and booked time slots
-            Example: {
-                "fecha": "2026-05-09",
-                "disponibles": ["09:00", "10:00", "14:00", "15:00"],
-                "ocupados": ["11:00", "12:00"],
-                "horario_atencion": "09:00 - 18:00"
-            }
+            Dict with available slots, booked slots, and business hours
         """
-        try:
-            start_str = "09:00"
-            end_str = "18:00"
-
-            config_response = self.supabase.table("agentes").select(
-                "horario_atencion_inicio,horario_atencion_fin,zona_horaria"
-            ).eq("cliente_id", client_id).single().execute()
-
-            config = config_response.data or {}
-            raw_start = config.get("horario_atencion_inicio")
-            raw_end = config.get("horario_atencion_fin")
-            timezone = config.get("zona_horaria", "America/Guayaquil")
-
-            if raw_start:
-                start_str = str(raw_start)[:5]
-            if raw_end:
-                end_str = str(raw_end)[:5]
-
-        except Exception as e:
-            logger.warning(f"Could not fetch business hours for client {client_id}: {e}")
-            timezone = "America/Guayaquil"
-
-        start_hour, start_min = map(int, start_str.split(":"))
-        end_hour, end_min = map(int, end_str.split(":"))
-
-        all_slots = self._generate_hourly_slots(start_hour, start_min, end_hour, end_min)
-
-        booked_times = set()
+        logger.info(f"Checking availability for client {client_id} on {fecha}")
 
         try:
-            citas_response = self.supabase.table("citas").select(
-                "hora,duracion_minutos"
-            ).eq("cliente_id", client_id).eq("fecha", fecha).neq(
-                "estado", "cancelada"
-            ).execute()
+            start_h, start_m, end_h, end_m = self._get_business_hours(client_id)
+            start_str = f"{start_h:02d}:{start_m:02d}"
+            end_str = f"{end_h:02d}:{end_m:02d}"
 
-            citas = citas_response.data or []
-            for cita in citas:
-                hora_str = str(cita.get("hora", ""))[:5]
-                duracion = cita.get("duracion_minutos", 30)
-                booked_times.update(self._get_blocked_times(hora_str, duracion))
+            all_slots = self._generate_slots(start_h, start_m, end_h, end_m)
+            booked = self._get_booked_slots(client_id, fecha)
+
+            available = [s for s in all_slots if s not in booked]
+
+            result = {
+                "fecha": fecha,
+                "disponibles": available,
+                "ocupados": sorted(booked),
+                "horario_atencion": f"{start_str} - {end_str}",
+                "total_disponibles": len(available),
+                "total_ocupados": len(booked),
+            }
+
+            if available:
+                result["message"] = (
+                    f"✓ Tenemos {len(available)} horarios disponibles para el {fecha}. "
+                    f"¿Cuál te acomoda mejor?"
+                )
+            else:
+                result["message"] = (
+                    f"Lamentablemente el {fecha} está completamente reservado. "
+                    f"¿Quieres intentar otro día?"
+                )
+
+            logger.info(f"Availability check: {len(available)} slots available, {len(booked)} booked")
+            return result
 
         except Exception as e:
-            logger.warning(f"Error fetching booked appointments from Supabase: {e}")
-
-        if self._calendar_service:
-            try:
-                calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
-                start_datetime = f"{fecha}T{start_str}:00"
-                end_datetime = f"{fecha}T{end_str}:00"
-
-                events_result = self._calendar_service.events().list(
-                    calendarId=calendar_id,
-                    timeMin=datetime.fromisoformat(start_datetime).isoformat() + "Z",
-                    timeMax=datetime.fromisoformat(end_datetime).isoformat() + "Z",
-                    singleEvents=True,
-                    orderBy="startTime",
-                ).execute()
-
-                events = events_result.get("items", [])
-                for event in events:
-                    if event.get("status") != "cancelled":
-                        start_time = event.get("start", {}).get("dateTime", "")
-                        if start_time:
-                            event_hour = start_time[11:16]
-                            duration_min = self._get_event_duration_minutes(event)
-                            booked_times.update(self._get_blocked_times(event_hour, duration_min))
-
-            except Exception as e:
-                logger.warning(f"Error querying Google Calendar: {e}")
-
-        available = [slot for slot in all_slots if slot not in booked_times]
-        booked = sorted(booked_times)
-
-        return {
-            "fecha": fecha,
-            "disponibles": available,
-            "ocupados": booked,
-            "horario_atencion": f"{start_str} - {end_str}",
-            "message": (
-                f"Tenemos {len(available)} horarios disponibles para el {fecha}. "
-                f"¿Cuál te acomoda mejor?" if available else
-                f"Lamentablemente ese día está completamente reservado. "
-                f"¿Quieres intentar otro día?"
-            ),
-        }
-
-    def _generate_hourly_slots(
-        self,
-        start_hour: int,
-        start_min: int,
-        end_hour: int,
-        end_min: int,
-    ) -> list[str]:
-        """Generate list of hourly slots between start and end times."""
-        slots = []
-        current = time(start_hour, start_min)
-        end = time(end_hour, end_min)
-
-        while current < end:
-            slots.append(f"{current.hour:02d}:{current.minute:02d}")
-            current = (
-                datetime.combine(date.today(), current) +
-                timedelta(hours=1)
-            ).time()
-
-        return slots
-
-    def _get_blocked_times(self, hora_str: str, duracion_minutos: int) -> set[str]:
-        """Get all time slots blocked by an appointment."""
-        try:
-            hour, minute = map(int, hora_str.split(":"))
-            start_time = datetime.combine(date.today(), time(hour, minute))
-            end_time = start_time + timedelta(minutes=duracion_minutos)
-
-            blocked = set()
-            current = start_time
-            while current < end_time:
-                blocked.add(f"{current.hour:02d}:{current.minute:02d}")
-                current += timedelta(hours=1)
-
-            return blocked
-        except Exception as e:
-            logger.error(f"Error calculating blocked times: {e}")
-            return set()
-
-    def _get_event_duration_minutes(self, event: dict) -> int:
-        """Calculate duration of a Google Calendar event in minutes."""
-        try:
-            start = event.get("start", {}).get("dateTime", "")
-            end = event.get("end", {}).get("dateTime", "")
-
-            if start and end:
-                start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
-                return int((end_dt - start_dt).total_seconds() / 60)
-            return 30
-        except Exception as e:
-            logger.warning(f"Error calculating event duration: {e}")
-            return 30
+            logger.error(f"Error checking availability: {e}")
+            return {
+                "fecha": fecha,
+                "error": f"Error al verificar disponibilidad: {str(e)}",
+                "disponibles": [],
+                "ocupados": [],
+            }
 
     async def crear_cita(
         self,
@@ -236,7 +424,7 @@ class AgendamientoModule:
         hora: str,
         duracion_minutos: int,
         cliente_nombre: str,
-        cliente_email: str,
+        cliente_email: Optional[str] = None,
         telefono_cliente: Optional[str] = None,
         servicio_nombre: Optional[str] = None,
         descripcion: Optional[str] = None,
@@ -244,113 +432,95 @@ class AgendamientoModule:
         """
         Create appointment after verifying availability.
 
-        VALIDATION FLOW:
-        1. Check if time slot is available
-        2. Create event in Google Calendar
-        3. Save to Supabase with google_event_id
-        4. Return confirmation or available slots
+        If Google Calendar fails, appointment is still created in Supabase.
 
         Args:
             client_id: Client ID
-            fecha: Date (YYYY-MM-DD)
-            hora: Time (HH:MM)
+            fecha: Date in YYYY-MM-DD format
+            hora: Time in HH:MM format
             duracion_minutos: Duration in minutes
             cliente_nombre: Customer name
-            cliente_email: Customer email
+            cliente_email: Optional customer email
             telefono_cliente: Optional customer phone
             servicio_nombre: Optional service name
             descripcion: Optional appointment description
 
         Returns:
-            Success dict with appointment_id, or error dict with available slots
+            Dict with success status and appointment details
         """
+        logger.info(
+            f"Creating appointment: client={client_id}, "
+            f"date={fecha}, time={hora}, customer={cliente_nombre}"
+        )
+
         try:
             availability = await self.consultar_disponibilidad(client_id, fecha)
 
             if hora not in availability.get("disponibles", []):
+                logger.warning(f"Slot {hora} not available on {fecha}")
                 return {
-                    "error": f"El horario {hora} no está disponible",
+                    "error": f"El horario {hora} no está disponible en {fecha}",
                     "disponibles": availability.get("disponibles", []),
                     "ocupados": availability.get("ocupados", []),
+                    "horario_atencion": availability.get("horario_atencion", ""),
                     "message": availability.get("message", ""),
                 }
 
-            start_datetime = datetime.fromisoformat(f"{fecha}T{hora}:00")
-            end_datetime = start_datetime + timedelta(minutes=duracion_minutos)
+            end_dt = datetime.fromisoformat(f"{fecha}T{hora}:00") + timedelta(
+                minutes=duracion_minutos
+            )
+            end_time = end_dt.strftime("%H:%M")
 
             summary = f"{servicio_nombre} - {cliente_nombre}" if servicio_nombre else f"Cita - {cliente_nombre}"
 
-            calendar_event_id = None
-            google_calendar_url = None
-
-            if self._calendar_service:
-                try:
-                    timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Guayaquil")
-                    calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
-
-                    event = {
-                        "summary": summary,
-                        "description": descripcion or f"Cliente: {cliente_nombre}\nEmail: {cliente_email}",
-                        "start": {"dateTime": f"{fecha}T{hora}:00", "timeZone": timezone},
-                        "end": {"dateTime": end_datetime.isoformat(), "timeZone": timezone},
-                    }
-
-                    calendar_event = self._calendar_service.events().insert(
-                        calendarId=calendar_id, body=event
-                    ).execute()
-                    calendar_event_id = calendar_event["id"]
-                    google_calendar_url = calendar_event.get("htmlLink")
-                    logger.info(f"Google Calendar event created: {calendar_event_id}")
-
-                except Exception as gc_error:
-                    logger.error(f"Google Calendar creation failed: {gc_error}")
-                    try:
-                        self.supabase.table("alertas").insert({
-                            "cliente_id": client_id,
-                            "tipo": "importante",
-                            "mensaje": (
-                                f"Cita de {cliente_nombre} ({fecha} {hora}) guardada en Supabase "
-                                f"pero no sincronizada con Google Calendar: {gc_error}"
-                            ),
-                        }).execute()
-                    except Exception as alert_error:
-                        logger.error(f"Failed to insert alert: {alert_error}")
+            google_event_id = None
+            if self.google.is_available():
+                google_event_id = self.google.create_event(
+                    date_str=fecha,
+                    start_time=hora,
+                    end_time=end_time,
+                    summary=summary,
+                    description=descripcion or f"Cliente: {cliente_nombre}\nEmail: {cliente_email or 'N/A'}",
+                )
 
             appointment = {
                 "cliente_id": client_id,
                 "nombre_cliente": cliente_nombre,
-                "email_cliente": cliente_email,
-                "telefono_cliente": telefono_cliente,
+                "email_cliente": cliente_email or "",
+                "telefono_cliente": telefono_cliente or "",
                 "servicio": servicio_nombre or "Cita general",
                 "fecha": fecha,
                 "hora": hora,
                 "duracion_minutos": duracion_minutos,
                 "estado": "confirmada",
-                "google_event_id": calendar_event_id,
-                "notas": descripcion,
+                "google_event_id": google_event_id,
+                "notas": descripcion or "",
             }
 
-            resultado = self.supabase.table("citas").insert(appointment).execute()
-            appointment_id = resultado.data[0]["id"] if resultado.data else None
+            response = self.supabase.table("citas").insert(appointment).execute()
+            appointment_id = response.data[0].get("id") if response.data else None
 
             logger.info(
-                f"Appointment created: {appointment_id} for client {client_id} "
-                f"({cliente_nombre} — {fecha} {hora})"
+                f"Appointment created: id={appointment_id}, google_id={google_event_id}, "
+                f"customer={cliente_nombre}"
             )
 
             return {
                 "success": True,
                 "appointment_id": appointment_id,
-                "calendar_event_id": calendar_event_id,
-                "start": start_datetime.isoformat(),
-                "end": end_datetime.isoformat(),
-                "google_calendar_url": google_calendar_url,
+                "google_event_id": google_event_id,
+                "fecha": fecha,
+                "hora": hora,
+                "cliente_nombre": cliente_nombre,
                 "message": f"✓ Cita agendada para {fecha} a las {hora}",
             }
 
         except Exception as e:
             logger.error(f"Error creating appointment: {e}")
-            return {"error": str(e)}
+            return {
+                "error": f"Error al crear la cita: {str(e)}",
+                "message": "Lo siento, hubo un problema al crear la cita. Por favor intenta nuevamente.",
+            }
 
     async def cancelar_cita(
         self,
@@ -359,54 +529,57 @@ class AgendamientoModule:
         motivo: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Cancel an appointment and remove from Google Calendar.
+        Cancel appointment.
 
         Args:
             client_id: Client ID
-            cita_id: Appointment ID to cancel
+            cita_id: Appointment ID
             motivo: Optional cancellation reason
 
         Returns:
-            Cancellation confirmation
+            Dict with cancellation confirmation
         """
+        logger.info(f"Cancelling appointment: id={cita_id}, client={client_id}")
+
         try:
             response = self.supabase.table("citas").select(
                 "id,google_event_id,nombre_cliente,fecha,hora"
             ).eq("id", cita_id).eq("cliente_id", client_id).single().execute()
 
             if not response.data:
-                return {"error": f"Cita {cita_id} no encontrada"}
+                logger.warning(f"Appointment {cita_id} not found")
+                return {
+                    "error": f"No se encontró la cita con ID {cita_id}",
+                    "message": "No tengo citas con ese ID en el sistema.",
+                }
 
             appointment = response.data
             google_event_id = appointment.get("google_event_id")
 
-            if self._calendar_service and google_event_id:
-                try:
-                    calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
-                    self._calendar_service.events().delete(
-                        calendarId=calendar_id,
-                        eventId=google_event_id
-                    ).execute()
-                    logger.info(f"Google Calendar event deleted: {google_event_id}")
-                except Exception as gc_error:
-                    logger.warning(f"Could not delete Google Calendar event: {gc_error}")
+            if google_event_id:
+                self.google.delete_event(google_event_id)
 
             self.supabase.table("citas").update({
                 "estado": "cancelada",
                 "notas": motivo or "Cancelada por usuario",
             }).eq("id", cita_id).execute()
 
-            logger.info(f"Appointment {cita_id} cancelled: {motivo}")
+            logger.info(f"Appointment {cita_id} cancelled successfully")
 
             return {
                 "success": True,
                 "appointment_id": cita_id,
+                "fecha_original": appointment["fecha"],
+                "hora_original": appointment["hora"],
                 "message": f"✓ Cita del {appointment['fecha']} a las {appointment['hora']} cancelada",
             }
 
         except Exception as e:
             logger.error(f"Error cancelling appointment: {e}")
-            return {"error": str(e)}
+            return {
+                "error": f"Error al cancelar la cita: {str(e)}",
+                "message": "Lo siento, hubo un problema al cancelar la cita.",
+            }
 
     async def reagendar_cita(
         self,
@@ -416,108 +589,86 @@ class AgendamientoModule:
         nueva_hora: str,
     ) -> dict[str, Any]:
         """
-        Reschedule appointment to a new date/time.
+        Reschedule appointment to new date/time.
 
-        DELETION FLOW:
-        1. Fetch old appointment with google_event_id
-        2. Check new time availability
-        3. Delete old Google Calendar event (idempotent)
-        4. Create new Google Calendar event
-        5. Update Supabase with new date/time/event_id
+        If Google Calendar fails, update is still saved in Supabase.
 
         Args:
             client_id: Client ID
-            cita_id: Appointment ID to reschedule
-            nueva_fecha: New date (YYYY-MM-DD)
-            nueva_hora: New time (HH:MM)
+            cita_id: Appointment ID
+            nueva_fecha: New date in YYYY-MM-DD format
+            nueva_hora: New time in HH:MM format
 
         Returns:
-            Success dict with new appointment details, or error with available slots
+            Dict with new appointment details
         """
+        logger.info(
+            f"Rescheduling appointment: id={cita_id}, "
+            f"new_date={nueva_fecha}, new_time={nueva_hora}"
+        )
+
         try:
             response = self.supabase.table("citas").select(
-                "id,nombre_cliente,email_cliente,telefono_cliente,servicio,duracion_minutos,"
-                "notas,google_event_id,fecha,hora"
+                "id,nombre_cliente,email_cliente,telefono_cliente,servicio,"
+                "duracion_minutos,notas,google_event_id,fecha,hora"
             ).eq("id", cita_id).eq("cliente_id", client_id).single().execute()
 
             if not response.data:
-                return {"error": f"Cita {cita_id} no encontrada"}
+                logger.warning(f"Appointment {cita_id} not found for rescheduling")
+                return {
+                    "error": f"No se encontró la cita con ID {cita_id}",
+                    "message": "No tengo citas con ese ID en el sistema.",
+                }
 
             old_appointment = response.data
 
             availability = await self.consultar_disponibilidad(client_id, nueva_fecha)
             if nueva_hora not in availability.get("disponibles", []):
+                logger.warning(f"Slot {nueva_hora} not available on {nueva_fecha}")
                 return {
                     "error": f"El horario {nueva_hora} no está disponible en {nueva_fecha}",
                     "disponibles": availability.get("disponibles", []),
                     "ocupados": availability.get("ocupados", []),
+                    "horario_atencion": availability.get("horario_atencion", ""),
                     "message": availability.get("message", ""),
                 }
 
             old_google_event_id = old_appointment.get("google_event_id")
             duracion = old_appointment.get("duracion_minutos", 30)
+            servicio = old_appointment.get("servicio", "Cita general")
+            nombre = old_appointment.get("nombre_cliente", "")
 
-            if self._calendar_service and old_google_event_id:
-                try:
-                    calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
-                    self._calendar_service.events().delete(
-                        calendarId=calendar_id,
-                        eventId=old_google_event_id
-                    ).execute()
-                    logger.info(f"Old Google Calendar event deleted: {old_google_event_id}")
-                except Exception as gc_delete_error:
-                    logger.warning(f"Could not delete old event {old_google_event_id}: {gc_delete_error}")
+            if old_google_event_id:
+                self.google.delete_event(old_google_event_id)
 
-            new_calendar_event_id = None
-            if self._calendar_service:
-                try:
-                    timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Guayaquil")
-                    calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
-                    new_start = datetime.fromisoformat(f"{nueva_fecha}T{nueva_hora}:00")
-                    new_end = new_start + timedelta(minutes=duracion)
+            new_google_event_id = None
+            if self.google.is_available():
+                end_dt = datetime.fromisoformat(f"{nueva_fecha}T{nueva_hora}:00") + timedelta(
+                    minutes=duracion
+                )
+                end_time = end_dt.strftime("%H:%M")
 
-                    summary = (
-                        f"{old_appointment['servicio']} - {old_appointment['nombre_cliente']}"
-                        if old_appointment.get("servicio")
-                        else f"Cita - {old_appointment['nombre_cliente']}"
-                    )
-
-                    event = {
-                        "summary": summary,
-                        "description": old_appointment.get("notas") or (
-                            f"Cliente: {old_appointment['nombre_cliente']}\n"
-                            f"Email: {old_appointment['email_cliente']}"
-                        ),
-                        "start": {"dateTime": f"{nueva_fecha}T{nueva_hora}:00", "timeZone": timezone},
-                        "end": {"dateTime": new_end.isoformat(), "timeZone": timezone},
-                    }
-
-                    calendar_event = self._calendar_service.events().insert(
-                        calendarId=calendar_id,
-                        body=event
-                    ).execute()
-                    new_calendar_event_id = calendar_event["id"]
-                    logger.info(f"New Google Calendar event created: {new_calendar_event_id}")
-
-                except Exception as gc_create_error:
-                    logger.error(f"Failed to create new Google Calendar event: {gc_create_error}")
-                    try:
-                        self.supabase.table("alertas").insert({
-                            "cliente_id": client_id,
-                            "tipo": "importante",
-                            "mensaje": f"Cita reprogramada en Supabase pero no en Google Calendar: {gc_create_error}",
-                        }).execute()
-                    except Exception as alert_error:
-                        logger.error(f"Failed to insert alert: {alert_error}")
+                summary = f"{servicio} - {nombre}"
+                new_google_event_id = self.google.create_event(
+                    date_str=nueva_fecha,
+                    start_time=nueva_hora,
+                    end_time=end_time,
+                    summary=summary,
+                    description=old_appointment.get("notas", ""),
+                )
 
             self.supabase.table("citas").update({
                 "fecha": nueva_fecha,
                 "hora": nueva_hora,
-                "google_event_id": new_calendar_event_id,
+                "google_event_id": new_google_event_id,
                 "estado": "confirmada",
             }).eq("id", cita_id).execute()
 
-            logger.info(f"Appointment {cita_id} rescheduled to {nueva_fecha} {nueva_hora}")
+            logger.info(
+                f"Appointment {cita_id} rescheduled: "
+                f"{old_appointment['fecha']} {old_appointment['hora']} -> "
+                f"{nueva_fecha} {nueva_hora}"
+            )
 
             return {
                 "success": True,
@@ -526,88 +677,69 @@ class AgendamientoModule:
                 "hora_anterior": old_appointment["hora"],
                 "nueva_fecha": nueva_fecha,
                 "nueva_hora": nueva_hora,
-                "message": f"✓ Cita reagendada de {old_appointment['fecha']} {old_appointment['hora']} a {nueva_fecha} {nueva_hora}",
+                "message": (
+                    f"✓ Cita reprogramada: "
+                    f"{old_appointment['fecha']} {old_appointment['hora']} → "
+                    f"{nueva_fecha} {nueva_hora}"
+                ),
             }
 
         except Exception as e:
             logger.error(f"Error rescheduling appointment: {e}")
-            return {"error": str(e)}
+            return {
+                "error": f"Error al reprogramar la cita: {str(e)}",
+                "message": "Lo siento, hubo un problema al reprogramar la cita.",
+            }
 
     async def obtener_citas_usuario(
         self,
         client_id: str,
-        user_id: Optional[str] = None,
         limit: int = 5,
     ) -> dict[str, Any]:
         """
-        Get existing appointments for a user.
+        Get existing appointments for a client.
 
-        Used to find the real UUID before rescheduling or canceling.
+        Used to find appointments before rescheduling or canceling.
 
         Args:
             client_id: Client ID
-            user_id: Optional user ID (if available)
-            limit: Max number of appointments to return
+            limit: Max appointments to return
 
         Returns:
-            Dict with list of appointments and metadata
+            Dict with list of appointments
         """
+        logger.info(f"Fetching appointments for client {client_id} (limit={limit})")
+
         try:
-            query = self.supabase.table("citas").select(
-                "id, nombre_cliente, email_cliente, servicio, fecha, hora, estado"
+            response = self.supabase.table("citas").select(
+                "id,nombre_cliente,email_cliente,servicio,fecha,hora,estado"
             ).eq("cliente_id", client_id).eq("estado", "confirmada").order(
                 "fecha", desc=False
-            ).limit(limit)
+            ).limit(limit).execute()
 
-            response = query.execute()
             appointments = response.data or []
+
+            message = (
+                f"Encontré {len(appointments)} cita(s) confirmada(s) para ti."
+                if appointments
+                else "No hay citas confirmadas en el sistema."
+            )
+
+            logger.info(f"Found {len(appointments)} appointments for client {client_id}")
 
             return {
                 "success": True,
                 "appointments": appointments,
                 "total": len(appointments),
-                "message": (
-                    f"Encontré {len(appointments)} cita(s) confirmada(s) para ti. "
-                    if appointments
-                    else "No hay citas confirmadas en el sistema."
-                ),
+                "message": message,
             }
 
         except Exception as e:
             logger.error(f"Error fetching appointments for client {client_id}: {e}")
             return {
                 "success": False,
-                "error": str(e),
+                "error": f"Error al obtener citas: {str(e)}",
                 "appointments": [],
                 "total": 0,
+                "message": "No pude recuperar tus citas del sistema.",
             }
-
-    async def get_upcoming_appointments(
-        self,
-        client_id: str,
-        days_ahead: int = 7,
-    ) -> list[dict[str, Any]]:
-        """
-        Get upcoming appointments for the next N days.
-
-        Args:
-            client_id: Client ID
-            days_ahead: Number of days to look ahead
-
-        Returns:
-            List of upcoming appointments
-        """
-        try:
-            future_date = (datetime.utcnow() + timedelta(days=days_ahead)).isoformat()
-
-            response = self.supabase.table("citas").select("*").eq(
-                "cliente_id", client_id
-            ).eq("status", "scheduled").lt("start_time", future_date).gte(
-                "start_time", datetime.utcnow().isoformat()
-            ).order("start_time", desc=False).execute()
-
-            return response.data or []
-
-        except Exception as e:
-            logger.error(f"Error fetching upcoming appointments: {e}")
-            return []
