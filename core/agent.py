@@ -119,20 +119,20 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "consultar_disponibilidad",
-                        "description": "Check available appointment slots for a given date range",
+                        "description": "Check available appointment slots for a given date",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "fecha_inicio": {
+                                "cliente_id": {
                                     "type": "string",
-                                    "description": "Start date (YYYY-MM-DD)",
+                                    "description": "Client ID (business)",
                                 },
-                                "fecha_fin": {
+                                "fecha": {
                                     "type": "string",
-                                    "description": "End date (YYYY-MM-DD)",
+                                    "description": "Date to check (YYYY-MM-DD)",
                                 },
                             },
-                            "required": ["fecha_inicio", "fecha_fin"],
+                            "required": ["cliente_id", "fecha"],
                         },
                     },
                 },
@@ -140,10 +140,14 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "crear_cita",
-                        "description": "Create a new appointment in Google Calendar",
+                        "description": "Create a new appointment",
                         "parameters": {
                             "type": "object",
                             "properties": {
+                                "cliente_id": {
+                                    "type": "string",
+                                    "description": "Client ID (business)",
+                                },
                                 "fecha": {
                                     "type": "string",
                                     "description": "Appointment date (YYYY-MM-DD)",
@@ -152,74 +156,35 @@ class AgentEngine:
                                     "type": "string",
                                     "description": "Appointment time (HH:MM)",
                                 },
+                                "nombre_cliente": {
+                                    "type": "string",
+                                    "description": "Customer name",
+                                },
+                                "telefono_cliente": {
+                                    "type": "string",
+                                    "description": "Customer phone number",
+                                },
+                                "servicio": {
+                                    "type": "string",
+                                    "description": "Service name",
+                                },
+                                "email_cliente": {
+                                    "type": "string",
+                                    "description": "Customer email (optional)",
+                                },
                                 "duracion_minutos": {
                                     "type": "integer",
                                     "description": "Duration in minutes (default 60)",
                                 },
-                                "cliente_nombre": {
-                                    "type": "string",
-                                    "description": "Client name",
-                                },
-                                "cliente_email": {
-                                    "type": "string",
-                                    "description": "Client email (optional)",
-                                },
-                                "telefono_cliente": {
-                                    "type": "string",
-                                    "description": "Client phone number (optional)",
-                                },
-                                "servicio_nombre": {
-                                    "type": "string",
-                                    "description": "Service name (optional)",
-                                },
-                                "descripcion": {
-                                    "type": "string",
-                                    "description": "Appointment description (optional)",
-                                },
                             },
                             "required": [
+                                "cliente_id",
                                 "fecha",
                                 "hora",
-                                "cliente_nombre",
+                                "nombre_cliente",
+                                "telefono_cliente",
+                                "servicio",
                             ],
-                        },
-                    },
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "obtener_citas_usuario",
-                        "description": "Get existing appointments for the user (find real UUID before rescheduling/canceling)",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "limit": {
-                                    "type": "integer",
-                                    "description": "Max number of appointments to return (default 5)",
-                                },
-                            },
-                            "required": [],
-                        },
-                    },
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "cancelar_cita",
-                        "description": "Cancel an existing appointment",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "cita_id": {
-                                    "type": "string",
-                                    "description": "Appointment ID to cancel",
-                                },
-                                "motivo": {
-                                    "type": "string",
-                                    "description": "Cancellation reason",
-                                },
-                            },
-                            "required": ["cita_id"],
                         },
                     },
                 },
@@ -231,9 +196,13 @@ class AgentEngine:
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "cita_id": {
+                                "cliente_id": {
                                     "type": "string",
-                                    "description": "Appointment ID to reschedule",
+                                    "description": "Client ID (business)",
+                                },
+                                "telefono_cliente": {
+                                    "type": "string",
+                                    "description": "Customer phone number",
                                 },
                                 "nueva_fecha": {
                                     "type": "string",
@@ -244,7 +213,28 @@ class AgentEngine:
                                     "description": "New time (HH:MM)",
                                 },
                             },
-                            "required": ["cita_id", "nueva_fecha", "nueva_hora"],
+                            "required": ["cliente_id", "telefono_cliente", "nueva_fecha", "nueva_hora"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "cancelar_cita",
+                        "description": "Cancel an existing appointment",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "cliente_id": {
+                                    "type": "string",
+                                    "description": "Client ID (business)",
+                                },
+                                "telefono_cliente": {
+                                    "type": "string",
+                                    "description": "Customer phone number",
+                                },
+                            },
+                            "required": ["cliente_id", "telefono_cliente"],
                         },
                     },
                 },
@@ -674,20 +664,11 @@ class AgentEngine:
         """
         try:
             if tool_name == "consultar_disponibilidad":
-                start_str = self.client_config.get("business_hours_start", "09:00")
-                end_str = self.client_config.get("business_hours_end", "18:00")
-                result = {
-                    "disponibilidad": (
-                        f"Tenemos disponibilidad de lunes a viernes de {start_str} a {end_str} "
-                        "y sábados de 9:00am a 1:00pm. ¿Qué día y hora te acomoda mejor?"
-                    ),
-                    "slots": ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"],
-                    "horario_inicio": start_str,
-                    "horario_fin": end_str,
-                }
-                logger.info(
-                    f"Tool consultar_disponibilidad executed for client {client_id}",
-                    extra={"client_id": client_id},
+                if not self.agendamiento:
+                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
+                result = await self.agendamiento.consultar_disponibilidad(
+                    cliente_id=arguments.get("cliente_id", ""),
+                    fecha=arguments.get("fecha", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)
 
@@ -695,38 +676,14 @@ class AgentEngine:
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.crear_cita(
-                    client_id=client_id,
-                    user_id=sender_id,
+                    cliente_id=arguments.get("cliente_id", ""),
                     fecha=arguments.get("fecha", ""),
                     hora=arguments.get("hora", ""),
+                    nombre_cliente=arguments.get("nombre_cliente", ""),
+                    telefono_cliente=arguments.get("telefono_cliente", ""),
+                    servicio=arguments.get("servicio", ""),
+                    email_cliente=arguments.get("email_cliente", ""),
                     duracion_minutos=arguments.get("duracion_minutos", 60),
-                    cliente_nombre=arguments.get("cliente_nombre", ""),
-                    cliente_email=arguments.get("cliente_email"),
-                    telefono_cliente=arguments.get("telefono_cliente"),
-                    servicio_nombre=arguments.get("servicio_nombre"),
-                    descripcion=arguments.get("descripcion"),
-                )
-                return json.dumps(result, ensure_ascii=False)
-
-            if tool_name == "obtener_citas_usuario":
-                if not self.agendamiento:
-                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
-                limit = arguments.get("limit", 5)
-                result = await self.agendamiento.obtener_citas_usuario(
-                    client_id=client_id,
-                    user_id=sender_id,
-                    limit=limit,
-                )
-                return json.dumps(result, ensure_ascii=False)
-
-            if tool_name == "cancelar_cita":
-                if not self.agendamiento:
-                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
-                result = await self.agendamiento.cancelar_cita(
-                    client_id=client_id,
-                    user_id=sender_id,
-                    cita_id=arguments.get("cita_id", ""),
-                    motivo=arguments.get("motivo"),
                 )
                 return json.dumps(result, ensure_ascii=False)
 
@@ -734,11 +691,19 @@ class AgentEngine:
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.reagendar_cita(
-                    client_id=client_id,
-                    user_id=sender_id,
-                    cita_id=arguments.get("cita_id", ""),
+                    cliente_id=arguments.get("cliente_id", ""),
+                    telefono_cliente=arguments.get("telefono_cliente", ""),
                     nueva_fecha=arguments.get("nueva_fecha", ""),
                     nueva_hora=arguments.get("nueva_hora", ""),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "cancelar_cita":
+                if not self.agendamiento:
+                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
+                result = await self.agendamiento.cancelar_cita(
+                    cliente_id=arguments.get("cliente_id", ""),
+                    telefono_cliente=arguments.get("telefono_cliente", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)
 
