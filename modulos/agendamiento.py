@@ -376,6 +376,55 @@ class AgendamientoModule:
             logger.error(f"Error rescheduling appointment: {e}")
             return {"error": str(e)}
 
+    async def obtener_citas_usuario(
+        self,
+        client_id: str,
+        user_id: Optional[str] = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """
+        Get existing appointments for a user.
+
+        Used to find the real UUID before rescheduling or canceling.
+
+        Args:
+            client_id: Client ID
+            user_id: Optional user ID (if available)
+            limit: Max number of appointments to return
+
+        Returns:
+            Dict with list of appointments and metadata
+        """
+        try:
+            query = self.supabase.table("citas").select(
+                "id, nombre_cliente, email_cliente, servicio, fecha, hora, estado"
+            ).eq("cliente_id", client_id).eq("estado", "confirmada").order(
+                "fecha", desc=False
+            ).limit(limit)
+
+            response = query.execute()
+            appointments = response.data or []
+
+            return {
+                "success": True,
+                "appointments": appointments,
+                "total": len(appointments),
+                "message": (
+                    f"Encontré {len(appointments)} cita(s) confirmada(s) para ti. "
+                    if appointments
+                    else "No hay citas confirmadas en el sistema."
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"Error fetching appointments for client {client_id}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "appointments": [],
+                "total": 0,
+            }
+
     async def get_upcoming_appointments(
         self,
         client_id: str,

@@ -71,7 +71,14 @@ class AgentEngine:
             "responde amablemente que solo puedes ayudar con temas relacionados al negocio "
             "y ofrece retomar la conversación sobre los servicios."
         )
-        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE
+        _APPOINTMENT_RULE = (
+            "\n\nREGLA DE CITAS:\n"
+            "- SIEMPRE usa 'obtener_citas_usuario' PRIMERO para buscar citas existentes.\n"
+            "- Luego usa el ID real (UUID) obtenido para reagendar o cancelar.\n"
+            "- NUNCA uses IDs inventados o la cadena literal 'cita_id'.\n"
+            "- El usuario solo puede modificar citas en estado 'confirmada'."
+        )
+        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE
 
         if not client_config.get("system_prompt"):
             logger.warning(
@@ -169,6 +176,23 @@ class AgentEngine:
                                 "cliente_nombre",
                                 "cliente_email",
                             ],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "obtener_citas_usuario",
+                        "description": "Get existing appointments for the user (find real UUID before rescheduling/canceling)",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Max number of appointments to return (default 5)",
+                                },
+                            },
+                            "required": [],
                         },
                     },
                 },
@@ -674,6 +698,17 @@ class AgentEngine:
                     cliente_email=arguments.get("cliente_email", ""),
                     descripcion=arguments.get("descripcion"),
                     servicio_nombre=arguments.get("servicio_nombre"),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "obtener_citas_usuario":
+                if not self.agendamiento:
+                    return json.dumps({"error": "Módulo de agendamiento no disponible"})
+                limit = arguments.get("limit", 5)
+                result = await self.agendamiento.obtener_citas_usuario(
+                    client_id=client_id,
+                    user_id=sender_id,
+                    limit=limit,
                 )
                 return json.dumps(result, ensure_ascii=False)
 
