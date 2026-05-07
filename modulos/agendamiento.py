@@ -420,15 +420,16 @@ class AgendamientoModule:
     async def crear_cita(
         self,
         client_id: str,
-        user_id: str,
         fecha: str,
         hora: str,
         duracion_minutos: int,
         cliente_nombre: str,
+        user_id: Optional[str] = None,
         cliente_email: Optional[str] = None,
         telefono_cliente: Optional[str] = None,
         servicio_nombre: Optional[str] = None,
         descripcion: Optional[str] = None,
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Create appointment after verifying availability.
@@ -528,9 +529,10 @@ class AgendamientoModule:
     async def cancelar_cita(
         self,
         client_id: str,
-        user_id: str,
         cita_id: str,
+        user_id: Optional[str] = None,
         motivo: Optional[str] = None,
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Cancel appointment.
@@ -591,10 +593,11 @@ class AgendamientoModule:
     async def reagendar_cita(
         self,
         client_id: str,
-        user_id: str,
         cita_id: str,
         nueva_fecha: str,
         nueva_hora: str,
+        user_id: Optional[str] = None,
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Reschedule appointment to new date/time.
