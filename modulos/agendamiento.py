@@ -37,10 +37,7 @@ class AgendamientoModule:
             logger.warning("GOOGLE_CALENDAR_CREDENTIALS_JSON not set — Google Calendar disabled")
 
     def _init_google_calendar(self, credentials_json: str) -> None:
-        """
-        Attempt to initialize Google Calendar. Skips OAuth2 'web' credentials —
-        those require an interactive authorization flow not supported here.
-        """
+        """Initialize Google Calendar using Service Account credentials."""
         try:
             try:
                 credentials_dict = json.loads(credentials_json)
@@ -48,24 +45,22 @@ class AgendamientoModule:
                 credentials_dict = json.loads(base64.b64decode(credentials_json))
 
             cred_type = credentials_dict.get("type", "")
-            if cred_type == "web" or ("client_secret" in credentials_dict and cred_type != "service_account"):
+            if cred_type != "service_account":
                 logger.warning(
-                    "Google Calendar requiere configuración OAuth2 adicional — "
-                    "las credenciales tipo 'web' necesitan autorización interactiva del usuario. "
+                    "Google Calendar requiere Service Account — "
+                    "credenciales tipo 'web' necesitan autorización interactiva. "
                     "Las citas se guardarán solo en Supabase."
                 )
                 return
 
-            from google.oauth2.service_account import Credentials
-            from googleapiclient import discovery
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
 
-            credentials = Credentials.from_service_account_info(
+            credentials = service_account.Credentials.from_service_account_info(
                 credentials_dict,
-                scopes=["https://www.googleapis.com/auth/calendar"],
+                scopes=["https://www.googleapis.com/auth/calendar"]
             )
-            self._calendar_service = discovery.build(
-                "calendar", "v3", credentials=credentials
-            )
+            self._calendar_service = build("calendar", "v3", credentials=credentials)
             logger.info("Google Calendar service initialized")
         except Exception as e:
             logger.error(f"Error initializing Google Calendar: {e}")
@@ -162,26 +157,26 @@ class AgendamientoModule:
 
             if self._calendar_service:
                 try:
+                    timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Guayaquil")
+                    calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+
                     event = {
                         "summary": summary,
                         "description": descripcion or f"Cliente: {cliente_nombre}\nEmail: {cliente_email}",
-                        "start": {"dateTime": start_datetime.isoformat(), "timeZone": "UTC"},
-                        "end": {"dateTime": end_datetime.isoformat(), "timeZone": "UTC"},
-                        "attendees": [{"email": cliente_email, "responseStatus": "needsAction"}],
-                        "reminders": {
-                            "useDefault": False,
-                            "overrides": [
-                                {"method": "email", "minutes": 24 * 60},
-                                {"method": "popup", "minutes": 30},
-                            ],
+                        "start": {
+                            "dateTime": f"{fecha}T{hora}:00",
+                            "timeZone": timezone
+                        },
+                        "end": {
+                            "dateTime": end_datetime.isoformat(),
+                            "timeZone": timezone
                         },
                     }
 
-                    calendar_event = (
-                        self._calendar_service.events()
-                        .insert(calendarId="primary", body=event, sendNotifications=True)
-                        .execute()
-                    )
+                    calendar_event = self._calendar_service.events().insert(
+                        calendarId=calendar_id,
+                        body=event
+                    ).execute()
                     calendar_event_id = calendar_event["id"]
                     google_calendar_url = calendar_event.get("htmlLink")
                     google_calendar_ok = True
