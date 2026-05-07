@@ -420,6 +420,7 @@ class AgendamientoModule:
     async def crear_cita(
         self,
         client_id: str,
+        user_id: str,
         fecha: str,
         hora: str,
         duracion_minutos: int,
@@ -435,7 +436,8 @@ class AgendamientoModule:
         If Google Calendar fails, appointment is still created in Supabase.
 
         Args:
-            client_id: Client ID
+            client_id: Client ID (business)
+            user_id: User ID (end user/customer)
             fecha: Date in YYYY-MM-DD format
             hora: Time in HH:MM format
             duracion_minutos: Duration in minutes
@@ -485,6 +487,7 @@ class AgendamientoModule:
 
             appointment = {
                 "cliente_id": client_id,
+                "usuario_id": user_id,
                 "nombre_cliente": cliente_nombre,
                 "email_cliente": cliente_email or "",
                 "telefono_cliente": telefono_cliente or "",
@@ -525,6 +528,7 @@ class AgendamientoModule:
     async def cancelar_cita(
         self,
         client_id: str,
+        user_id: str,
         cita_id: str,
         motivo: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -532,19 +536,22 @@ class AgendamientoModule:
         Cancel appointment.
 
         Args:
-            client_id: Client ID
+            client_id: Client ID (business)
+            user_id: User ID (end user/customer)
             cita_id: Appointment ID
             motivo: Optional cancellation reason
 
         Returns:
             Dict with cancellation confirmation
         """
-        logger.info(f"Cancelling appointment: id={cita_id}, client={client_id}")
+        logger.info(f"Cancelling appointment: id={cita_id}, client={client_id}, user={user_id}")
 
         try:
             response = self.supabase.table("citas").select(
                 "id,google_event_id,nombre_cliente,fecha,hora"
-            ).eq("id", cita_id).eq("cliente_id", client_id).single().execute()
+            ).eq("id", cita_id).eq("cliente_id", client_id).eq(
+                "usuario_id", user_id
+            ).single().execute()
 
             if not response.data:
                 logger.warning(f"Appointment {cita_id} not found")
@@ -584,6 +591,7 @@ class AgendamientoModule:
     async def reagendar_cita(
         self,
         client_id: str,
+        user_id: str,
         cita_id: str,
         nueva_fecha: str,
         nueva_hora: str,
@@ -594,7 +602,8 @@ class AgendamientoModule:
         If Google Calendar fails, update is still saved in Supabase.
 
         Args:
-            client_id: Client ID
+            client_id: Client ID (business)
+            user_id: User ID (end user/customer)
             cita_id: Appointment ID
             nueva_fecha: New date in YYYY-MM-DD format
             nueva_hora: New time in HH:MM format
@@ -604,14 +613,16 @@ class AgendamientoModule:
         """
         logger.info(
             f"Rescheduling appointment: id={cita_id}, "
-            f"new_date={nueva_fecha}, new_time={nueva_hora}"
+            f"new_date={nueva_fecha}, new_time={nueva_hora}, user={user_id}"
         )
 
         try:
             response = self.supabase.table("citas").select(
                 "id,nombre_cliente,email_cliente,telefono_cliente,servicio,"
                 "duracion_minutos,notas,google_event_id,fecha,hora"
-            ).eq("id", cita_id).eq("cliente_id", client_id).single().execute()
+            ).eq("id", cita_id).eq("cliente_id", client_id).eq(
+                "usuario_id", user_id
+            ).single().execute()
 
             if not response.data:
                 logger.warning(f"Appointment {cita_id} not found for rescheduling")
@@ -694,26 +705,30 @@ class AgendamientoModule:
     async def obtener_citas_usuario(
         self,
         client_id: str,
+        user_id: str,
         limit: int = 5,
     ) -> dict[str, Any]:
         """
-        Get existing appointments for a client.
+        Get existing appointments for a specific user.
 
         Used to find appointments before rescheduling or canceling.
 
         Args:
-            client_id: Client ID
+            client_id: Client ID (business)
+            user_id: User ID (end user/customer)
             limit: Max appointments to return
 
         Returns:
             Dict with list of appointments
         """
-        logger.info(f"Fetching appointments for client {client_id} (limit={limit})")
+        logger.info(f"Fetching appointments for client={client_id}, user={user_id} (limit={limit})")
 
         try:
             response = self.supabase.table("citas").select(
                 "id,nombre_cliente,email_cliente,servicio,fecha,hora,estado"
-            ).eq("cliente_id", client_id).eq("estado", "confirmada").order(
+            ).eq("cliente_id", client_id).eq("usuario_id", user_id).eq(
+                "estado", "confirmada"
+            ).order(
                 "fecha", desc=False
             ).limit(limit).execute()
 
@@ -725,7 +740,7 @@ class AgendamientoModule:
                 else "No hay citas confirmadas en el sistema."
             )
 
-            logger.info(f"Found {len(appointments)} appointments for client {client_id}")
+            logger.info(f"Found {len(appointments)} appointments for client={client_id}, user={user_id}")
 
             return {
                 "success": True,
@@ -735,7 +750,7 @@ class AgendamientoModule:
             }
 
         except Exception as e:
-            logger.error(f"Error fetching appointments for client {client_id}: {e}")
+            logger.error(f"Error fetching appointments for client={client_id}, user={user_id}: {e}")
             return {
                 "success": False,
                 "error": f"Error al obtener citas: {str(e)}",

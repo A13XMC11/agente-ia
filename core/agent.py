@@ -154,7 +154,7 @@ class AgentEngine:
                                 },
                                 "duracion_minutos": {
                                     "type": "integer",
-                                    "description": "Duration in minutes",
+                                    "description": "Duration in minutes (default 60)",
                                 },
                                 "cliente_nombre": {
                                     "type": "string",
@@ -162,19 +162,25 @@ class AgentEngine:
                                 },
                                 "cliente_email": {
                                     "type": "string",
-                                    "description": "Client email",
+                                    "description": "Client email (optional)",
+                                },
+                                "telefono_cliente": {
+                                    "type": "string",
+                                    "description": "Client phone number (optional)",
+                                },
+                                "servicio_nombre": {
+                                    "type": "string",
+                                    "description": "Service name (optional)",
                                 },
                                 "descripcion": {
                                     "type": "string",
-                                    "description": "Appointment description",
+                                    "description": "Appointment description (optional)",
                                 },
                             },
                             "required": [
                                 "fecha",
                                 "hora",
-                                "duracion_minutos",
                                 "cliente_nombre",
-                                "cliente_email",
                             ],
                         },
                     },
@@ -693,11 +699,12 @@ class AgentEngine:
                     user_id=sender_id,
                     fecha=arguments.get("fecha", ""),
                     hora=arguments.get("hora", ""),
-                    duracion_minutos=arguments.get("duracion_minutos", 30),
+                    duracion_minutos=arguments.get("duracion_minutos", 60),
                     cliente_nombre=arguments.get("cliente_nombre", ""),
-                    cliente_email=arguments.get("cliente_email", ""),
-                    descripcion=arguments.get("descripcion"),
+                    cliente_email=arguments.get("cliente_email"),
+                    telefono_cliente=arguments.get("telefono_cliente"),
                     servicio_nombre=arguments.get("servicio_nombre"),
+                    descripcion=arguments.get("descripcion"),
                 )
                 return json.dumps(result, ensure_ascii=False)
 
@@ -717,6 +724,7 @@ class AgentEngine:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.cancelar_cita(
                     client_id=client_id,
+                    user_id=sender_id,
                     cita_id=arguments.get("cita_id", ""),
                     motivo=arguments.get("motivo"),
                 )
@@ -727,6 +735,7 @@ class AgentEngine:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.reagendar_cita(
                     client_id=client_id,
+                    user_id=sender_id,
                     cita_id=arguments.get("cita_id", ""),
                     nueva_fecha=arguments.get("nueva_fecha", ""),
                     nueva_hora=arguments.get("nueva_hora", ""),
