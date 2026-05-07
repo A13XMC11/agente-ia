@@ -312,6 +312,8 @@ class AgendamientoModule:
         """
         Reschedule an existing appointment.
 
+        Deletes the old Google Calendar event and creates a new one.
+
         Args:
             client_id: Client ID
             cita_id: Appointment ID to reschedule
@@ -328,32 +330,65 @@ class AgendamientoModule:
             ).eq("cliente_id", client_id).single().execute()
 
             old_appointment = response.data
+            old_google_event_id = old_appointment.get("google_event_id")
 
-            # Update in Google Calendar
-            if self._calendar_service and old_appointment.get("google_event_id"):
-                duracion = old_appointment.get("duracion_minutos", 30)
-                new_start = datetime.fromisoformat(f"{nueva_fecha}T{nueva_hora}:00")
-                new_end = new_start + timedelta(minutes=duracion)
+            # Delete old Google Calendar event
+            if self._calendar_service and old_google_event_id:
+                try:
+                    self._calendar_service.events().delete(
+                        calendarId="primary",
+                        eventId=old_google_event_id
+                    ).execute()
+                    logger.info(f"Deleted old Google Calendar event: {old_google_event_id}")
+                except Exception as gc_delete_error:
+                    logger.error(f"Failed to delete old event {old_google_event_id}: {gc_delete_error}")
 
-                event = self._calendar_service.events().get(
-                    calendarId="primary", eventId=old_appointment["google_event_id"]
-                ).execute()
+            # Create new Google Calendar event
+            new_calendar_event_id = None
+            if self._calendar_service:
+                try:
+                    timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Guayaquil")
+                    duracion = old_appointment.get("duracion_minutos", 30)
+                    new_start = datetime.fromisoformat(f"{nueva_fecha}T{nueva_hora}:00")
+                    new_end = new_start + timedelta(minutes=duracion)
 
-                event["start"] = {"dateTime": new_start.isoformat(), "timeZone": "UTC"}
-                event["end"] = {"dateTime": new_end.isoformat(), "timeZone": "UTC"}
+                    summary = (
+                        f"{old_appointment.get('servicio')} - {old_appointment.get('nombre_cliente')}"
+                        if old_appointment.get("servicio")
+                        else f"Cita - {old_appointment.get('nombre_cliente')}"
+                    )
 
-                self._calendar_service.events().update(
-                    calendarId="primary",
-                    eventId=old_appointment["google_event_id"],
-                    body=event,
-                    sendNotifications=True,
-                ).execute()
+                    event = {
+                        "summary": summary,
+                        "description": old_appointment.get("notas") or (
+                            f"Cliente: {old_appointment.get('nombre_cliente')}\n"
+                            f"Email: {old_appointment.get('email_cliente')}"
+                        ),
+                        "start": {
+                            "dateTime": f"{nueva_fecha}T{nueva_hora}:00",
+                            "timeZone": timezone
+                        },
+                        "end": {
+                            "dateTime": new_end.isoformat(),
+                            "timeZone": timezone
+                        },
+                    }
 
-            # Update database
+                    calendar_event = self._calendar_service.events().insert(
+                        calendarId="primary",
+                        body=event
+                    ).execute()
+                    new_calendar_event_id = calendar_event["id"]
+                    logger.info(f"Created new Google Calendar event: {new_calendar_event_id}")
+                except Exception as gc_create_error:
+                    logger.error(f"Failed to create new Google Calendar event: {gc_create_error}")
+
+            # Update database: current appointment with new date/time and new event ID
             self.supabase.table("citas").update(
                 {
                     "fecha": nueva_fecha,
                     "hora": nueva_hora,
+                    "google_event_id": new_calendar_event_id,
                     "estado": "confirmada",
                     "updated_at": datetime.utcnow().isoformat(),
                 }
