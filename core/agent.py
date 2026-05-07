@@ -661,13 +661,16 @@ class AgentEngine:
 
         Uses client_config business hours for scheduling tools so no
         external service is required.
+
+        CRITICAL: For appointment tools, always use the context client_id,
+        never trust the cliente_id from GPT-4o arguments.
         """
         try:
             if tool_name == "consultar_disponibilidad":
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.consultar_disponibilidad(
-                    cliente_id=arguments.get("cliente_id", ""),
+                    cliente_id=client_id,
                     fecha=arguments.get("fecha", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)
@@ -676,7 +679,7 @@ class AgentEngine:
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.crear_cita(
-                    cliente_id=arguments.get("cliente_id", ""),
+                    cliente_id=client_id,
                     fecha=arguments.get("fecha", ""),
                     hora=arguments.get("hora", ""),
                     nombre_cliente=arguments.get("nombre_cliente", ""),
@@ -691,7 +694,7 @@ class AgentEngine:
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.reagendar_cita(
-                    cliente_id=arguments.get("cliente_id", ""),
+                    cliente_id=client_id,
                     telefono_cliente=arguments.get("telefono_cliente", ""),
                     nueva_fecha=arguments.get("nueva_fecha", ""),
                     nueva_hora=arguments.get("nueva_hora", ""),
@@ -702,7 +705,7 @@ class AgentEngine:
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.cancelar_cita(
-                    cliente_id=arguments.get("cliente_id", ""),
+                    cliente_id=client_id,
                     telefono_cliente=arguments.get("telefono_cliente", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)
