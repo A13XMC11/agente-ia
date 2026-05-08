@@ -64,6 +64,15 @@ export async function POST(request: Request) {
       .eq('email', email)
       .single()
 
+    console.log('RAW usuario data:', JSON.stringify(usuarios))
+    console.log('RAW error:', JSON.stringify(dbError))
+
+    console.log('=== DEBUG ROL ===')
+    console.log('Email buscado:', email)
+    console.log('Usuario data:', JSON.stringify(usuarios))
+    console.log('Usuario error:', JSON.stringify(dbError))
+    console.log('Rol encontrado:', usuarios?.rol)
+
     let usuario: Usuario | null = null
     if (!dbError && usuarios) {
       usuario = usuarios
@@ -80,6 +89,8 @@ export async function POST(request: Request) {
     const rol = usuario?.rol || 'admin'
     const clienteId = usuario?.cliente_id || null
 
+    console.log('Rol final asignado:', rol)
+    console.log('================')
     console.log('[LOGIN] Final role:', rol)
 
     // Create JWT
