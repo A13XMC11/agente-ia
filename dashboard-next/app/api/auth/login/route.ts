@@ -32,7 +32,6 @@ export async function POST(request: Request) {
     const jwtSecret = process.env.JWT_SECRET
 
     if (!supabaseUrl || !anonKey || !serviceKey || !jwtSecret) {
-      console.error('[LOGIN] Missing env vars')
       return NextResponse.json(
         { success: false, error: 'Server configuration error' },
         { status: 500 }
@@ -47,14 +46,11 @@ export async function POST(request: Request) {
     })
 
     if (authError || !authData.user) {
-      console.log('[LOGIN] Auth failed:', authError?.message)
       return NextResponse.json(
         { success: false, error: 'Invalid email or password' },
         { status: 401 }
       )
     }
-
-    console.log('[LOGIN] Auth successful for:', email)
 
     // Query usuarios table with service role
     const supabaseAdmin = createClient(supabaseUrl, serviceKey)
@@ -64,21 +60,10 @@ export async function POST(request: Request) {
       .eq('email', email)
       .single()
 
-    console.log('RAW usuario data:', JSON.stringify(usuarios))
-    console.log('RAW error:', JSON.stringify(dbError))
-
-    console.log('=== DEBUG ROL ===')
-    console.log('Email buscado:', email)
-    console.log('Usuario data:', JSON.stringify(usuarios))
-    console.log('Usuario error:', JSON.stringify(dbError))
-    console.log('Rol encontrado:', usuarios?.rol)
-
     let usuario: Usuario | null = null
     if (!dbError && usuarios) {
       usuario = usuarios
-      console.log('[LOGIN] Found usuario in DB:', { email: usuario.email, rol: usuario.rol })
     } else {
-      console.log('[LOGIN] Usuario not in DB, using auth email')
       usuario = {
         id: authData.user.id,
         email,
@@ -89,16 +74,12 @@ export async function POST(request: Request) {
     const rol = usuario?.rol || 'admin'
     const clienteId = usuario?.cliente_id || null
 
-    console.log('Rol final asignado:', rol)
-    console.log('================')
-    console.log('[LOGIN] Final role:', rol)
-
     // Create JWT
     const secret = new TextEncoder().encode(jwtSecret)
     const token = await new SignJWT({
       sub: authData.user.id,
       email,
-      rol,
+      role: rol,
       cliente_id: clienteId,
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -120,12 +101,11 @@ export async function POST(request: Request) {
       user: {
         id: authData.user.id,
         email,
-        rol,
+        rol: rol,
         cliente_id: clienteId,
       },
     })
-  } catch (error) {
-    console.error('[LOGIN] Error:', error)
+  } catch {
     return NextResponse.json(
       { success: false, error: 'Server error' },
       { status: 500 }
