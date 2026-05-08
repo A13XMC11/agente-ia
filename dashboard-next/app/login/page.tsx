@@ -7,6 +7,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 
+interface LoginResponse {
+  success: boolean
+  user?: {
+    id: string
+    email: string
+    rol: string
+    cliente_id?: string | null
+  }
+  error?: string
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -20,57 +31,34 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      console.log('[LOGIN PAGE] Submitting login for:', email)
-
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       })
 
-      console.log('[LOGIN PAGE] Response status:', response.status)
-      const data = await response.json()
-      console.log('[LOGIN PAGE] Response data:', {
-        success: data.success,
-        hasUser: !!data.user,
-        userRole: data.user?.role,
-        error: data.error,
-      })
+      const data: LoginResponse = await response.json()
 
-      if (!data.success) {
-        console.error('[LOGIN PAGE] Login failed:', data.error)
+      if (!data.success || !data.user) {
         setError(data.error || 'Login failed')
         return
       }
 
-      console.log('[LOGIN PAGE] Login successful, user role:', data.user?.role)
-      console.log('[LOGIN PAGE] Redirecting...')
+      const rol = data.user.rol
 
-      // Redirect based on user role
-      let redirectPath = '/admin'
-      if (data.user?.role === 'super_admin') {
-        redirectPath = '/admin'
-      } else if (data.user?.role === 'admin') {
-        redirectPath = '/cliente'
-      } else if (data.user?.role === 'operador') {
-        redirectPath = '/cliente'
-      } else {
-        // Default to /admin if role is undefined or unknown
-        redirectPath = '/admin'
+      // Redirect based on role
+      let path = '/admin'
+      if (rol === 'super_admin') {
+        path = '/admin'
+      } else if (rol === 'admin') {
+        path = '/cliente'
+      } else if (rol === 'operador') {
+        path = '/cliente'
       }
 
-      console.log('[LOGIN PAGE] Redirecting to:', redirectPath)
-      router.push(redirectPath)
-      router.refresh()
+      router.push(path)
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred'
-      console.error('[LOGIN PAGE] Unexpected error:', errorMessage)
-      setError(errorMessage)
+      setError(err instanceof Error ? err.message : 'Error')
     } finally {
       setIsLoading(false)
     }
@@ -117,21 +105,9 @@ export default function LoginPage() {
               />
             </div>
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading}
-            >
+            <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? 'Ingresando...' : 'Ingresar'}
             </Button>
-
-            <p className="text-center text-sm text-text-secondary">
-              Para una demostración, usa:
-              <br />
-              Email: demo@example.com
-              <br />
-              Contraseña: password123
-            </p>
           </form>
         </CardContent>
       </Card>
