@@ -1,114 +1,101 @@
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { SignJWT } from 'jose'
 import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
-
-interface LoginRequest {
-  email: string
-  password: string
-}
-
-interface Usuario {
-  id: string
-  email: string
-  rol: string
-  cliente_id?: string | null
-}
 
 export async function POST(request: Request) {
-  try {
-    const { email, password }: LoginRequest = await request.json()
+  console.log('=== LOGIN START ===')
 
-    if (!email || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Email and password are required' },
-        { status: 400 }
-      )
-    }
+  try {
+    const body = await request.json()
+    console.log('Body recibido:', body.email)
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const jwtSecret = process.env.JWT_SECRET
 
-    if (!supabaseUrl || !anonKey || !serviceKey || !jwtSecret) {
-      return NextResponse.json(
-        { success: false, error: 'Server configuration error' },
-        { status: 500 }
-      )
-    }
-
-    // Authenticate with Supabase Auth
-    const supabase = createClient(supabaseUrl, anonKey)
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    console.log('ENV check:', {
+      hasUrl: !!supabaseUrl,
+      hasAnon: !!supabaseAnonKey,
+      hasService: !!supabaseServiceKey,
+      hasJwt: !!jwtSecret
     })
 
-    if (authError || !authData.user) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
-        { status: 401 }
-      )
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey || !jwtSecret) {
+      console.error('MISSING ENV VARS')
+      return NextResponse.json({ success: false, error: 'Missing configuration' }, { status: 500 })
     }
 
-    // Query usuarios table with service role
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey)
-    const { data: usuarios, error: dbError } = await supabaseAdmin
+    // Auth con Supabase
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: body.email,
+      password: body.password
+    })
+
+    console.log('Auth result:', {
+      success: !authError,
+      userId: authData?.user?.id,
+      error: authError?.message
+    })
+
+    if (authError || !authData?.user) {
+      return NextResponse.json({ success: false, error: 'Credenciales incorrectas' }, { status: 401 })
+    }
+
+    // Leer rol de tabla usuarios
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+    const { data: usuario, error: userError } = await supabaseAdmin
       .from('usuarios')
-      .select('id, email, rol, cliente_id')
-      .eq('email', email)
+      .select('rol, cliente_id')
+      .eq('email', body.email)
       .single()
 
-    let usuario: Usuario | null = null
-    if (!dbError && usuarios) {
-      usuario = usuarios
-    } else {
-      usuario = {
-        id: authData.user.id,
-        email,
-        rol: 'admin',
-      }
-    }
+    console.log('Usuario DB:', { usuario, error: userError?.message })
 
     const rol = usuario?.rol || 'admin'
     const clienteId = usuario?.cliente_id || null
 
-    // Create JWT
+    console.log('Rol final:', rol)
+
+    // Crear JWT
     const secret = new TextEncoder().encode(jwtSecret)
     const token = await new SignJWT({
       sub: authData.user.id,
-      email,
+      email: body.email,
       role: rol,
-      cliente_id: clienteId,
+      cliente_id: clienteId
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setExpirationTime('24h')
       .sign(secret)
 
-    // Set cookie
+    // Cookie
     const cookieStore = await cookies()
     cookieStore.set('auth-token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: false,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24,
-      path: '/',
+      path: '/'
     })
+
+    console.log('=== LOGIN SUCCESS ===', { rol })
 
     return NextResponse.json({
       success: true,
       user: {
         id: authData.user.id,
-        email,
-        rol: rol,
-        cliente_id: clienteId,
-      },
+        email: body.email,
+        role: rol,
+        cliente_id: clienteId
+      }
     })
-  } catch {
-    return NextResponse.json(
-      { success: false, error: 'Server error' },
-      { status: 500 }
-    )
+
+  } catch (error) {
+    console.error('=== LOGIN FATAL ERROR ===')
+    console.error(error)
+    return NextResponse.json({ success: false, error: 'Error interno' }, { status: 500 })
   }
 }
