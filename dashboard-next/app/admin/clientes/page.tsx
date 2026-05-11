@@ -127,12 +127,17 @@ export default function ClientesPage() {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Precio/Mes</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Estado</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Fecha</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredClientes.map((cliente) => (
-                    <tr key={cliente.id} className="border-b hover:bg-surface">
-                      <td className="py-3 px-4 text-text-primary font-medium">{cliente.nombre}</td>
+                    <tr key={cliente.id} className="border-b hover:bg-surface cursor-pointer">
+                      <td className="py-3 px-4 text-text-primary font-medium">
+                        <Link href={`/admin/clientes/${cliente.id}`}>
+                          {cliente.nombre}
+                        </Link>
+                      </td>
                       <td className="py-3 px-4 text-text-secondary">{cliente.email}</td>
                       <td className="py-3 px-4 text-text-secondary">{cliente.telefono || '-'}</td>
                       <td className="py-3 px-4 text-text-secondary">{cliente.plan}</td>
@@ -151,6 +156,11 @@ export default function ClientesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-text-secondary text-sm">{formatDate(cliente.created_at)}</td>
+                      <td className="py-3 px-4">
+                        <Link href={`/admin/clientes/${cliente.id}`}>
+                          <Button variant="outline" size="sm">Ver</Button>
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

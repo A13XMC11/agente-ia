@@ -185,15 +185,20 @@ export default function ClienteDetalle() {
           <h1 className="text-3xl font-bold text-text-primary">{cliente.nombre}</h1>
           <p className="text-text-secondary mt-2">{cliente.email}</p>
         </div>
-        <span className={`px-3 py-1 rounded-lg text-sm font-medium ${
-          cliente.estado === 'activo'
-            ? 'bg-success/10 text-success'
-            : cliente.estado === 'pausado'
-            ? 'bg-warning/10 text-warning'
-            : 'bg-error/10 text-error'
-        }`}>
-          {cliente.estado}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1 rounded-lg text-sm font-medium ${
+            cliente.estado === 'activo'
+              ? 'bg-success/10 text-success'
+              : cliente.estado === 'pausado'
+              ? 'bg-warning/10 text-warning'
+              : 'bg-error/10 text-error'
+          }`}>
+            {cliente.estado}
+          </span>
+          <a href={`/admin/clientes/${clienteId}/panel`}>
+            <Button>Ver Panel del Cliente</Button>
+          </a>
+        </div>
       </div>
 
       <Card>
