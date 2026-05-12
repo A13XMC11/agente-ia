@@ -14,10 +14,10 @@ async function verifyJWT(token: string) {
   }
 }
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow login and public routes
+  // Allow login and public routes without token verification
   if (pathname === '/login' || pathname === '/api/auth/login' || pathname.startsWith('/api/auth')) {
     return NextResponse.next()
   }
@@ -47,17 +47,21 @@ export async function proxy(request: NextRequest) {
   // Role-based access control
   const userRole = (user as any).role
 
-  // Admin routes
+  // Admin routes - only super_admin
   if (pathname.startsWith('/admin')) {
     if (userRole !== 'super_admin') {
       return NextResponse.redirect(new URL('/cliente', request.url))
     }
   }
 
-  // Cliente routes
+  // Cliente routes - only non-super_admin users (admin, operador, cliente)
   if (pathname.startsWith('/cliente')) {
     if (userRole === 'super_admin') {
       return NextResponse.redirect(new URL('/admin', request.url))
+    }
+    // Verify role is valid for cliente area
+    if (userRole !== 'admin' && userRole !== 'operador' && userRole !== 'cliente') {
+      return NextResponse.redirect(new URL('/login', request.url))
     }
   }
 

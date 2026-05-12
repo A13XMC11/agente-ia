@@ -12,11 +12,12 @@ interface LoginResponse {
   user?: {
     id: string
     email: string
-    rol: string
+    role: string
     cliente_id?: string | null
   }
   error?: string
 }
+
 
 export default function LoginPage() {
   const router = useRouter()
@@ -44,15 +45,17 @@ export default function LoginPage() {
         return
       }
 
-      const rol = data.user.rol
+      const role = data.user.role
 
       // Redirect based on role
-      let path = '/admin'
-      if (rol === 'super_admin') {
+      let path = '/cliente'
+      if (role === 'super_admin') {
         path = '/admin'
-      } else if (rol === 'admin') {
+      } else if (role === 'admin') {
         path = '/cliente'
-      } else if (rol === 'operador') {
+      } else if (role === 'operador') {
+        path = '/cliente'
+      } else if (role === 'cliente') {
         path = '/cliente'
       }
 

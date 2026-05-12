@@ -98,18 +98,24 @@ async function getTopLeads(clienteId: string): Promise<Lead[]> {
   return data || []
 }
 
-async function getProximasCitas(clienteId: string): Promise<Conversacion[]> {
+async function getProximasCitas(clienteId: string) {
   const today = new Date().toISOString().split('T')[0]
 
   const { data } = await supabase
     .from('citas')
-    .select('id, usuario_id:usuario(nombre), canal:null, ultimo_mensaje:descripcion, fecha_ultimo_mensaje:fecha')
+    .select('id, usuario_id, canal, descripcion, fecha')
     .eq('cliente_id', clienteId)
     .gte('fecha', today)
     .order('fecha', { ascending: true })
     .limit(5)
 
-  return data || []
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    usuario_id: item.usuario_id,
+    canal: item.canal || 'cita',
+    ultimo_mensaje: item.descripcion,
+    fecha_ultimo_mensaje: item.fecha
+  })) as Conversacion[]
 }
 
 export default async function ClienteDashboard() {

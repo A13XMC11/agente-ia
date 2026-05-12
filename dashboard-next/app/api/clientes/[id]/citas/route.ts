@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const session = await getServerSession()
     if (!session || session.role !== 'admin') {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
@@ -16,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     let query = supabase
       .from('citas')
-      .select('id, usuario_id, usuario_nombre:usuarios(nombre), fecha, hora, estado, created_at')
+      .select('id, usuario_id, fecha, hora, estado, created_at')
       .eq('cliente_id', clienteId)
 
     if (start) {
@@ -34,7 +34,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const formattedData = (data || []).map((cita: any) => ({
       id: cita.id,
       usuario_id: cita.usuario_id,
-      usuario_nombre: cita.usuario_nombre?.nombre || 'Usuario',
       fecha: cita.fecha,
       hora: cita.hora,
       estado: cita.estado,

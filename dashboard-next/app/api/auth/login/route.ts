@@ -4,26 +4,15 @@ import { SignJWT } from 'jose'
 import { cookies } from 'next/headers'
 
 export async function POST(request: Request) {
-  console.log('=== LOGIN START ===')
-
   try {
     const body = await request.json()
-    console.log('Body recibido:', body.email)
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const jwtSecret = process.env.JWT_SECRET
 
-    console.log('ENV check:', {
-      hasUrl: !!supabaseUrl,
-      hasAnon: !!supabaseAnonKey,
-      hasService: !!supabaseServiceKey,
-      hasJwt: !!jwtSecret
-    })
-
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey || !jwtSecret) {
-      console.error('MISSING ENV VARS')
       return NextResponse.json({ success: false, error: 'Missing configuration' }, { status: 500 })
     }
 
@@ -32,12 +21,6 @@ export async function POST(request: Request) {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: body.email,
       password: body.password
-    })
-
-    console.log('Auth result:', {
-      success: !authError,
-      userId: authData?.user?.id,
-      error: authError?.message
     })
 
     if (authError || !authData?.user) {
@@ -52,12 +35,8 @@ export async function POST(request: Request) {
       .eq('email', body.email)
       .single()
 
-    console.log('Usuario DB:', { usuario, error: userError?.message })
-
     const rol = usuario?.rol || 'admin'
     const clienteId = usuario?.cliente_id || null
-
-    console.log('Rol final:', rol)
 
     // Crear JWT
     const secret = new TextEncoder().encode(jwtSecret)
@@ -81,8 +60,6 @@ export async function POST(request: Request) {
       path: '/'
     })
 
-    console.log('=== LOGIN SUCCESS ===', { rol })
-
     return NextResponse.json({
       success: true,
       user: {
@@ -93,9 +70,7 @@ export async function POST(request: Request) {
       }
     })
 
-  } catch (error) {
-    console.error('=== LOGIN FATAL ERROR ===')
-    console.error(error)
+  } catch {
     return NextResponse.json({ success: false, error: 'Error interno' }, { status: 500 })
   }
 }

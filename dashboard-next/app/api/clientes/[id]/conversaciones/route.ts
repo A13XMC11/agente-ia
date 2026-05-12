@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const session = await getServerSession()
     if (!session || session.role !== 'admin') {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
@@ -13,7 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const { data, error } = await supabase
       .from('conversaciones')
-      .select('id, usuario_id, usuario_nombre:usuarios(nombre), canal, ultimo_mensaje, created_at, updated_at')
+      .select('id, usuario_id, canal, ultimo_mensaje, created_at, updated_at')
       .eq('cliente_id', clienteId)
       .order('updated_at', { ascending: false })
 
@@ -22,7 +22,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const formattedData = (data || []).map((conv: any) => ({
       id: conv.id,
       usuario_id: conv.usuario_id,
-      usuario_nombre: conv.usuario_nombre?.nombre || 'Usuario',
       canal: conv.canal,
       ultimo_mensaje: conv.ultimo_mensaje,
       created_at: conv.created_at,

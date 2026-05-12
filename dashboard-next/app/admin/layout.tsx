@@ -9,6 +9,11 @@ export default async function AdminLayout({
 }) {
   const user = await requireRole('super_admin')
 
+  // Ensure super_admin role is enforced
+  if (user.role !== 'super_admin') {
+    throw new Error('Unauthorized: only super_admin can access this page')
+  }
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar role="super_admin" />

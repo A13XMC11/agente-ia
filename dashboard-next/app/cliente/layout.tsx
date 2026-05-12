@@ -1,13 +1,24 @@
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
-import { requireRole } from '@/lib/server-auth'
+import { requireAuth } from '@/lib/server-auth'
+import { redirect } from 'next/navigation'
 
 export default async function ClienteLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const user = await requireRole('admin')
+  const user = await requireAuth()
+
+  // Only super_admin should access /admin, not /cliente
+  if (user.role === 'super_admin') {
+    redirect('/admin')
+  }
+
+  // Both admin, operador, and cliente can access /cliente
+  if (user.role !== 'admin' && user.role !== 'operador' && user.role !== 'cliente') {
+    redirect('/login')
+  }
 
   return (
     <div className="flex h-screen bg-background">

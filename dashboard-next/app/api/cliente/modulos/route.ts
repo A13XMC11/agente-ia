@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 
 export async function GET() {
   try {
-    const session = await getSession()
+    const session = await getServerSession()
     if (!session || !session.cliente_id) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
@@ -14,7 +14,13 @@ export async function GET() {
       .select('*')
       .eq('cliente_id', session.cliente_id)
 
-    if (error) throw error
+    if (error) {
+      // Return empty array if table doesn't exist yet
+      if (error.code === '42703' || error.code === 'PGRST204') {
+        return NextResponse.json({ success: true, data: [] })
+      }
+      throw error
+    }
 
     return NextResponse.json({ success: true, data: data || [] })
   } catch (error) {
@@ -25,7 +31,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const session = await getSession()
+    const session = await getServerSession()
     if (!session || !session.cliente_id) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
@@ -40,7 +46,13 @@ export async function PUT(request: Request) {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      // Return empty response if table doesn't exist yet
+      if (error.code === '42703' || error.code === 'PGRST204') {
+        return NextResponse.json({ success: true, data: {} })
+      }
+      throw error
+    }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

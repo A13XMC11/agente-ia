@@ -6,17 +6,19 @@ import { useState } from 'react'
 interface SwitchProps {
   checked?: boolean
   onChange?: (checked: boolean) => void
+  onCheckedChange?: (checked: boolean) => void
   disabled?: boolean
   className?: string
 }
 
-export const Switch = ({ checked = false, onChange, disabled = false, className }: SwitchProps) => {
+export const Switch = ({ checked = false, onChange, onCheckedChange, disabled = false, className }: SwitchProps) => {
   const [isChecked, setIsChecked] = useState(checked)
 
   const handleChange = () => {
     if (!disabled) {
       const newValue = !isChecked
       setIsChecked(newValue)
+      onCheckedChange?.(newValue)
       onChange?.(newValue)
     }
   }
