@@ -373,14 +373,13 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
             # 5. Determine outcome based on validations
             if fraud_score >= self.fraud_threshold:
                 outcome = "invalid"
-            elif not amount_matches and monto_esperado:
-                outcome = "doubtful"
             else:
                 outcome = "valid"
 
             # 6. Save to pagos table with correct column names
             pago_id = str(uuid4())
-            estado = "verificado" if outcome == "valid" else "pendiente" if outcome == "doubtful" else "rechazado"
+            # ALL valid comprobantes require owner approval before confirming to user
+            estado = "pendiente" if outcome == "valid" else "rechazado"
 
             pago_record = {
                 "id": pago_id,
@@ -397,20 +396,9 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            if outcome != "invalid":
-                self.supabase.table("pagos").insert(pago_record).execute()
-
-            # 7. If valid: save to comprobantes_procesados and clear Redis
+            # 7. Only save valid comprobantes (pending owner approval)
             if outcome == "valid":
-                self.supabase.table("comprobantes_procesados").insert({
-                    "numero_transaccion": numero_transaccion,
-                    "cliente_id": client_id,
-                    "monto": monto_recibido,
-                    "fecha_procesado": datetime.utcnow().isoformat(),
-                }).execute()
-
-                if self.redis:
-                    await self.redis.delete(f"cobros:pending:{client_id}:{sender_id}")
+                self.supabase.table("pagos").insert(pago_record).execute()
 
             # 8. Notify owner
             await self._notify_owner(
@@ -441,15 +429,18 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
         """
         Send owner notification via WhatsApp with approval instructions.
 
+        Only notifies for valid comprobantes (requires approval before confirming to user).
+        Invalid/duplicate payments are rejected without notifying owner.
+
         Args:
             client_id: Client ID
             phone_number_id: WhatsApp phone number ID
             pago_id: Payment ID
-            outcome: valid | doubtful | invalid
+            outcome: valid | invalid
             monto: Payment amount
             sender_id: Customer sender ID
         """
-        if not self.whatsapp:
+        if not self.whatsapp or outcome != "valid":
             return
 
         try:
@@ -468,26 +459,15 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
             if not owner_phone:
                 return
 
-            if outcome == "valid":
-                msg = (
-                    f"✅ *Pago VERIFICADO automáticamente*\n\n"
-                    f"Monto: ${monto:.2f}\n"
-                    f"De: {sender_id}\n"
-                    f"ID: {pago_id}"
-                )
-            elif outcome == "doubtful":
-                msg = (
-                    f"⚠️ *Pago PENDIENTE de revisión*\n\n"
-                    f"Monto recibido: ${monto:.2f}\n"
-                    f"De: {sender_id}\n"
-                    f"ID: {pago_id}\n\n"
-                    f"El monto no coincide exactamente. Revisa el comprobante.\n\n"
-                    f"Responde:\n"
-                    f"*aprobar {pago_id}* — Aceptar el pago\n"
-                    f"*rechazar {pago_id}* — Rechazar el pago"
-                )
-            else:
-                return  # No notification for invalid payments
+            msg = (
+                f"📋 *Nuevo comprobante para revisar*\n\n"
+                f"Monto: ${monto:.2f}\n"
+                f"De: {sender_id}\n"
+                f"ID: {pago_id}\n\n"
+                f"Responde:\n"
+                f"*aprobar {pago_id}* — Confirmar el pago\n"
+                f"*rechazar {pago_id}* — Rechazar el pago"
+            )
 
             # Send via WhatsApp handler
             await self.whatsapp.send_message(
@@ -554,14 +534,17 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
 
             pago = resp.data[0]
 
-            # If approved: save to comprobantes_procesados
+            # If approved: save to comprobantes_procesados for deduplication
             if nuevo_estado == "verificado" and pago.get("numero_transaccion"):
-                self.supabase.table("comprobantes_procesados").insert({
-                    "numero_transaccion": pago["numero_transaccion"],
-                    "cliente_id": client_id,
-                    "monto": pago["monto"],
-                    "fecha_procesado": datetime.utcnow().isoformat(),
-                }).execute()
+                try:
+                    self.supabase.table("comprobantes_procesados").insert({
+                        "numero_transaccion": pago["numero_transaccion"],
+                        "cliente_id": client_id,
+                        "monto": pago["monto"],
+                        "fecha_procesado": datetime.utcnow().isoformat(),
+                    }).execute()
+                except Exception as e:
+                    logger.warning(f"Could not save comprobante to dedup table: {e}")
 
             # Notify customer
             if self.whatsapp and pago.get("conversacion_id"):
@@ -576,13 +559,17 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                     if conv.data:
                         customer_phone = conv.data.get("sender_id")
                         if customer_phone:
-                            user_msg = (
-                                f"✅ *¡Pago aprobado!*\n\n"
-                                f"Tu pago de ${pago['monto']:.2f} ha sido confirmado. ¡Gracias!"
-                                if nuevo_estado == "verificado"
-                                else f"❌ *Pago rechazado*\n\n"
-                                f"Contacta al negocio para más detalles sobre tu pago."
-                            )
+                            if nuevo_estado == "verificado":
+                                user_msg = (
+                                    f"✅ *¡Pago confirmado!*\n\n"
+                                    f"Tu pago de ${pago['monto']:.2f} ha sido confirmado. ¡Gracias! 🎉"
+                                )
+                            else:
+                                user_msg = (
+                                    f"❌ *Pago rechazado*\n\n"
+                                    f"No pudimos verificar tu pago. Por favor intenta de nuevo o "
+                                    f"contacta directamente al negocio."
+                                )
                             await self.whatsapp.send_message(
                                 phone_number_id=phone_number_id,
                                 recipient_phone=customer_phone,
@@ -601,10 +588,9 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
     def _user_message_for_outcome(self, outcome: str) -> str:
         """Return user-friendly message based on payment outcome."""
         messages = {
-            "valid": "✅ *¡Pago confirmado!* Tu transferencia ha sido validada. Gracias.",
-            "doubtful": (
-                "⏳ *Estamos verificando tu pago.* El monto parece no coincidir exactamente. "
-                "El negocio lo revisará en breve y te confirmamos."
+            "valid": (
+                "⏳ *Recibimos tu comprobante, estamos verificando el pago.* "
+                "Te confirmamos en breve 🙏"
             ),
             "invalid": "❌ *No pudimos validar tu comprobante.* Por favor intenta de nuevo o contacta al negocio.",
             "duplicate": "⚠️ *Este comprobante ya fue procesado.* Si tienes dudas, contacta al negocio.",
