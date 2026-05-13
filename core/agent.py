@@ -667,6 +667,22 @@ class AgentEngine:
                 except Exception as e:
                     logger.warning(f"Error triggering alert detection: {e}")
 
+            # Trigger automatic lead scoring in background (non-blocking)
+            if self.calificacion and self.active_modules.get("calificacion"):
+                try:
+                    asyncio.create_task(
+                        self.calificacion.calcular_score_automatico(
+                            client_id=cliente_id,
+                            usuario_id=sender_id,
+                            current_message=user_message,
+                            prior_messages=memory_context or [],
+                            current_ts=datetime.utcnow(),
+                            conversation_id=self._current_conversation_id,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error triggering auto lead scoring: {e}")
+
             return response_dict
 
         except Exception as e:

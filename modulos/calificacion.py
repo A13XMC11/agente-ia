@@ -2,10 +2,15 @@
 Lead qualification module: automatic lead scoring and categorization.
 
 Handles lead profiling, score calculation, and state transitions
-based on interaction patterns and behavior.
+based on interaction patterns and behavior. Includes signal-based
+automatic scoring engine (0-10 scale with 5 states: CURIOSO, PROSPECTO,
+INTERESADO, CALIENTE, URGENTE).
 """
 
 import logging
+import re
+import unicodedata
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from uuid import uuid4
@@ -13,6 +18,308 @@ from uuid import uuid4
 import os
 
 logger = logging.getLogger(__name__)
+
+# Scoring signals (immutable keyword tuples with point values)
+URGENCY_KEYWORDS = (
+    "urgente",
+    "ya",
+    "hoy",
+    "esta semana",
+    "lo necesito pronto",
+    "inmediatamente",
+)
+BUDGET_KEYWORDS = (
+    "cuanto cuesta",
+    "precio",
+    "presupuesto",
+    "puedo pagar",
+    "tengo presupuesto",
+    "costo",
+)
+DECISION_POWER_KEYWORDS = (
+    "yo decido",
+    "soy dueño",
+    "soy gerente",
+    "mi empresa",
+    "nosotros necesitamos",
+    "soy el responsable",
+)
+DEMO_KEYWORDS = ("demo", "demostracion", "cita", "reunion", "quiero ver", "mostrarme")
+CURIOSITY_KEYWORDS = (
+    "solo preguntando",
+    "solo viendo",
+    "por curiosidad",
+    "no tengo presupuesto",
+)
+
+
+@dataclass(frozen=True)
+class ScoreSignal:
+    """Immutable representation of a detected scoring signal."""
+
+    name: str
+    delta: int
+    matched_keywords: tuple[str, ...]
+    excerpt: str
+
+
+@dataclass(frozen=True)
+class ScoringResult:
+    """Immutable result of message scoring."""
+
+    score: int
+    state: str
+    signals: tuple[ScoreSignal, ...]
+    breakdown: dict[str, int]
+
+
+class LeadScoringEngine:
+    """Pure, deterministic signal-based lead scoring engine."""
+
+    def __init__(
+        self,
+        quick_response_threshold_sec: int = 120,
+        min_question_count: int = 2,
+    ):
+        self.quick_response_threshold = quick_response_threshold_sec
+        self.min_question_count = min_question_count
+
+    @staticmethod
+    def _normalize(text: str) -> str:
+        """Normalize text: lowercase + strip accents (NFKD)."""
+        if not text:
+            return ""
+        nfkd = unicodedata.normalize("NFKD", text.lower())
+        return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+    @staticmethod
+    def _match_keywords(normalized: str, keywords: tuple[str, ...]) -> tuple[str, ...]:
+        """Match whole-word keywords (case-insensitive, accent-insensitive)."""
+        matched = []
+        for keyword in keywords:
+            pattern = r"\b" + re.escape(keyword) + r"\b"
+            if re.search(pattern, normalized):
+                matched.append(keyword)
+        return tuple(matched)
+
+    @staticmethod
+    def _count_questions(text: str) -> int:
+        """Count interrogative sentences: '?' + interrogative word starts."""
+        if not text:
+            return 0
+        count = text.count("?")
+        interrogatives = (
+            "que",
+            "como",
+            "cuanto",
+            "cuando",
+            "donde",
+            "por que",
+            "cual",
+            "cuale",
+        )
+        normalized = LeadScoringEngine._normalize(text)
+        for interrog in interrogatives:
+            pattern = r"(?:^|\b)" + re.escape(interrog) + r"\b"
+            count += len(re.findall(pattern, normalized))
+        return count
+
+    @staticmethod
+    def _is_quick_response(
+        prior_messages: tuple[dict, ...], current_ts: datetime
+    ) -> bool:
+        """Check if response time < threshold (last prior message to current)."""
+        if not prior_messages:
+            return False
+        last_prior = prior_messages[-1]
+        prior_ts_str = last_prior.get("timestamp")
+        if not prior_ts_str:
+            return False
+        try:
+            prior_ts = (
+                datetime.fromisoformat(prior_ts_str)
+                if isinstance(prior_ts_str, str)
+                else prior_ts_str
+            )
+            delta_sec = (current_ts - prior_ts).total_seconds()
+            return 0 < delta_sec < 120
+        except (ValueError, TypeError):
+            return False
+
+    @staticmethod
+    def _is_short_repeated(current_text: str, prior_messages: tuple[dict, ...]) -> bool:
+        """Check if current message is short (<3 words) and matches a prior one."""
+        if not current_text or len(current_text.split()) >= 3:
+            return False
+        normalized_current = LeadScoringEngine._normalize(current_text)
+        for prior in prior_messages:
+            prior_text = prior.get("content", "")
+            normalized_prior = LeadScoringEngine._normalize(prior_text)
+            if normalized_prior and normalized_current == normalized_prior:
+                return True
+        return False
+
+    def score_message(
+        self,
+        current_message: str,
+        prior_messages: tuple[dict, ...] = (),
+        current_ts: Optional[datetime] = None,
+    ) -> ScoringResult:
+        """
+        Score a message based on signal detection.
+
+        Args:
+            current_message: The user message to score
+            prior_messages: List of prior messages (with 'content' and 'timestamp' keys)
+            current_ts: Current timestamp (defaults to now)
+
+        Returns:
+            ScoringResult with score (0-10), state, signals, and breakdown
+        """
+        if current_ts is None:
+            current_ts = datetime.utcnow()
+
+        normalized = self._normalize(current_message)
+        signals = []
+        breakdown = {}
+        raw_score = 0
+
+        # +3 points: Urgency
+        if self._match_keywords(normalized, URGENCY_KEYWORDS):
+            matched = self._match_keywords(normalized, URGENCY_KEYWORDS)
+            signals.append(
+                ScoreSignal(
+                    name="urgency",
+                    delta=3,
+                    matched_keywords=matched,
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["urgency"] = 3
+            raw_score += 3
+
+        # +3 points: Budget mention
+        if self._match_keywords(normalized, BUDGET_KEYWORDS):
+            matched = self._match_keywords(normalized, BUDGET_KEYWORDS)
+            signals.append(
+                ScoreSignal(
+                    name="budget",
+                    delta=3,
+                    matched_keywords=matched,
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["budget"] = 3
+            raw_score += 3
+
+        # +3 points: Decision power
+        if self._match_keywords(normalized, DECISION_POWER_KEYWORDS):
+            matched = self._match_keywords(normalized, DECISION_POWER_KEYWORDS)
+            signals.append(
+                ScoreSignal(
+                    name="decision_power",
+                    delta=3,
+                    matched_keywords=matched,
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["decision_power"] = 3
+            raw_score += 3
+
+        # +2 points: Specific questions (>= min_question_count)
+        question_count = self._count_questions(current_message)
+        if question_count >= self.min_question_count:
+            signals.append(
+                ScoreSignal(
+                    name="specific_questions",
+                    delta=2,
+                    matched_keywords=(f"{question_count}_questions",),
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["specific_questions"] = 2
+            raw_score += 2
+
+        # +2 points: Demo/meeting request
+        if self._match_keywords(normalized, DEMO_KEYWORDS):
+            matched = self._match_keywords(normalized, DEMO_KEYWORDS)
+            signals.append(
+                ScoreSignal(
+                    name="demo_request",
+                    delta=2,
+                    matched_keywords=matched,
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["demo_request"] = 2
+            raw_score += 2
+
+        # +2 points: Quick response (<2 min)
+        if self._is_quick_response(prior_messages, current_ts):
+            signals.append(
+                ScoreSignal(
+                    name="quick_response",
+                    delta=2,
+                    matched_keywords=("response_time_< 2min",),
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["quick_response"] = 2
+            raw_score += 2
+
+        # -2 points: Only curiosity
+        if self._match_keywords(normalized, CURIOSITY_KEYWORDS):
+            matched = self._match_keywords(normalized, CURIOSITY_KEYWORDS)
+            signals.append(
+                ScoreSignal(
+                    name="curiosity_only",
+                    delta=-2,
+                    matched_keywords=matched,
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["curiosity_only"] = -2
+            raw_score -= 2
+
+        # -1 point: Very short repeated messages
+        if self._is_short_repeated(current_message, prior_messages):
+            signals.append(
+                ScoreSignal(
+                    name="short_repeated",
+                    delta=-1,
+                    matched_keywords=("repeated_short_message",),
+                    excerpt=current_message[:200],
+                )
+            )
+            breakdown["short_repeated"] = -1
+            raw_score -= 1
+
+        # Clamp score to [0, 10]
+        final_score = max(0, min(10, raw_score))
+
+        # Map score to state
+        state = self._state_for_score(final_score)
+
+        return ScoringResult(
+            score=final_score,
+            state=state,
+            signals=tuple(signals),
+            breakdown=breakdown,
+        )
+
+    @staticmethod
+    def _state_for_score(score: int) -> str:
+        """Map score (0-10) to lead state."""
+        if score >= 9:
+            return "urgente"
+        elif score >= 7:
+            return "caliente"
+        elif score >= 5:
+            return "interesado"
+        elif score >= 3:
+            return "prospecto"
+        else:
+            return "curioso"
 
 
 class CalificacionModule:
@@ -34,6 +341,7 @@ class CalificacionModule:
         self.notification_enabled = (
             os.environ.get("LEAD_SCORE_NOTIFICATION_ENABLED", "true").lower() == "true"
         )
+        self.scoring_engine = LeadScoringEngine()
 
     async def guardar_lead(
         self,
@@ -468,3 +776,160 @@ class CalificacionModule:
         except Exception as e:
             logger.error(f"Error fetching pipeline summary: {e}")
             return {}
+
+    async def calcular_score_automatico(
+        self,
+        client_id: str,
+        usuario_id: str,
+        current_message: str,
+        prior_messages: list[dict[str, Any]] | None = None,
+        current_ts: datetime | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Automatically score a lead based on signal detection.
+
+        Runs the scoring engine on the current message, updates the lead score
+        if it improves, and persists a history row for auditability.
+
+        Args:
+            client_id: Client ID
+            usuario_id: User ID (lead identifier)
+            current_message: Current user message to analyze
+            prior_messages: List of prior messages with 'content' and 'timestamp' keys
+            current_ts: Current timestamp (defaults to now)
+            conversation_id: Conversation ID for linking
+
+        Returns:
+            {success: bool, new_score: float, new_state: str, signals: list[dict], delta: float}
+            or {error: str} on failure (never raises)
+        """
+        try:
+            if current_ts is None:
+                current_ts = datetime.utcnow()
+
+            # Convert prior_messages to tuple for engine
+            prior_tuple = tuple(prior_messages or [])
+
+            # Run deterministic scoring engine
+            result = self.scoring_engine.score_message(
+                current_message=current_message,
+                prior_messages=prior_tuple,
+                current_ts=current_ts,
+            )
+
+            # Fetch existing lead
+            try:
+                lead_response = (
+                    self.supabase.table("leads")
+                    .select("*")
+                    .eq("cliente_id", client_id)
+                    .eq("user_id", usuario_id)
+                    .single()
+                    .execute()
+                )
+                lead = lead_response.data
+            except Exception:
+                # Lead doesn't exist yet — create it with a zero score
+                lead = {
+                    "id": str(uuid4()),
+                    "cliente_id": client_id,
+                    "user_id": usuario_id,
+                    "score": 0,
+                    "state": "curioso",
+                    "interaction_count": 0,
+                }
+
+            # Blended score: keep lead hot once it reaches hot threshold
+            old_score = lead.get("score", 0)
+            new_score = max(old_score, result.score)
+            delta = new_score - old_score
+            new_state = LeadScoringEngine._state_for_score(new_score)
+            old_state = lead.get("state", "curioso")
+
+            # Build history row
+            history_row = {
+                "id": str(uuid4()),
+                "cliente_id": client_id,
+                "lead_id": lead.get("id"),
+                "user_id": usuario_id,
+                "score_before": old_score,
+                "score_after": new_score,
+                "delta": delta,
+                "signal_type": ",".join(sig.name for sig in result.signals)
+                if result.signals
+                else "no_signal",
+                "signal_keywords": [
+                    kw for sig in result.signals for kw in sig.matched_keywords
+                ],
+                "message_excerpt": current_message[:500],
+                "created_at": current_ts.isoformat(),
+            }
+
+            # Insert history (always, for audit trail)
+            self.supabase.table("lead_score_history").insert(history_row).execute()
+
+            # Update lead score only if it changed
+            if delta > 0:
+                update_data = {
+                    "score": new_score,
+                    "state": new_state,
+                    "score_reason": f"Signal: {history_row['signal_type']}",
+                    "score_updated_at": current_ts.isoformat(),
+                    "interaction_count": lead.get("interaction_count", 0) + 1,
+                    "last_interaction": current_ts.isoformat(),
+                }
+
+                if not lead.get("id"):
+                    # Create lead if it doesn't exist
+                    lead["id"] = str(uuid4())
+                    new_lead = {
+                        "id": lead["id"],
+                        "cliente_id": client_id,
+                        "user_id": usuario_id,
+                        "name": "",
+                        "phone": "",
+                        **update_data,
+                        "created_at": current_ts.isoformat(),
+                    }
+                    self.supabase.table("leads").insert(new_lead).execute()
+                else:
+                    # Update existing lead
+                    self.supabase.table("leads").update(update_data).eq(
+                        "id", lead["id"]
+                    ).execute()
+
+                # Trigger hot lead notification if state changed to caliente
+                if new_state == "caliente" and old_state != "caliente":
+                    await self._send_hot_lead_notification(
+                        client_id, lead, new_score
+                    )
+
+                logger.info(
+                    f"Lead score updated: {usuario_id} -> {new_score} ({new_state})",
+                    extra={"client_id": client_id},
+                )
+
+            result_dict = {
+                "success": True,
+                "new_score": new_score,
+                "new_state": new_state,
+                "old_score": old_score,
+                "old_state": old_state,
+                "delta": delta,
+                "signals": [
+                    {
+                        "name": sig.name,
+                        "delta": sig.delta,
+                        "keywords": list(sig.matched_keywords),
+                    }
+                    for sig in result.signals
+                ],
+                "breakdown": result.breakdown,
+            }
+
+            return result_dict
+
+        except Exception as e:
+            logger.error(f"Error in calcular_score_automatico: {e}")
+            return {"error": str(e)}
