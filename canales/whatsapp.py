@@ -633,18 +633,18 @@ class WhatsAppHandler:
             phone: Phone number to check
 
         Returns:
-            True if phone matches owner's telefono_propietario
+            True if phone matches owner's whatsapp_dueño
         """
         try:
             resp = (
                 self.supabase.table("clientes")
-                .select("telefono_propietario")
+                .select("whatsapp_dueño")
                 .eq("id", client_id)
                 .single()
                 .execute()
             )
             if resp.data:
-                return resp.data.get("telefono_propietario") == phone
+                return resp.data.get("whatsapp_dueño") == phone
         except Exception as e:
             logger.error(f"Error checking owner: {e}")
         return False

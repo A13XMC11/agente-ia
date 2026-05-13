@@ -447,7 +447,7 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
             # Get owner phone from clientes table
             resp = (
                 self.supabase.table("clientes")
-                .select("telefono_propietario, nombre_negocio")
+                .select("whatsapp_dueño, nombre_negocio")
                 .eq("id", client_id)
                 .single()
                 .execute()
@@ -455,7 +455,7 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
             if not resp.data:
                 return
 
-            owner_phone = resp.data.get("telefono_propietario")
+            owner_phone = resp.data.get("whatsapp_dueño")
             if not owner_phone:
                 return
 

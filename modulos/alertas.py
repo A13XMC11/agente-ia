@@ -505,12 +505,12 @@ Recuerda confirmar asistencia.
         """
         try:
             response = self.supabase.table("clientes").select(
-                "telefono_propietario, telefono"
+                "whatsapp_dueño, telefono"
             ).eq("id", client_id).single().execute()
 
             if response.data:
-                # Try telefono_propietario first, then fallback to telefono
-                return response.data.get("telefono_propietario") or response.data.get("telefono")
+                # Try whatsapp_dueño first, then fallback to telefono
+                return response.data.get("whatsapp_dueño") or response.data.get("telefono")
 
             logger.warning(f"Owner phone not found for client {client_id}")
             return None
