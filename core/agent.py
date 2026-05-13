@@ -79,6 +79,13 @@ class AgentEngine:
             "- NUNCA uses IDs inventados o la cadena literal 'cita_id'.\n"
             "- El usuario solo puede modificar citas en estado 'confirmada'."
         )
+        _AUDIO_RULE = (
+            "\n\nREGLA DE AUDIOS:\n"
+            "- Los mensajes de audio ya vienen transcritos a texto automáticamente\n"
+            "- Nunca digas que no puedes procesar audios o que no entiendes archivos de audio\n"
+            "- Simplemente responde al contenido del mensaje transcrito como si fuera texto normal\n"
+            "- El usuario envió voz; tú recibiste texto — responde naturalmente"
+        )
         _COBROS_RULE = (
             "\n\n🚨 REGLA CRÍTICA DE COBROS (MÁXIMA PRIORIDAD):\n"
             "INSTRUCCIÓN OBLIGATORIA: Si el usuario menciona CUALQUIERA de estos términos:\n"
@@ -102,7 +109,7 @@ class AgentEngine:
             "\n"
             "Si el usuario envía una imagen (comprobante), luego invoca 'registrar_pago'."
         )
-        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _COBROS_RULE
+        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _COBROS_RULE
 
         if not client_config.get("system_prompt"):
             logger.warning(
@@ -546,12 +553,17 @@ class AgentEngine:
 
         # Add current message with media hint for LLM
         content = user_message or ""
+
+        # For images: add hint about payment verification
         if media_url and media_type == "image":
             if not content:
                 content = "(El usuario envió una imagen)"
             content += f"\n[Imagen adjunta — si el usuario solicitó transferencia bancaria, puede ser un comprobante de pago]"
-        elif media_url:
+        # For transcribed audio: the text IS the transcription, don't add attachment markers
+        # For other media: document, video, etc. — note the attachment but keep the text as-is
+        elif media_url and media_type != "audio":
             content += f"\n[Attachment: {media_type}]"
+        # For audio: never add markers; the transcribed text is the full message
 
         messages.append({"role": "user", "content": content})
 
