@@ -77,14 +77,14 @@ class AlertasModule:
         try:
             # Get access token from canales_config
             config_response = self.supabase.table("canales_config").select(
-                "access_token"
+                "token"
             ).eq("cliente_id", client_id).eq("canal", "whatsapp").single().execute()
 
             if not config_response.data:
                 logger.warning(f"No WhatsApp config found for client {client_id}")
                 return {"success": False, "error": "WhatsApp config not found"}
 
-            access_token = config_response.data.get("access_token")
+            access_token = config_response.data.get("token")
             if not access_token:
                 logger.warning(f"No access token for client {client_id}")
                 return {"success": False, "error": "Access token not found"}
@@ -646,7 +646,7 @@ Recuerda confirmar asistencia.
         """
         try:
             response = self.supabase.table("usuarios").select(
-                "id, nombre, email, telefono, empresa"
+                "id, email, telefono"
             ).eq("cliente_id", client_id).eq("id", user_id).single().execute()
 
             return response.data if response.data else None
@@ -958,7 +958,7 @@ Recuerda confirmar asistencia.
         text = f"{alert_emoji} *{title}*\n\n"
 
         if user_details:
-            text += f"👤 Cliente: {user_details.get('nombre', 'N/A')}\n"
+            text += f"📧 Cliente: {user_details.get('email', 'N/A')}\n"
         if conv_details:
             text += f"📞 Canal: {conv_details.get('channel', 'N/A')}\n"
 
