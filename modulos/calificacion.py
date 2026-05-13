@@ -18,14 +18,16 @@ logger = logging.getLogger(__name__)
 class CalificacionModule:
     """Lead scoring and qualification operations."""
 
-    def __init__(self, supabase_client: Any):
+    def __init__(self, supabase_client: Any, alertas_module: Any = None):
         """
         Initialize lead qualification module.
 
         Args:
             supabase_client: Supabase client instance
+            alertas_module: AlertasModule instance for sending WhatsApp alerts (optional)
         """
         self.supabase = supabase_client
+        self.alertas = alertas_module
         self.score_threshold_hot = float(
             os.environ.get("LEAD_SCORE_HOT_THRESHOLD", 8)
         )
@@ -225,7 +227,11 @@ class CalificacionModule:
         score: float,
     ) -> dict[str, Any]:
         """
-        Send notification when lead becomes hot.
+        Send notification when lead becomes hot (score >= 8).
+
+        Sends to:
+        - Database notifications table
+        - WhatsApp alert to owner (via AlertasModule if available)
 
         Args:
             client_id: Client ID
@@ -256,7 +262,33 @@ class CalificacionModule:
                 extra={"client_id": client_id},
             )
 
-            return {"sent": True, "notification_id": notification["id"]}
+            # Send WhatsApp alert to owner
+            alert_result = None
+            if self.alertas:
+                try:
+                    mensaje = (
+                        f"Lead muy caliente detectado:\n\n"
+                        f"👤 Nombre: {lead.get('name', 'N/A')}\n"
+                        f"📊 Score: {score}/10\n"
+                        f"📞 Teléfono: {lead.get('phone', 'N/A')}\n"
+                        f"📧 Email: {lead.get('email', 'N/A')}\n"
+                        f"🏢 Empresa: {lead.get('company', 'N/A')}"
+                    )
+                    alert_result = await self.alertas.enviar_alerta_importante(
+                        client_id=client_id,
+                        tipo="hot_lead",
+                        mensaje=mensaje,
+                        usuario_id=lead.get("user_id"),
+                        datos_extras={"score": score, "lead_id": lead["id"]},
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Error sending hot lead WhatsApp alert: {alert_err}")
+
+            return {
+                "sent": True,
+                "notification_id": notification["id"],
+                "whatsapp_alert": alert_result,
+            }
 
         except Exception as e:
             logger.error(f"Error sending notification: {e}")

@@ -19,6 +19,8 @@ import pytz
 from openai import AsyncOpenAI
 
 from modulos.agendamiento import AgendamientoModule
+from modulos.alertas import AlertasModule
+from modulos.calificacion import CalificacionModule
 from modulos.cobros import CobrosModule
 
 logger = logging.getLogger(__name__)
@@ -134,7 +136,9 @@ class AgentEngine:
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
         self._tools_cache = None
-        self.agendamiento = AgendamientoModule(supabase_client) if supabase_client else None
+        self.alertas = AlertasModule(supabase_client) if supabase_client else None
+        self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
+        self.calificacion = CalificacionModule(supabase_client, self.alertas) if supabase_client else None
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
 
         # Temporary storage for current message context (passed to tool calls)
@@ -147,6 +151,8 @@ class AgentEngine:
         """Inject WhatsApp handler for owner notifications."""
         if self.cobros:
             self.cobros.whatsapp = handler
+        if self.alertas:
+            self.alertas.whatsapp = handler
 
     def set_redis_client(self, redis_client: Any) -> None:
         """Inject Redis client for pending amount state."""
@@ -636,7 +642,8 @@ class AgentEngine:
                 )
                 response_text = "Disculpa, hubo un problema. ¿Puedes repetir tu pregunta?"
 
-            return {
+            # Detect and send alerts (async, non-blocking)
+            response_dict = {
                 "response_text": response_text,
                 "function_calls": function_calls,
                 "typing_indicator_ms": typing_delay,
@@ -646,6 +653,22 @@ class AgentEngine:
                 "request_id": str(uuid4()),
             }
 
+            # Trigger alert detection in background
+            if self.alertas:
+                try:
+                    asyncio.create_task(self.alertas.detectar_y_enviar_alertas(
+                        client_id=cliente_id,
+                        user_message=user_message,
+                        agent_response=response_dict,
+                        conversation_id=self._current_conversation_id,
+                        user_id=sender_id,
+                        sender_id=sender_id,
+                    ))
+                except Exception as e:
+                    logger.warning(f"Error triggering alert detection: {e}")
+
+            return response_dict
+
         except Exception as e:
             logger.error(
                 f"Error processing message: {str(e)}",
@@ -654,7 +677,7 @@ class AgentEngine:
             )
 
             # Graceful fallback: escalate
-            return {
+            error_response = {
                 "response_text": "Lo siento, no pude procesar tu mensaje en este momento. Estoy escalando tu caso con un agente humano.",
                 "function_calls": [
                     {
@@ -675,6 +698,21 @@ class AgentEngine:
                 "escalated": True,
                 "request_id": str(uuid4()),
             }
+
+            # Send critical alert on error
+            if self.alertas:
+                try:
+                    asyncio.create_task(self.alertas.enviar_alerta_critica(
+                        client_id=cliente_id,
+                        tipo="agent_failed",
+                        mensaje=f"❌ Error al procesar mensaje. El agente ha escalado el caso.\n\nError: {str(e)[:100]}",
+                        conversation_id=self._current_conversation_id,
+                        usuario_id=sender_id,
+                    ))
+                except Exception as alert_err:
+                    logger.warning(f"Error sending error alert: {alert_err}")
+
+            return error_response
 
     async def _execute_tool_call(
         self,
@@ -761,6 +799,31 @@ class AgentEngine:
                     conversacion_id=self._current_conversation_id or "",
                     media_id=self._current_media_url,
                     phone_number_id=self._current_phone_number_id or "",
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "guardar_lead":
+                if not self.calificacion:
+                    return json.dumps({"error": "Módulo de calificación no disponible"})
+                result = await self.calificacion.guardar_lead(
+                    client_id=client_id,
+                    usuario_id=arguments.get("usuario_id", sender_id),
+                    nombre=arguments.get("nombre", ""),
+                    email=arguments.get("email"),
+                    telefono=arguments.get("telefono"),
+                    empresa=arguments.get("empresa"),
+                    tags=arguments.get("tags"),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "actualizar_score_lead":
+                if not self.calificacion:
+                    return json.dumps({"error": "Módulo de calificación no disponible"})
+                result = await self.calificacion.actualizar_score_lead(
+                    client_id=client_id,
+                    usuario_id=arguments.get("usuario_id", sender_id),
+                    score=float(arguments.get("score", 0)),
+                    razon=arguments.get("razon"),
                 )
                 return json.dumps(result, ensure_ascii=False)
 

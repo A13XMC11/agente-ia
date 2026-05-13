@@ -154,8 +154,10 @@ class AgendamientoModule:
     DEFAULT_END_HOUR = 18
     SLOT_DURATION_MINUTES = 30
 
-    def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None):
+    def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None,
+                 alertas_module: Any = None):
         self.supabase = supabase_client
+        self.alertas = alertas_module
         self.google = GoogleCalendarService(google_credentials_json)
         logger.info("Appointment module initialized")
 
@@ -336,6 +338,26 @@ class AgendamientoModule:
                 f"Appointment created: id={cita_id}, google_id={google_event_id}, "
                 f"cliente={nombre_cliente}"
             )
+
+            # Send important alert to owner about new appointment
+            if self.alertas:
+                try:
+                    mensaje = (
+                        f"Nueva cita agendada:\n\n"
+                        f"👤 Cliente: {nombre_cliente}\n"
+                        f"📅 Fecha: {fecha}\n"
+                        f"🕐 Hora: {hora}\n"
+                        f"📋 Servicio: {servicio}\n"
+                        f"📱 Teléfono: {telefono_cliente}"
+                    )
+                    await self.alertas.enviar_alerta_importante(
+                        client_id=cliente_id,
+                        tipo="appointment_scheduled",
+                        mensaje=mensaje,
+                        datos_extras={"cita_id": cita_id, "cliente": nombre_cliente},
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Error sending appointment alert: {alert_err}")
 
             return {
                 "success": True,

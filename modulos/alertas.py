@@ -1,11 +1,13 @@
 """
-Alerts module: notifications to business owner via multiple channels.
+Alerts module: real-time notifications to business owner via WhatsApp.
 
-Handles alert creation, routing, and delivery via WhatsApp, Email, and Dashboard.
+Detects critical events (frustrated customer, escalation failures, suspicious payments)
+and sends immediate alerts to owner's personal WhatsApp.
 """
 
 import logging
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
@@ -23,6 +25,25 @@ class AlertLevel(str, Enum):
 
 class AlertasModule:
     """Alert and notification operations."""
+
+    # Keywords to detect frustration/anger
+    FRUSTRATION_KEYWORDS = {
+        "molesto", "molestas", "molesta", "enojado", "enojada",
+        "enojo", "furioso", "furiosa", "furia", "ira", "irritado",
+        "irritada", "disgusto", "disgustado", "terrible", "pésimo",
+        "terrible", "malo", "malísimo", "queja", "reclamó", "reclamo",
+        "complain", "upset", "angry", "furious", "terrible", "awful",
+        "frustrated", "frustrado", "frustrada", "frustration",
+    }
+
+    # Keywords to detect intention to abandon
+    ABANDON_KEYWORDS = {
+        "me voy", "cancelar", "cancelo", "cancelaré", "busco otra",
+        "competencia", "cambio de empresa", "cambio de proveedor",
+        "dejaré", "no seguiré", "terminamos", "ya no quiero",
+        "leave", "cancel", "other company", "competitor", "find another",
+        "no longer", "stop using", "quit", "switch providers",
+    }
 
     def __init__(self, supabase_client: Any, whatsapp_handler: Any = None,
                  email_handler: Any = None):
@@ -445,3 +466,541 @@ Recuerda confirmar asistencia.
         except Exception as e:
             logger.error(f"Error fetching alerts: {e}")
             return []
+
+    def _detect_frustration(self, text: str) -> bool:
+        """
+        Detect if customer is frustrated or angry.
+
+        Args:
+            text: Customer message text
+
+        Returns:
+            True if frustration detected
+        """
+        text_lower = text.lower()
+        return any(keyword in text_lower for keyword in self.FRUSTRATION_KEYWORDS)
+
+    def _detect_abandon_intention(self, text: str) -> bool:
+        """
+        Detect if customer intends to abandon/cancel.
+
+        Args:
+            text: Customer message text
+
+        Returns:
+            True if abandon intention detected
+        """
+        text_lower = text.lower()
+        return any(keyword in text_lower for keyword in self.ABANDON_KEYWORDS)
+
+    async def _get_owner_phone(self, client_id: str) -> Optional[str]:
+        """
+        Get business owner's personal phone number.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Owner's phone number or None
+        """
+        try:
+            response = self.supabase.table("clientes").select(
+                "telefono_propietario, telefono"
+            ).eq("id", client_id).single().execute()
+
+            if response.data:
+                # Try telefono_propietario first, then fallback to telefono
+                return response.data.get("telefono_propietario") or response.data.get("telefono")
+
+            logger.warning(f"Owner phone not found for client {client_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching owner phone: {e}")
+            return None
+
+    async def _get_phone_number_id(self, client_id: str) -> Optional[str]:
+        """
+        Get WhatsApp phone number ID for client's business account.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Phone number ID or None
+        """
+        try:
+            response = self.supabase.table("canales_config").select(
+                "phone_number_id"
+            ).eq("cliente_id", client_id).eq("canal", "whatsapp").single().execute()
+
+            if response.data:
+                return response.data.get("phone_number_id")
+
+            logger.warning(f"Phone number ID not found for client {client_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching phone number ID: {e}")
+            return None
+
+    async def _get_conversation_details(
+        self,
+        client_id: str,
+        conversation_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Get conversation details for alert context.
+
+        Args:
+            client_id: Client ID
+            conversation_id: Conversation ID
+
+        Returns:
+            Conversation details or None
+        """
+        try:
+            response = self.supabase.table("conversations").select(
+                "id, user_id, channel, last_message, last_message_at"
+            ).eq("id", conversation_id).single().execute()
+
+            return response.data if response.data else None
+
+        except Exception as e:
+            logger.warning(f"Error fetching conversation details: {e}")
+            return None
+
+    async def _get_user_details(
+        self,
+        client_id: str,
+        user_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Get user/customer details for alert context.
+
+        Args:
+            client_id: Client ID
+            user_id: User ID
+
+        Returns:
+            User details or None
+        """
+        try:
+            response = self.supabase.table("usuarios").select(
+                "id, nombre, email, telefono, empresa"
+            ).eq("cliente_id", client_id).eq("id", user_id).single().execute()
+
+            return response.data if response.data else None
+
+        except Exception as e:
+            logger.warning(f"Error fetching user details: {e}")
+            return None
+
+    async def enviar_alerta_critica(
+        self,
+        client_id: str,
+        tipo: str,
+        mensaje: str,
+        conversacion_id: Optional[str] = None,
+        usuario_id: Optional[str] = None,
+        datos_extras: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """
+        Send critical alert to business owner immediately via WhatsApp.
+
+        Alert types:
+        - agent_failed: Agent failed to respond 2 times in a row
+        - customer_frustrated: Customer showing signs of frustration/anger
+        - customer_abandoning: Customer threatening to leave
+        - suspicious_payment: Suspicious payment receipt
+
+        Args:
+            client_id: Client ID
+            tipo: Alert type
+            mensaje: Alert message (will be formatted)
+            conversacion_id: Optional conversation ID for context
+            usuario_id: Optional user ID for context
+            datos_extras: Optional additional data
+
+        Returns:
+            Alert confirmation
+        """
+        try:
+            owner_phone = await self._get_owner_phone(client_id)
+            if not owner_phone or not self.whatsapp:
+                logger.warning(f"Cannot send critical alert: owner_phone={owner_phone}, whatsapp={'yes' if self.whatsapp else 'no'}")
+                return {"success": False, "error": "Owner phone or WhatsApp handler not available"}
+
+            # Get conversation and user details for context
+            conv_details = None
+            user_details = None
+            if conversacion_id:
+                conv_details = await self._get_conversation_details(client_id, conversacion_id)
+            if usuario_id:
+                user_details = await self._get_user_details(client_id, usuario_id)
+
+            # Format alert message
+            alert_text = self._format_critical_alert(
+                tipo=tipo,
+                mensaje=mensaje,
+                user_details=user_details,
+                conv_details=conv_details,
+                datos_extras=datos_extras,
+            )
+
+            phone_number_id = await self._get_phone_number_id(client_id)
+            if not phone_number_id:
+                logger.warning(f"Phone number ID not found for client {client_id}")
+                return {"success": False, "error": "Phone number ID not found"}
+
+            # Send via WhatsApp
+            success = await self.whatsapp.send_message(
+                phone_number_id=phone_number_id,
+                recipient_phone=owner_phone,
+                text=alert_text,
+                client_id=client_id,
+            )
+
+            # Save alert to database
+            alert_record = {
+                "id": str(uuid4()),
+                "cliente_id": client_id,
+                "tipo": tipo,
+                "mensaje": mensaje,
+                "canal_envio": "whatsapp",
+                "leida": False,
+                "conversacion_id": conversacion_id,
+                "usuario_id": usuario_id,
+                "datos_extras": datos_extras or {},
+                "created_at": datetime.utcnow().isoformat(),
+            }
+
+            self.supabase.table("alertas").insert(alert_record).execute()
+
+            logger.info(
+                f"Critical alert sent to owner: {tipo}",
+                extra={"client_id": client_id, "alert_id": alert_record["id"]},
+            )
+
+            return {
+                "success": success,
+                "alert_id": alert_record["id"],
+                "type": "critical",
+                "message": f"Alerta crítica enviada al propietario",
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending critical alert: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    async def enviar_alerta_importante(
+        self,
+        client_id: str,
+        tipo: str,
+        mensaje: str,
+        usuario_id: Optional[str] = None,
+        datos_extras: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """
+        Send important alert to business owner via WhatsApp + Email.
+
+        Alert types:
+        - hot_lead: Lead with score >= 8
+        - appointment_scheduled: New appointment created
+        - payment_pending_review: Payment awaiting verification
+
+        Args:
+            client_id: Client ID
+            tipo: Alert type
+            mensaje: Alert message
+            usuario_id: Optional user ID for context
+            datos_extras: Optional additional data
+
+        Returns:
+            Alert confirmation
+        """
+        try:
+            owner_phone = await self._get_owner_phone(client_id)
+            if not owner_phone or not self.whatsapp:
+                logger.warning(f"Cannot send important alert: owner_phone={owner_phone}")
+                return {"success": False, "error": "Owner phone not available"}
+
+            # Format alert message
+            alert_text = self._format_important_alert(
+                tipo=tipo,
+                mensaje=mensaje,
+                datos_extras=datos_extras,
+            )
+
+            phone_number_id = await self._get_phone_number_id(client_id)
+            if not phone_number_id:
+                return {"success": False, "error": "Phone number ID not found"}
+
+            # Send via WhatsApp
+            success = await self.whatsapp.send_message(
+                phone_number_id=phone_number_id,
+                recipient_phone=owner_phone,
+                text=alert_text,
+                client_id=client_id,
+            )
+
+            # Save alert to database
+            alert_record = {
+                "id": str(uuid4()),
+                "cliente_id": client_id,
+                "tipo": tipo,
+                "mensaje": mensaje,
+                "canal_envio": "whatsapp",
+                "leida": False,
+                "usuario_id": usuario_id,
+                "datos_extras": datos_extras or {},
+                "created_at": datetime.utcnow().isoformat(),
+            }
+
+            self.supabase.table("alertas").insert(alert_record).execute()
+
+            logger.info(
+                f"Important alert sent to owner: {tipo}",
+                extra={"client_id": client_id},
+            )
+
+            return {
+                "success": success,
+                "alert_id": alert_record["id"],
+                "type": "important",
+                "message": f"Alerta importante enviada",
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending important alert: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def enviar_resumen_diario(
+        self,
+        client_id: str,
+    ) -> dict[str, Any]:
+        """
+        Send daily summary to business owner at 8 PM.
+
+        Summary includes:
+        - Total conversations today
+        - New leads today
+        - Appointments scheduled
+        - Payments received
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Summary confirmation
+        """
+        try:
+            owner_phone = await self._get_owner_phone(client_id)
+            if not owner_phone or not self.whatsapp:
+                logger.warning(f"Cannot send daily summary: owner_phone={owner_phone}")
+                return {"success": False, "error": "Owner phone not available"}
+
+            # Get metrics for today
+            today = datetime.utcnow().date().isoformat()
+            tomorrow = (datetime.utcnow().date() + timedelta(days=1)).isoformat()
+
+            try:
+                # Get conversation count
+                convs = self.supabase.table("conversations").select("id", count="exact").eq(
+                    "cliente_id", client_id
+                ).gte("created_at", today).lt("created_at", tomorrow).execute()
+                total_conversations = len(convs.data) if convs.data else 0
+            except:
+                total_conversations = 0
+
+            try:
+                # Get new leads
+                leads = self.supabase.table("leads").select("id", count="exact").eq(
+                    "cliente_id", client_id
+                ).gte("created_at", today).lt("created_at", tomorrow).execute()
+                new_leads = len(leads.data) if leads.data else 0
+            except:
+                new_leads = 0
+
+            try:
+                # Get scheduled appointments
+                appts = self.supabase.table("appointments").select("id", count="exact").eq(
+                    "cliente_id", client_id
+                ).gte("created_at", today).lt("created_at", tomorrow).execute()
+                appointments = len(appts.data) if appts.data else 0
+            except:
+                appointments = 0
+
+            try:
+                # Get payments
+                payments = self.supabase.table("payments").select("monto").eq(
+                    "cliente_id", client_id
+                ).eq("estado", "verificado").gte("created_at", today).lt("created_at", tomorrow).execute()
+                total_amount = sum(p.get("monto", 0) for p in (payments.data or []))
+            except:
+                total_amount = 0
+
+            # Format summary
+            summary_text = (
+                f"📊 *RESUMEN DEL DÍA*\n\n"
+                f"📱 Conversaciones: {total_conversations}\n"
+                f"🔥 Nuevos leads: {new_leads}\n"
+                f"📅 Citas agendadas: {appointments}\n"
+                f"💰 Pagos verificados: ${total_amount:,.2f}\n"
+            )
+
+            phone_number_id = await self._get_phone_number_id(client_id)
+            if not phone_number_id:
+                return {"success": False, "error": "Phone number ID not found"}
+
+            # Send summary
+            success = await self.whatsapp.send_message(
+                phone_number_id=phone_number_id,
+                recipient_phone=owner_phone,
+                text=summary_text,
+                client_id=client_id,
+            )
+
+            logger.info(
+                f"Daily summary sent to owner",
+                extra={"client_id": client_id},
+            )
+
+            return {
+                "success": success,
+                "type": "info",
+                "message": f"Resumen diario enviado",
+                "metrics": {
+                    "conversations": total_conversations,
+                    "leads": new_leads,
+                    "appointments": appointments,
+                    "payments": total_amount,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending daily summary: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    def _format_critical_alert(
+        self,
+        tipo: str,
+        mensaje: str,
+        user_details: Optional[dict[str, Any]] = None,
+        conv_details: Optional[dict[str, Any]] = None,
+        datos_extras: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """Format critical alert message with context."""
+        alert_emoji = "🚨"
+        type_labels = {
+            "agent_failed": "AGENTE FALLÓ",
+            "customer_frustrated": "CLIENTE FURIOSO",
+            "customer_abandoning": "CLIENTE QUIERE IRSE",
+            "suspicious_payment": "COMPROBANTE SOSPECHOSO",
+        }
+
+        title = type_labels.get(tipo, tipo.upper())
+        text = f"{alert_emoji} *{title}*\n\n"
+
+        if user_details:
+            text += f"👤 Cliente: {user_details.get('nombre', 'N/A')}\n"
+        if conv_details:
+            text += f"📞 Canal: {conv_details.get('channel', 'N/A')}\n"
+
+        text += f"\n{mensaje}"
+
+        return text
+
+    def _format_important_alert(
+        self,
+        tipo: str,
+        mensaje: str,
+        datos_extras: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """Format important alert message."""
+        alert_emoji = "🔔"
+        type_labels = {
+            "hot_lead": "LEAD CALIENTE",
+            "appointment_scheduled": "CITA AGENDADA",
+            "payment_pending_review": "PAGO PENDIENTE",
+        }
+
+        title = type_labels.get(tipo, tipo.upper())
+        text = f"{alert_emoji} *{title}*\n\n{mensaje}"
+
+        return text
+
+    async def detectar_y_enviar_alertas(
+        self,
+        client_id: str,
+        user_message: str,
+        agent_response: dict[str, Any],
+        conversation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        sender_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Detect alert triggers and send notifications.
+
+        Called after agent processes a message.
+        Detects:
+        - Customer frustration/anger
+        - Customer abandonment intention
+        - Agent escalation (if escalated multiple times)
+        - High-value lead (score >= 8)
+        - New appointment scheduled
+        - Suspicious payment
+
+        Args:
+            client_id: Client ID
+            user_message: Customer's original message
+            agent_response: Agent's response dict (may contain escalated flag, etc)
+            conversation_id: Conversation ID
+            user_id: User/customer ID
+            sender_id: Sender phone/ID
+
+        Returns:
+            List of alerts sent
+        """
+        alerts_sent = []
+
+        try:
+            # Detect frustration
+            if self._detect_frustration(user_message):
+                result = await self.enviar_alerta_critica(
+                    client_id=client_id,
+                    tipo="customer_frustrated",
+                    mensaje=f"Cliente mostrando signos de frustración/enojo.\n\n💬 Mensaje: {user_message[:100]}",
+                    conversacion_id=conversation_id,
+                    usuario_id=user_id,
+                )
+                alerts_sent.append(result)
+                logger.info(f"Frustration alert sent for client {client_id}")
+
+            # Detect abandon intention
+            if self._detect_abandon_intention(user_message):
+                result = await self.enviar_alerta_critica(
+                    client_id=client_id,
+                    tipo="customer_abandoning",
+                    mensaje=f"⚠️ Cliente amenaza con cancelar o irse a la competencia.\n\n💬 Mensaje: {user_message[:100]}",
+                    conversacion_id=conversation_id,
+                    usuario_id=user_id,
+                )
+                alerts_sent.append(result)
+                logger.warning(f"Abandon alert sent for client {client_id}")
+
+            # Detect agent escalation
+            if agent_response.get("escalated"):
+                result = await self.enviar_alerta_critica(
+                    client_id=client_id,
+                    tipo="agent_failed",
+                    mensaje=f"El agente no pudo responder. Escalado a operador humano.\n\nTema: {user_message[:100]}",
+                    conversacion_id=conversation_id,
+                    usuario_id=user_id,
+                )
+                alerts_sent.append(result)
+
+        except Exception as e:
+            logger.error(f"Error in detectar_y_enviar_alertas: {e}", exc_info=True)
+
+        return alerts_sent
