@@ -337,11 +337,28 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error("cobros_module_injection_error", error=str(e))
 
-        # 3. Initialize Alerts Module and Scheduler for daily summaries
+        # 7. Initialize Alerts Module and Scheduler for daily summaries
         try:
             from modulos.alertas import AlertasModule
-            alertas_module = AlertasModule(supabase_client=supabase_service_client, whatsapp_handler=whatsapp_handler)
-            logger.info("alertas_module_initialized")
+
+            # Verify whatsapp_handler is available before injecting
+            if not whatsapp_handler:
+                logger.warning(
+                    "whatsapp_handler_unavailable_for_alerts",
+                    reason="whatsapp_handler initialization failed or was skipped",
+                    impact="alerts will not be sent via WhatsApp"
+                )
+                alertas_module = AlertasModule(
+                    supabase_client=supabase_service_client,
+                    whatsapp_handler=None
+                )
+                logger.warning("alertas_module_initialized_without_whatsapp")
+            else:
+                alertas_module = AlertasModule(
+                    supabase_client=supabase_service_client,
+                    whatsapp_handler=whatsapp_handler
+                )
+                logger.info("alertas_module_initialized_with_whatsapp")
 
             # Initialize AsyncIO scheduler for daily summary at 8 PM
             scheduler = AsyncIOScheduler()
@@ -356,7 +373,7 @@ async def lifespan(app: FastAPI):
             scheduler.start()
             logger.info("scheduler_started", job="daily_summary_at_8pm")
         except Exception as e:
-            logger.error("alertas_scheduler_init_error", error=str(e))
+            logger.error("alertas_scheduler_init_error", error=str(e), exc_info=True)
             alertas_module = None
             scheduler = None
 
