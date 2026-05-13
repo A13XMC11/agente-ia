@@ -373,9 +373,11 @@ class MessageNormalizer:
                 logger.warning(f"Missing required field: {field}")
                 return False
 
-        # Validate text is not empty
-        if not normalized.get("text", "").strip():
-            logger.warning("Message text is empty")
+        # Validate has either text or media (allows image-only messages for receipt uploads)
+        has_text = bool(normalized.get("text", "").strip())
+        has_media = bool(normalized.get("media_url"))
+        if not has_text and not has_media:
+            logger.warning("Message has neither text nor media")
             return False
 
         # Validate channel is known

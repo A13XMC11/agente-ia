@@ -30,6 +30,7 @@ class WhatsAppHandler:
         normalizer: Any,
         buffer: Any,
         memory: Any,
+        cobros_module: Any = None,
     ):
         """
         Initialize WhatsApp handler.
@@ -42,6 +43,7 @@ class WhatsAppHandler:
             normalizer: MessageNormalizer instance
             buffer: MessageBuffer instance
             memory: MemoryManager instance
+            cobros_module: CobrosModule instance for payment approval processing
         """
         self.verify_token = verify_token
         self.app_secret = app_secret
@@ -50,6 +52,7 @@ class WhatsAppHandler:
         self.normalizer = normalizer
         self.buffer = buffer
         self.memory = memory
+        self.cobros_module = cobros_module
         self.api_base_url = "https://graph.facebook.com/v21.0"
         self.http_client = httpx.AsyncClient(timeout=30.0)
 
@@ -200,6 +203,25 @@ class WhatsAppHandler:
                 f"Processing WhatsApp message from {sender_id}",
                 extra={"client_id": client_id},
             )
+
+            # EARLY EXIT: Check if sender is owner and message is approval/rejection command
+            # This prevents owner responses from going through the AI and being interpreted as customer messages
+            if message.get("type") == "text" and self.cobros_module:
+                msg_text = message.get("text", {}).get("body", "").strip()
+                is_owner = await self._is_owner(client_id, sender_id)
+                if is_owner and msg_text:
+                    handled = await self.cobros_module.procesar_respuesta_propietario(
+                        client_id=client_id,
+                        phone_number_id=phone_number_id,
+                        owner_phone=sender_id,
+                        text=msg_text,
+                    )
+                    if handled:
+                        logger.info(
+                            f"Owner approval/rejection processed for client {client_id}",
+                            extra={"client_id": client_id},
+                        )
+                        return
 
             normalized = await self.normalizer.normalize_and_validate(
                 {
@@ -474,6 +496,31 @@ class WhatsAppHandler:
         except Exception as e:
             logger.error(f"Error sending typing indicator: {e}")
             return False
+
+    async def _is_owner(self, client_id: str, phone: str) -> bool:
+        """
+        Check if a phone number belongs to the client owner.
+
+        Args:
+            client_id: Client ID
+            phone: Phone number to check
+
+        Returns:
+            True if phone matches owner's telefono_propietario
+        """
+        try:
+            resp = (
+                self.supabase.table("clientes")
+                .select("telefono_propietario")
+                .eq("id", client_id)
+                .single()
+                .execute()
+            )
+            if resp.data:
+                return resp.data.get("telefono_propietario") == phone
+        except Exception as e:
+            logger.error(f"Error checking owner: {e}")
+        return False
 
     async def _get_client_credentials(
         self,

@@ -19,6 +19,7 @@ import pytz
 from openai import AsyncOpenAI
 
 from modulos.agendamiento import AgendamientoModule
+from modulos.cobros import CobrosModule
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,16 @@ class AgentEngine:
                 f"{self.system_prompt[:100]!r}"
             )
         self.temperature = client_config.get("temperature", 0.7)
+
+    def set_whatsapp_handler(self, handler: Any) -> None:
+        """Inject WhatsApp handler for owner notifications."""
+        if self.cobros:
+            self.cobros.whatsapp = handler
+
+    def set_redis_client(self, redis_client: Any) -> None:
+        """Inject Redis client for pending amount state."""
+        if self.cobros:
+            self.cobros.redis = redis_client
         self.max_tokens = client_config.get("max_tokens", 4000)
 
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -103,6 +114,13 @@ class AgentEngine:
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
         self._tools_cache = None
         self.agendamiento = AgendamientoModule(supabase_client) if supabase_client else None
+        self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
+
+        # Temporary storage for current message context (passed to tool calls)
+        self._current_media_url = None
+        self._current_media_type = None
+        self._current_conversation_id = None
+        self._current_phone_number_id = None
 
     def _get_available_tools(self) -> list[dict[str, Any]]:
         """
@@ -311,32 +329,16 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "enviar_datos_bancarios",
-                        "description": "Send bank account details for payment transfer",
+                        "description": "Send bank account details for payment transfer. The system automatically retrieves the stored bank details.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "usuario_id": {
-                                    "type": "string",
-                                    "description": "User ID",
-                                },
-                                "numero_cuenta": {
-                                    "type": "string",
-                                    "description": "Bank account number",
-                                },
-                                "nombre_banco": {
-                                    "type": "string",
-                                    "description": "Bank name",
-                                },
-                                "tipo_cuenta": {
-                                    "type": "string",
-                                    "description": "Account type (checking/savings)",
-                                },
                                 "monto_esperado": {
                                     "type": "number",
-                                    "description": "Expected payment amount",
+                                    "description": "Expected payment amount (optional, for later validation)",
                                 },
                             },
-                            "required": ["usuario_id", "numero_cuenta", "nombre_banco"],
+                            "required": [],
                         },
                     },
                 },
@@ -344,32 +346,11 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "registrar_pago",
-                        "description": "Register a payment receipt/verification",
+                        "description": "Process and verify a payment receipt image. Call this when user sends a photo of their bank transfer receipt after requesting bank details. Uses the image attached to the current message.",
                         "parameters": {
                             "type": "object",
-                            "properties": {
-                                "usuario_id": {
-                                    "type": "string",
-                                    "description": "User ID",
-                                },
-                                "monto": {
-                                    "type": "number",
-                                    "description": "Payment amount",
-                                },
-                                "referencia": {
-                                    "type": "string",
-                                    "description": "Payment reference/transaction ID",
-                                },
-                                "metodo": {
-                                    "type": "string",
-                                    "description": "Payment method (transfer/card/etc)",
-                                },
-                                "imagen_comprobante": {
-                                    "type": "string",
-                                    "description": "Receipt image URL for verification",
-                                },
-                            },
-                            "required": ["usuario_id", "monto", "referencia"],
+                            "properties": {},
+                            "required": [],
                         },
                     },
                 },
@@ -533,10 +514,20 @@ class AgentEngine:
                     }
                 )
 
-        # Add current message
-        content = user_message
-        if media_url:
-            content += f"\n[Attachment: {media_type} from {media_url}]"
+        # Store media context for tool calls
+        self._current_media_url = media_url
+        self._current_media_type = media_type
+        self._current_conversation_id = mensaje_normalizado.get("metadata", {}).get("conversation_id", "")
+        self._current_phone_number_id = mensaje_normalizado.get("metadata", {}).get("phone_number_id", "")
+
+        # Add current message with media hint for LLM
+        content = user_message or ""
+        if media_url and media_type == "image":
+            if not content:
+                content = "(El usuario envió una imagen)"
+            content += f"\n[Imagen adjunta — si el usuario solicitó transferencia bancaria, puede ser un comprobante de pago]"
+        elif media_url:
+            content += f"\n[Attachment: {media_type}]"
 
         messages.append({"role": "user", "content": content})
 
@@ -707,6 +698,33 @@ class AgentEngine:
                 result = await self.agendamiento.cancelar_cita(
                     cliente_id=client_id,
                     telefono_cliente=arguments.get("telefono_cliente", ""),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "enviar_datos_bancarios":
+                if not self.cobros:
+                    return json.dumps({"error": "Módulo de cobros no disponible"})
+                monto = arguments.get("monto_esperado")
+                result = await self.cobros.enviar_datos_bancarios(
+                    client_id=client_id,
+                    sender_id=sender_id,
+                    monto_esperado=float(monto) if monto else None,
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "registrar_pago":
+                if not self.cobros:
+                    return json.dumps({"error": "Módulo de cobros no disponible"})
+                if not self._current_media_url:
+                    return json.dumps({
+                        "error": "No se detectó imagen de comprobante. Por favor envía una foto del comprobante."
+                    })
+                result = await self.cobros.registrar_pago(
+                    client_id=client_id,
+                    sender_id=sender_id,
+                    conversacion_id=self._current_conversation_id or "",
+                    media_id=self._current_media_url,
+                    phone_number_id=self._current_phone_number_id or "",
                 )
                 return json.dumps(result, ensure_ascii=False)
 

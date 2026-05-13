@@ -270,6 +270,34 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error("channel_handlers_init_error", error=str(e))
 
+        # 6. Inject cobros_module dependencies into handlers and agents
+        # This allows payment verification and owner approval processing
+        try:
+            if whatsapp_handler and message_router:
+                from modulos.cobros import CobrosModule
+                from openai import AsyncOpenAI
+
+                # Create cobros module instance
+                cobros_module = CobrosModule(
+                    supabase_client=supabase_service_client,
+                    openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+                    redis_client=buffer._redis if buffer else None,
+                    whatsapp_handler=whatsapp_handler,
+                )
+
+                # Inject into WhatsApp handler for owner approval processing
+                whatsapp_handler.cobros_module = cobros_module
+
+                # Inject into all agent instances in the router for cobros tool access
+                for agent in message_router.agent_instances.values():
+                    agent.set_whatsapp_handler(whatsapp_handler)
+                    if buffer:
+                        agent.set_redis_client(buffer._redis)
+
+                logger.info("cobros_module_injected")
+        except Exception as e:
+            logger.error("cobros_module_injection_error", error=str(e))
+
         startup_ok = True
         logger.info("application_startup_complete")
 

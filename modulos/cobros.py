@@ -1,194 +1,268 @@
 """
-Payment module: receipt verification with GPT-4o Vision and payment tracking.
+Payment module: complete bank transfer verification workflow.
 
-Handles payment receipt verification, fraud detection, and payment registration.
+Handles:
+- Bank account data retrieval and formatting
+- Payment receipt analysis with GPT-4o Vision
+- Fraud detection and deduplication
+- Owner approval/rejection flow
+- WhatsApp and dashboard notifications
 """
 
 import base64
 import json
 import logging
 import os
-import requests
+import re
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from uuid import uuid4
 
+import httpx
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
 
 class CobrosModule:
-    """Payment and receipt verification operations."""
+    """Complete bank transfer verification and payment processing."""
 
-    def __init__(self, supabase_client: Any, openai_client: AsyncOpenAI):
+    def __init__(
+        self,
+        supabase_client: Any,
+        openai_client: AsyncOpenAI,
+        redis_client: Any = None,
+        whatsapp_handler: Any = None,
+    ):
         """
         Initialize payment module.
 
         Args:
             supabase_client: Supabase client instance
-            openai_client: OpenAI async client for Vision API
+            openai_client: OpenAI async client (for gpt-4o vision)
+            redis_client: Redis client for pending amount state (24h TTL)
+            whatsapp_handler: WhatsApp handler for owner notifications
         """
         self.supabase = supabase_client
         self.openai = openai_client
+        self.redis = redis_client
+        self.whatsapp = whatsapp_handler
         self.fraud_threshold = float(
             os.environ.get("PAYMENT_FRAUD_SCORE_THRESHOLD", 0.7)
         )
+        self._http = httpx.AsyncClient(timeout=30.0)
 
     async def enviar_datos_bancarios(
         self,
         client_id: str,
-        user_id: str,
-        numero_cuenta: str,
-        nombre_banco: str,
-        tipo_cuenta: str = "checking",
+        sender_id: str,
         monto_esperado: Optional[float] = None,
     ) -> dict[str, Any]:
         """
-        Send bank account details for customer payment.
+        Send bank account details for customer payment transfer.
+
+        Reads from datos_bancarios table and stores expected amount in Redis
+        for later validation.
 
         Args:
             client_id: Client ID
-            user_id: Customer user ID
-            numero_cuenta: Bank account number
-            nombre_banco: Bank name
-            tipo_cuenta: Account type (checking/savings)
-            monto_esperado: Expected payment amount
+            sender_id: Sender/customer ID
+            monto_esperado: Expected payment amount (stored for 24h validation)
 
         Returns:
-            Message with account details and payment instructions
+            Success dict with formatted bank details message
         """
         try:
-            payment_request = {
-                "id": str(uuid4()),
-                "cliente_id": client_id,
-                "user_id": user_id,
-                "account_number": numero_cuenta,
-                "bank_name": nombre_banco,
-                "account_type": tipo_cuenta,
-                "expected_amount": monto_esperado,
-                "status": "pending",
-                "created_at": datetime.utcnow().isoformat(),
-                "expires_at": (
-                    datetime.utcnow() + timedelta(hours=24)
-                ).isoformat(),  # Valid for 24 hours
-            }
+            # 1. Read bank details from datos_bancarios
+            response = self.supabase.table("datos_bancarios").select(
+                "banco, tipo_cuenta, numero_cuenta, titular, ruc"
+            ).eq("cliente_id", client_id).eq("activo", True).limit(1).execute()
 
-            self.supabase.table("payment_requests").insert(payment_request).execute()
+            if not response.data:
+                return {
+                    "success": False,
+                    "error": "No hay datos bancarios configurados para este negocio",
+                }
 
-            # Format account details message
-            message = f"""
-📋 **Datos Bancarios para Transferencia**
+            cuenta = response.data[0]
 
-Banco: {nombre_banco}
-Tipo de Cuenta: {tipo_cuenta.capitalize()}
-Número de Cuenta: {numero_cuenta}
-"""
+            # 2. Store pending amount in Redis for 24h (for later validation)
+            if self.redis and monto_esperado:
+                key = f"cobros:pending:{client_id}:{sender_id}"
+                await self.redis.setex(key, 86400, str(monto_esperado))
+
+            # 3. Format message using correct DB column names
+            message = (
+                f"*📋 Datos Bancarios para Transferencia*\n\n"
+                f"Banco: {cuenta['banco']}\n"
+                f"Tipo de Cuenta: {cuenta['tipo_cuenta'].capitalize()}\n"
+                f"Número de Cuenta: {cuenta['numero_cuenta']}\n"
+                f"Titular: {cuenta['titular']}\n"
+            )
+            if cuenta.get("ruc"):
+                message += f"RUC: {cuenta['ruc']}\n"
             if monto_esperado:
-                message += f"Monto a Transferir: ${monto_esperado:.2f}\n"
-
-            message += """
-⏰ Esta información es válida por 24 horas.
-Después de realizar la transferencia, envía una foto del comprobante.
-            """
+                message += f"\nMonto a Transferir: ${monto_esperado:.2f}"
+            message += (
+                "\n\n⏰ Después de realizar la transferencia, "
+                "envía una foto del comprobante. Validamos en segundos."
+            )
 
             logger.info(
-                f"Bank details sent to user {user_id}",
+                f"Bank details sent to {sender_id}",
                 extra={"client_id": client_id},
             )
 
-            return {
-                "success": True,
-                "message": message,
-                "payment_request_id": payment_request["id"],
-            }
+            return {"success": True, "message": message}
 
         except Exception as e:
             logger.error(f"Error sending bank details: {e}")
-            return {"error": str(e)}
+            return {"success": False, "error": str(e)}
+
+    async def _exchange_meta_media_id(
+        self,
+        media_id: str,
+        client_id: str,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Exchange Meta media object ID for a real downloadable URL.
+
+        WhatsApp sends media object IDs that require authentication to access.
+        This method gets the client's access token and exchanges it for a real URL.
+
+        Args:
+            media_id: Meta media object ID
+            client_id: Client ID (to fetch access token)
+
+        Returns:
+            Tuple of (media_url, bearer_token) or (None, None) on error
+        """
+        try:
+            # Get access token from canales_config
+            resp = (
+                self.supabase.table("canales_config")
+                .select("token")
+                .eq("cliente_id", client_id)
+                .eq("canal", "whatsapp")
+                .limit(1)
+                .execute()
+            )
+
+            token = None
+            if resp.data:
+                token = resp.data[0].get("token")
+            if not token:
+                token = os.getenv("META_ACCESS_TOKEN")
+            if not token:
+                raise ValueError("No WhatsApp access token available")
+
+            # Get media URL from Meta Graph API
+            meta_resp = await self._http.get(
+                f"https://graph.facebook.com/v21.0/{media_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            meta_resp.raise_for_status()
+            media_url = meta_resp.json().get("url")
+
+            if not media_url:
+                raise ValueError("Meta API did not return a media URL")
+
+            return media_url, token
+
+        except Exception as e:
+            logger.error(f"Failed to exchange Meta media ID {media_id}: {e}")
+            return None, None
 
     async def analyze_receipt_image(
         self,
         client_id: str,
-        user_id: str,
-        image_url: str,
+        sender_id: str,
+        media_id_or_url: str,
+        is_meta_media_id: bool = False,
     ) -> dict[str, Any]:
         """
         Analyze payment receipt image with GPT-4o Vision.
 
-        Extracts: amount, date, account number, transfer reference.
-        Detects fraud indicators.
+        Extracts transaction details and detects fraud indicators.
 
         Args:
             client_id: Client ID
-            user_id: User ID
-            image_url: Receipt image URL
+            sender_id: Sender ID
+            media_id_or_url: Meta media ID or direct URL
+            is_meta_media_id: True if media_id_or_url is a Meta media object ID
 
         Returns:
-            Analysis with extracted data and fraud score
+            Analysis dict with extracted data and fraud score
         """
         try:
-            # Download image
-            response = requests.get(image_url, timeout=10)
-            response.raise_for_status()
-            image_data = base64.b64encode(response.content).decode("utf-8")
+            # Exchange Meta media ID for real URL if needed
+            if is_meta_media_id:
+                real_url, token = await self._exchange_meta_media_id(
+                    media_id_or_url, client_id
+                )
+                if not real_url:
+                    return {"error": "No se pudo obtener la imagen", "is_valid": False}
+            else:
+                real_url = media_id_or_url
+                token = None
 
-            # Analyze with Vision
+            # Download image with auth header if needed
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            img_resp = await self._http.get(real_url, headers=headers, timeout=30)
+            img_resp.raise_for_status()
+            image_data = base64.b64encode(img_resp.content).decode("utf-8")
+            mime = img_resp.headers.get("content-type", "image/jpeg")
+
+            # Analyze with GPT-4o Vision (native vision, not deprecated gpt-4-vision-preview)
             vision_response = await self.openai.chat.completions.create(
-                model="gpt-4-vision-preview",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "user",
                         "content": [
                             {
                                 "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"},
+                                "image_url": {"url": f"data:{mime};base64,{image_data}"},
                             },
                             {
                                 "type": "text",
-                                "text": """Analiza esta imagen de comprobante de transferencia bancaria y extrae:
-1. Monto: cantidad y moneda
-2. Fecha de la transferencia
-3. Número de cuenta destino (últimos 4 dígitos)
-4. Referencia o código de transacción
-5. Nombre del banco (si es visible)
-6. Indicadores de fraude: ¿parece auténtico? ¿hay signos de edición?
-
-Responde en JSON:
+                                "text": """Analiza este comprobante de transferencia bancaria y extrae en JSON:
 {
-    "monto": 0.0,
-    "moneda": "USD",
-    "fecha": "YYYY-MM-DD",
-    "cuenta_destino": "****1234",
-    "referencia": "REF-123456",
-    "banco": "Banco",
-    "parece_autentico": true,
-    "signos_edicion": false,
-    "confianza": 0.95,
-    "notas": "..."
-}""",
+  "monto": 0.0,
+  "moneda": "USD",
+  "banco_origen": "Banco Pichincha",
+  "banco_destino": "Banco Guayaquil",
+  "titular_origen": "Nombre Apellido",
+  "numero_transaccion": "REF-123456",
+  "fecha": "YYYY-MM-DD",
+  "es_valido": true,
+  "signos_edicion": false,
+  "confianza": 0.95,
+  "notas": "..."
+}
+Responde SOLO con el JSON, sin comentarios adicionales.""",
                             },
                         ],
                     }
                 ],
-                max_tokens=500,
+                max_tokens=600,
             )
 
-            # Parse response
+            # Parse JSON response
             content = vision_response.choices[0].message.content
-            # Extract JSON from response
             json_start = content.find("{")
             json_end = content.rfind("}") + 1
             json_str = content[json_start:json_end]
             analysis = json.loads(json_str)
 
             # Calculate fraud score
-            fraud_score = 1.0 - analysis.get("confianza", 0.5)
+            confianza = analysis.get("confianza", 0.5)
+            fraud_score = 1.0 - confianza
             if analysis.get("signos_edicion"):
                 fraud_score += 0.2
-            if not analysis.get("parece_autentico"):
+            if not analysis.get("es_valido"):
                 fraud_score = 0.95
-
             fraud_score = min(fraud_score, 1.0)
 
             result = {
@@ -200,8 +274,8 @@ Responde en JSON:
             }
 
             logger.info(
-                f"Receipt analyzed for user {user_id}: fraud_score={fraud_score:.2f}",
-                extra={"client_id": client_id},
+                f"Receipt analyzed: fraud_score={fraud_score:.2f}",
+                extra={"client_id": client_id, "sender_id": sender_id},
             )
 
             return result
@@ -213,160 +287,328 @@ Responde en JSON:
     async def registrar_pago(
         self,
         client_id: str,
-        user_id: str,
-        monto: float,
-        referencia: str,
-        metodo: str = "transfer",
-        imagen_comprobante: Optional[str] = None,
+        sender_id: str,
+        conversacion_id: str,
+        media_id: str,
+        phone_number_id: str,
     ) -> dict[str, Any]:
         """
-        Register a payment after verification.
+        Register and verify a payment after receipt analysis.
+
+        Orchestrates the full workflow: image analysis → deduplication → date check →
+        amount validation → storage → notifications.
 
         Args:
             client_id: Client ID
-            user_id: User ID
-            monto: Payment amount
-            referencia: Transaction reference
-            metodo: Payment method (transfer, card, etc)
-            imagen_comprobante: Receipt image URL for verification
+            sender_id: Customer sender ID
+            conversacion_id: Conversation ID
+            media_id: Meta media ID or image URL
+            phone_number_id: Phone number ID for sending notifications
 
         Returns:
-            Payment confirmation with receipt ID
+            Result dict with outcome and message for user
         """
         try:
-            # Verify receipt if provided
-            is_valid = True
-            fraud_score = 0.0
+            # 1. Analyze receipt image
+            analysis_result = await self.analyze_receipt_image(
+                client_id=client_id,
+                sender_id=sender_id,
+                media_id_or_url=media_id,
+                is_meta_media_id=True,
+            )
 
-            if imagen_comprobante:
-                receipt_analysis = await self.analyze_receipt_image(
-                    client_id, user_id, imagen_comprobante
-                )
-
-                if "error" not in receipt_analysis:
-                    is_valid = receipt_analysis.get("is_valid", False)
-                    fraud_score = receipt_analysis.get("fraud_score", 0.0)
-
-            if not is_valid and imagen_comprobante:
-                logger.warning(
-                    f"Payment verification failed for user {user_id}: fraud_score={fraud_score}",
-                    extra={"client_id": client_id},
-                )
+            if "error" in analysis_result:
                 return {
                     "success": False,
-                    "error": "El comprobante no pasó la verificación de autenticidad.",
-                    "fraud_score": fraud_score,
+                    "outcome": "error",
+                    "message": analysis_result["error"],
                 }
 
-            # Register payment
-            payment = {
-                "id": str(uuid4()),
+            analysis = analysis_result["analysis"]
+            fraud_score = analysis_result["fraud_score"]
+            numero_transaccion = analysis.get("numero_transaccion", "")
+            monto_recibido = float(analysis.get("monto", 0))
+
+            # 2. Check for duplicate (comprobantes_procesados dedup by numero_transaccion + client_id)
+            if numero_transaccion:
+                dup = (
+                    self.supabase.table("comprobantes_procesados")
+                    .select("id")
+                    .eq("numero_transaccion", numero_transaccion)
+                    .eq("cliente_id", client_id)
+                    .limit(1)
+                    .execute()
+                )
+                if dup.data:
+                    return {
+                        "success": False,
+                        "outcome": "duplicate",
+                        "message": "Este comprobante ya fue procesado. Si tienes dudas, contacta al negocio.",
+                    }
+
+            # 3. Check date is recent (max 24h)
+            fecha_str = analysis.get("fecha", "")
+            if fecha_str:
+                try:
+                    fecha_pago = datetime.fromisoformat(fecha_str)
+                    if datetime.utcnow() - fecha_pago > timedelta(hours=24):
+                        return {
+                            "success": False,
+                            "outcome": "expired",
+                            "message": "El comprobante tiene más de 24 horas. Por favor realiza una nueva transferencia.",
+                        }
+                except ValueError:
+                    pass  # If date can't be parsed, proceed
+
+            # 4. Check amount matches pending (from Redis)
+            monto_esperado = None
+            amount_matches = True
+            if self.redis:
+                key = f"cobros:pending:{client_id}:{sender_id}"
+                val = await self.redis.get(key)
+                if val:
+                    monto_esperado = float(val)
+                    amount_matches = abs(monto_recibido - monto_esperado) < 0.01
+
+            # 5. Determine outcome based on validations
+            if fraud_score >= self.fraud_threshold:
+                outcome = "invalid"
+            elif not amount_matches and monto_esperado:
+                outcome = "doubtful"
+            else:
+                outcome = "valid"
+
+            # 6. Save to pagos table with correct column names
+            pago_id = str(uuid4())
+            estado = "verificado" if outcome == "valid" else "pendiente" if outcome == "doubtful" else "rechazado"
+
+            pago_record = {
+                "id": pago_id,
                 "cliente_id": client_id,
-                "user_id": user_id,
-                "amount": monto,
-                "currency": "USD",
-                "reference": referencia,
-                "method": metodo,
-                "status": "verified" if is_valid else "pending_review",
+                "conversacion_id": conversacion_id,
+                "monto": monto_recibido,
+                "moneda": analysis.get("moneda", "USD"),
+                "metodo_pago": "transferencia",
+                "estado": estado,
+                "numero_transaccion": numero_transaccion,
+                "banco_origen": analysis.get("banco_origen"),
+                "banco_destino": analysis.get("banco_destino"),
                 "fraud_score": fraud_score,
-                "receipt_url": imagen_comprobante,
-                "verified_at": datetime.utcnow().isoformat(),
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("pagos").insert(payment).execute()
+            if outcome != "invalid":
+                self.supabase.table("pagos").insert(pago_record).execute()
 
-            # Update user balance if valid
-            if is_valid:
-                # Fetch user's account
-                user_response = self.supabase.table("usuarios").select(
-                    "account_balance"
-                ).eq("id", user_id).eq("cliente_id", client_id).single().execute()
+            # 7. If valid: save to comprobantes_procesados and clear Redis
+            if outcome == "valid":
+                self.supabase.table("comprobantes_procesados").insert({
+                    "numero_transaccion": numero_transaccion,
+                    "cliente_id": client_id,
+                    "monto": monto_recibido,
+                    "fecha_procesado": datetime.utcnow().isoformat(),
+                }).execute()
 
-                current_balance = user_response.data.get("account_balance", 0)
-                new_balance = current_balance + monto
+                if self.redis:
+                    await self.redis.delete(f"cobros:pending:{client_id}:{sender_id}")
 
-                self.supabase.table("usuarios").update(
-                    {"account_balance": new_balance}
-                ).eq("id", user_id).execute()
-
-            logger.info(
-                f"Payment registered: {payment['id']} for user {user_id}, amount=${monto}",
-                extra={"client_id": client_id},
+            # 8. Notify owner
+            await self._notify_owner(
+                client_id, phone_number_id, pago_id, outcome, monto_recibido, sender_id
             )
 
+            # 9. Return message for user
             return {
                 "success": True,
-                "payment_id": payment["id"],
-                "amount": monto,
-                "status": payment["status"],
-                "message": "Pago registrado exitosamente ✅"
-                if is_valid
-                else "Pago pendiente de revisión",
+                "outcome": outcome,
+                "pago_id": pago_id,
+                "message": self._user_message_for_outcome(outcome),
             }
 
         except Exception as e:
             logger.error(f"Error registering payment: {e}")
-            return {"error": str(e)}
+            return {"success": False, "outcome": "error", "message": str(e)}
 
-    async def get_payment_history(
+    async def _notify_owner(
         self,
         client_id: str,
-        user_id: str,
-        limit: int = 10,
-    ) -> list[dict[str, Any]]:
+        phone_number_id: str,
+        pago_id: str,
+        outcome: str,
+        monto: float,
+        sender_id: str,
+    ) -> None:
         """
-        Get payment history for a user.
+        Send owner notification via WhatsApp with approval instructions.
 
         Args:
             client_id: Client ID
-            user_id: User ID
-            limit: Max records to return
-
-        Returns:
-            List of payments ordered by date (newest first)
+            phone_number_id: WhatsApp phone number ID
+            pago_id: Payment ID
+            outcome: valid | doubtful | invalid
+            monto: Payment amount
+            sender_id: Customer sender ID
         """
-        try:
-            response = self.supabase.table("pagos").select("*").eq(
-                "cliente_id", client_id
-            ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+        if not self.whatsapp:
+            return
 
-            return response.data or []
+        try:
+            # Get owner phone from clientes table
+            resp = (
+                self.supabase.table("clientes")
+                .select("telefono_propietario, nombre_negocio")
+                .eq("id", client_id)
+                .single()
+                .execute()
+            )
+            if not resp.data:
+                return
+
+            owner_phone = resp.data.get("telefono_propietario")
+            if not owner_phone:
+                return
+
+            if outcome == "valid":
+                msg = (
+                    f"✅ *Pago VERIFICADO automáticamente*\n\n"
+                    f"Monto: ${monto:.2f}\n"
+                    f"De: {sender_id}\n"
+                    f"ID: {pago_id}"
+                )
+            elif outcome == "doubtful":
+                msg = (
+                    f"⚠️ *Pago PENDIENTE de revisión*\n\n"
+                    f"Monto recibido: ${monto:.2f}\n"
+                    f"De: {sender_id}\n"
+                    f"ID: {pago_id}\n\n"
+                    f"El monto no coincide exactamente. Revisa el comprobante.\n\n"
+                    f"Responde:\n"
+                    f"*aprobar {pago_id}* — Aceptar el pago\n"
+                    f"*rechazar {pago_id}* — Rechazar el pago"
+                )
+            else:
+                return  # No notification for invalid payments
+
+            # Send via WhatsApp handler
+            await self.whatsapp.send_message(
+                phone_number_id=phone_number_id,
+                recipient_phone=owner_phone,
+                text=msg,
+                client_id=client_id,
+            )
 
         except Exception as e:
-            logger.error(f"Error fetching payment history: {e}")
-            return []
+            logger.error(f"Failed to notify owner: {e}")
 
-    async def get_payment_status(
+    async def procesar_respuesta_propietario(
         self,
         client_id: str,
-        referencia: str,
-    ) -> dict[str, Any]:
+        phone_number_id: str,
+        owner_phone: str,
+        text: str,
+    ) -> bool:
         """
-        Check payment status by reference.
+        Process owner approval/rejection of a pending payment.
+
+        Called from WhatsApp handler when owner replies with:
+        - "aprobar {pago_id}" → mark as verified, notify customer
+        - "rechazar {pago_id}" → mark as rejected, notify customer
 
         Args:
             client_id: Client ID
-            referencia: Payment reference
+            phone_number_id: WhatsApp phone number ID
+            owner_phone: Owner's phone number
+            text: Message text
 
         Returns:
-            Payment status and details
+            True if was a valid approval command, False otherwise
         """
+        # Match pattern: "aprobar/rechazar {uuid}"
+        match = re.match(
+            r"^(aprobar|rechazar)\s+([a-f0-9\-]{36})$", text.strip().lower()
+        )
+        if not match:
+            return False
+
+        action = match.group(1)  # 'aprobar' or 'rechazar'
+        pago_id = match.group(2)
+
+        nuevo_estado = "verificado" if action == "aprobar" else "rechazado"
+
         try:
-            response = self.supabase.table("pagos").select("*").eq(
-                "cliente_id", client_id
-            ).eq("reference", referencia).single().execute()
+            # Update pagos record
+            resp = (
+                self.supabase.table("pagos")
+                .update({
+                    "estado": nuevo_estado,
+                    "fecha_verificacion": datetime.utcnow().isoformat(),
+                })
+                .eq("id", pago_id)
+                .eq("cliente_id", client_id)
+                .select("conversacion_id, monto, numero_transaccion")
+                .execute()
+            )
 
-            payment = response.data
+            if not resp.data:
+                return False
 
-            return {
-                "payment_id": payment["id"],
-                "status": payment["status"],
-                "amount": payment["amount"],
-                "verified_at": payment["verified_at"],
-                "fraud_score": payment.get("fraud_score", 0),
-            }
+            pago = resp.data[0]
+
+            # If approved: save to comprobantes_procesados
+            if nuevo_estado == "verificado" and pago.get("numero_transaccion"):
+                self.supabase.table("comprobantes_procesados").insert({
+                    "numero_transaccion": pago["numero_transaccion"],
+                    "cliente_id": client_id,
+                    "monto": pago["monto"],
+                    "fecha_procesado": datetime.utcnow().isoformat(),
+                }).execute()
+
+            # Notify customer
+            if self.whatsapp and pago.get("conversacion_id"):
+                try:
+                    conv = (
+                        self.supabase.table("conversaciones")
+                        .select("usuario_id, sender_id")
+                        .eq("id", pago["conversacion_id"])
+                        .single()
+                        .execute()
+                    )
+                    if conv.data:
+                        customer_phone = conv.data.get("sender_id")
+                        if customer_phone:
+                            user_msg = (
+                                f"✅ *¡Pago aprobado!*\n\n"
+                                f"Tu pago de ${pago['monto']:.2f} ha sido confirmado. ¡Gracias!"
+                                if nuevo_estado == "verificado"
+                                else f"❌ *Pago rechazado*\n\n"
+                                f"Contacta al negocio para más detalles sobre tu pago."
+                            )
+                            await self.whatsapp.send_message(
+                                phone_number_id=phone_number_id,
+                                recipient_phone=customer_phone,
+                                text=user_msg,
+                                client_id=client_id,
+                            )
+                except Exception as e:
+                    logger.error(f"Failed to notify customer: {e}")
+
+            return True
 
         except Exception as e:
-            logger.error(f"Error fetching payment status: {e}")
-            return {"error": str(e)}
+            logger.error(f"Error processing owner response: {e}")
+            return False
+
+    def _user_message_for_outcome(self, outcome: str) -> str:
+        """Return user-friendly message based on payment outcome."""
+        messages = {
+            "valid": "✅ *¡Pago confirmado!* Tu transferencia ha sido validada. Gracias.",
+            "doubtful": (
+                "⏳ *Estamos verificando tu pago.* El monto parece no coincidir exactamente. "
+                "El negocio lo revisará en breve y te confirmamos."
+            ),
+            "invalid": "❌ *No pudimos validar tu comprobante.* Por favor intenta de nuevo o contacta al negocio.",
+            "duplicate": "⚠️ *Este comprobante ya fue procesado.* Si tienes dudas, contacta al negocio.",
+            "expired": "⏰ *El comprobante es muy antiguo.* Realiza una nueva transferencia.",
+            "error": "Error al procesar el pago. Por favor intenta nuevamente.",
+        }
+        return messages.get(outcome, "Hubo un problema procesando tu pago.")
