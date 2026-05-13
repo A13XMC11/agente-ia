@@ -258,18 +258,14 @@ class AlertasModule:
         """
         try:
             alert = {
-                "id": str(uuid4()),
                 "cliente_id": client_id,
-                "level": nivel.value,
-                "title": titulo,
-                "message": mensaje,
-                "data": datos or {},
-                "read": False,
-                "sent_at": datetime.utcnow().isoformat(),
-                "created_at": datetime.utcnow().isoformat(),
+                "tipo": nivel.value,
+                "mensaje": f"{titulo}\n\n{mensaje}",
+                "canal_envio": "whatsapp",
+                "leida": False,
             }
 
-            self.supabase.table("alertas").insert(alert).execute()
+            result = self.supabase.table("alertas").insert(alert).execute()
 
             # Route alert to admin
             admin_response = self.supabase.table("usuarios").select(
@@ -285,9 +281,10 @@ class AlertasModule:
                 extra={"client_id": client_id},
             )
 
+            alert_id = result.data[0].get("id") if result.data else "unknown"
             return {
                 "success": True,
-                "alert_id": alert["id"],
+                "alert_id": alert_id,
                 "message": f"Alerta {nivel.value} enviada",
             }
 
@@ -460,7 +457,7 @@ Recuerda confirmar asistencia.
         """
         try:
             self.supabase.table("alertas").update(
-                {"read": True, "read_at": datetime.utcnow().isoformat()}
+                {"leida": True}
             ).eq("id", alert_id).execute()
 
             logger.info(f"Alert marked as read: {alert_id}")
@@ -488,7 +485,7 @@ Recuerda confirmar asistencia.
         try:
             response = self.supabase.table("alertas").select("*").eq(
                 "cliente_id", client_id
-            ).eq("read", False).order("created_at", desc=True).limit(limit).execute()
+            ).eq("leida", False).order("created_at", desc=True).limit(limit).execute()
 
             return response.data or []
 
@@ -519,7 +516,7 @@ Recuerda confirmar asistencia.
             )
 
             if nivel:
-                query = query.eq("level", nivel)
+                query = query.eq("tipo", nivel)
 
             response = query.order("created_at", desc=True).limit(limit).execute()
 
@@ -726,28 +723,24 @@ Recuerda confirmar asistencia.
 
             # Save alert to database
             alert_record = {
-                "id": str(uuid4()),
                 "cliente_id": client_id,
                 "tipo": tipo,
                 "mensaje": mensaje,
                 "canal_envio": "whatsapp",
                 "leida": False,
-                "conversacion_id": conversacion_id,
-                "usuario_id": usuario_id,
-                "datos_extras": datos_extras or {},
-                "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("alertas").insert(alert_record).execute()
+            result = self.supabase.table("alertas").insert(alert_record).execute()
+            alert_id = result.data[0].get("id") if result.data else "unknown"
 
             logger.info(
                 f"Critical alert sent to owner: {tipo}",
-                extra={"client_id": client_id, "alert_id": alert_record["id"]},
+                extra={"client_id": client_id, "alert_id": alert_id},
             )
 
             return {
                 "success": success,
-                "alert_id": alert_record["id"],
+                "alert_id": alert_id,
                 "type": "critical",
                 "message": f"Alerta crítica enviada al propietario",
             }
@@ -810,18 +803,15 @@ Recuerda confirmar asistencia.
 
             # Save alert to database
             alert_record = {
-                "id": str(uuid4()),
                 "cliente_id": client_id,
                 "tipo": tipo,
                 "mensaje": mensaje,
                 "canal_envio": "whatsapp",
                 "leida": False,
-                "usuario_id": usuario_id,
-                "datos_extras": datos_extras or {},
-                "created_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("alertas").insert(alert_record).execute()
+            result = self.supabase.table("alertas").insert(alert_record).execute()
+            alert_id = result.data[0].get("id") if result.data else "unknown"
 
             logger.info(
                 f"Important alert sent to owner: {tipo}",
@@ -830,7 +820,7 @@ Recuerda confirmar asistencia.
 
             return {
                 "success": success,
-                "alert_id": alert_record["id"],
+                "alert_id": alert_id,
                 "type": "important",
                 "message": f"Alerta importante enviada",
             }
