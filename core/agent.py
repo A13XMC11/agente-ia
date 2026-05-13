@@ -85,8 +85,9 @@ class AgentEngine:
             "o cualquier intención de pagar, INMEDIATAMENTE llama la tool 'enviar_datos_bancarios'.\n"
             "- NO hagas preguntas previas sobre el monto.\n"
             "- NO pidas confirmación ni datos adicionales.\n"
-            "- SIMPLEMENTE envía los datos bancarios de inmediato.\n"
-            "- El usuario puede luego enviar comprobante para verificación."
+            "- Cuando recibas el resultado de 'enviar_datos_bancarios', MUESTRA EL MENSAJE DIRECTAMENTE EN EL CHAT.\n"
+            "- El mensaje ya está formateado para WhatsApp. NUNCA intentes enviarlo por correo.\n"
+            "- El usuario puede luego enviar comprobante de la transferencia para verificación."
         )
         self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _COBROS_RULE
 

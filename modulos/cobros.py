@@ -62,7 +62,7 @@ class CobrosModule:
         Send bank account details for customer payment transfer.
 
         Reads from datos_bancarios table and stores expected amount in Redis
-        for later validation.
+        for later validation. Returns message to be sent directly in chat.
 
         Args:
             client_id: Client ID
@@ -70,7 +70,7 @@ class CobrosModule:
             monto_esperado: Expected payment amount (stored for 24h validation)
 
         Returns:
-            Success dict with formatted bank details message
+            Dict with mensaje (formatted bank details to show in WhatsApp) and exito flag
         """
         try:
             # 1. Read bank details from datos_bancarios
@@ -80,8 +80,8 @@ class CobrosModule:
 
             if not response.data:
                 return {
-                    "success": False,
-                    "error": "No hay datos bancarios configurados para este negocio",
+                    "exito": False,
+                    "mensaje": "No hay datos bancarios configurados para este negocio",
                 }
 
             cuenta = response.data[0]
@@ -91,33 +91,33 @@ class CobrosModule:
                 key = f"cobros:pending:{client_id}:{sender_id}"
                 await self.redis.setex(key, 86400, str(monto_esperado))
 
-            # 3. Format message using correct DB column names
-            message = (
-                f"*📋 Datos Bancarios para Transferencia*\n\n"
-                f"Banco: {cuenta['banco']}\n"
-                f"Tipo de Cuenta: {cuenta['tipo_cuenta'].capitalize()}\n"
-                f"Número de Cuenta: {cuenta['numero_cuenta']}\n"
-                f"Titular: {cuenta['titular']}\n"
+            # 3. Format message for WhatsApp chat (not email)
+            mensaje = (
+                f"💳 *Datos para tu transferencia:*\n\n"
+                f"🏦 Banco: {cuenta['banco']}\n"
+                f"📋 Tipo: {cuenta['tipo_cuenta'].capitalize()}\n"
+                f"🔢 Número: {cuenta['numero_cuenta']}\n"
+                f"👤 Titular: {cuenta['titular']}\n"
             )
             if cuenta.get("ruc"):
-                message += f"RUC: {cuenta['ruc']}\n"
+                mensaje += f"🪪 RUC: {cuenta['ruc']}\n"
             if monto_esperado:
-                message += f"\nMonto a Transferir: ${monto_esperado:.2f}"
-            message += (
-                "\n\n⏰ Después de realizar la transferencia, "
-                "envía una foto del comprobante. Validamos en segundos."
+                mensaje += f"\n💰 Monto a Transferir: ${monto_esperado:.2f}"
+            mensaje += (
+                "\n\nUna vez realizada la transferencia, "
+                "envíame la foto del comprobante 🙌"
             )
 
             logger.info(
-                f"Bank details sent to {sender_id}",
+                f"Bank details sent to {sender_id} in WhatsApp chat",
                 extra={"client_id": client_id},
             )
 
-            return {"success": True, "message": message}
+            return {"exito": True, "mensaje": mensaje}
 
         except Exception as e:
             logger.error(f"Error sending bank details: {e}")
-            return {"success": False, "error": str(e)}
+            return {"exito": False, "mensaje": f"Error: {str(e)}"}
 
     async def _exchange_meta_media_id(
         self,
