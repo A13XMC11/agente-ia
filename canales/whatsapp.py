@@ -11,9 +11,11 @@ import hmac
 import json
 import logging
 import os
+from io import BytesIO
 from typing import Any, Optional
 
 import httpx
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,7 @@ class WhatsAppHandler:
         self.cobros_module = cobros_module
         self.api_base_url = "https://graph.facebook.com/v21.0"
         self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -204,6 +207,51 @@ class WhatsAppHandler:
                 extra={"client_id": client_id},
             )
 
+            # Handle audio messages: download and transcribe
+            if message.get("type") == "audio":
+                media_id = message.get("audio", {}).get("id")
+                if media_id:
+                    credentials = await self._get_client_credentials(client_id, "whatsapp")
+                    access_token = credentials.get("access_token") if credentials else None
+
+                    if not access_token:
+                        access_token = os.getenv("META_ACCESS_TOKEN")
+
+                    if access_token:
+                        audio_bytes = await self._download_audio(media_id, client_id, access_token)
+                        if audio_bytes:
+                            transcription = await self._transcribe_audio(audio_bytes, client_id)
+                            if transcription:
+                                message["transcription"] = transcription
+                            else:
+                                await self.send_message(
+                                    phone_number_id,
+                                    sender_id,
+                                    "No pude entender el audio. ¿Puedes escribir tu mensaje por favor? 🙏",
+                                    client_id,
+                                )
+                                return
+                        else:
+                            await self.send_message(
+                                phone_number_id,
+                                sender_id,
+                                "No pude descargar el audio. ¿Puedes intentar de nuevo? 🙏",
+                                client_id,
+                            )
+                            return
+                    else:
+                        logger.error(f"No access token for audio download, client {client_id}")
+                        await self.send_message(
+                            phone_number_id,
+                            sender_id,
+                            "Disculpa, no puedo procesar audios en este momento. 🙏",
+                            client_id,
+                        )
+                        return
+                else:
+                    logger.warning("Audio message without media_id")
+                    return
+
             # EARLY EXIT: Check if sender is owner and message is approval/rejection command
             # This prevents owner responses from going through the AI and being interpreted as customer messages
             if message.get("type") == "text" and self.cobros_module:
@@ -332,6 +380,85 @@ class WhatsAppHandler:
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
+
+    async def _download_audio(
+        self,
+        media_id: str,
+        client_id: str,
+        access_token: str,
+    ) -> Optional[bytes]:
+        """
+        Download audio file from Meta Cloud API.
+
+        Args:
+            media_id: Media ID from WhatsApp message
+            client_id: Client ID
+            access_token: Meta API access token
+
+        Returns:
+            Audio file bytes or None if download failed
+        """
+        try:
+            url = f"{self.api_base_url}/{media_id}"
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            response = await self.http_client.get(url, headers=headers)
+            if response.status_code != 200:
+                logger.error(f"Failed to get audio URL: {response.status_code}")
+                return None
+
+            data = response.json()
+            media_url = data.get("url")
+            if not media_url:
+                logger.error("No URL in audio metadata response")
+                return None
+
+            audio_response = await self.http_client.get(media_url, headers=headers)
+            if audio_response.status_code != 200:
+                logger.error(f"Failed to download audio: {audio_response.status_code}")
+                return None
+
+            logger.info(f"Audio downloaded successfully for client {client_id}")
+            return audio_response.content
+
+        except Exception as e:
+            logger.error(f"Error downloading audio: {e}", exc_info=True)
+            return None
+
+    async def _transcribe_audio(
+        self,
+        audio_bytes: bytes,
+        client_id: str,
+    ) -> Optional[str]:
+        """
+        Transcribe audio to text using OpenAI Whisper.
+
+        Args:
+            audio_bytes: Audio file bytes
+            client_id: Client ID
+
+        Returns:
+            Transcribed text or None if transcription failed
+        """
+        try:
+            audio_file = BytesIO(audio_bytes)
+            audio_file.name = "audio.ogg"
+
+            response = await self.openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="es",
+            )
+
+            transcription = response.text.strip()
+            logger.info(
+                f"Audio transcribed successfully for client {client_id}: {len(transcription)} chars"
+            )
+            return transcription if transcription else None
+
+        except Exception as e:
+            logger.error(f"Error transcribing audio: {e}", exc_info=True)
+            return None
 
     async def _handle_status(
         self,

@@ -122,12 +122,23 @@ class MessageNormalizer:
             elif message_type == "audio":
                 media_type = "audio"
                 media_url = msg.get("audio", {}).get("id")
+                text = msg.get("transcription", "")
             elif message_type == "location":
                 location = msg.get("location", {})
                 text = f"Ubicación: {location.get('latitude')}, {location.get('longitude')}"
                 media_type = "location"
             else:
                 text = f"[{message_type}]"
+
+            metadata = {
+                "message_id": msg.get("id"),
+                "phone_number_id": value.get("metadata", {}).get("phone_number_id"),
+            }
+
+            # Add transcription metadata if audio was transcribed
+            if message_type == "audio" and msg.get("transcription"):
+                metadata["tipo_original"] = "audio"
+                metadata["transcription_method"] = "whisper"
 
             return {
                 "text": text,
@@ -137,10 +148,7 @@ class MessageNormalizer:
                 "message_type": message_type,
                 "media_url": media_url,
                 "media_type": media_type,
-                "metadata": {
-                    "message_id": msg.get("id"),
-                    "phone_number_id": value.get("metadata", {}).get("phone_number_id"),
-                },
+                "metadata": metadata,
             }
 
         except Exception as e:
