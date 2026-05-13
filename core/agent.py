@@ -80,16 +80,27 @@ class AgentEngine:
             "- El usuario solo puede modificar citas en estado 'confirmada'."
         )
         _COBROS_RULE = (
-            "\n\nREGLA DE COBROS:\n"
-            "1. CUANDO el usuario mencione 'transferencia', 'pago', 'deposito', 'transferir', 'pagar' "
-            "o cualquier intención de pagar, INMEDIATAMENTE llama la tool 'enviar_datos_bancarios'.\n"
-            "2. NO hagas preguntas previas sobre el monto.\n"
-            "3. Cuando recibas el resultado de 'enviar_datos_bancarios':\n"
-            "   - El resultado contiene un campo 'mensaje' con los datos bancarios formateados.\n"
-            "   - COPIA ESE MENSAJE TAL CUAL en tu respuesta al usuario.\n"
-            "   - NO lo reescriba, NO lo parafrasees, NO intentes enviarlo por correo.\n"
-            "   - El mensaje ya está listo para WhatsApp.\n"
-            "4. Después de mostrar los datos, puedes añadir instrucciones claras sobre qué hacer después."
+            "\n\n🚨 REGLA CRÍTICA DE COBROS (MÁXIMA PRIORIDAD):\n"
+            "INSTRUCCIÓN OBLIGATORIA: Si el usuario menciona CUALQUIERA de estos términos:\n"
+            "  - transferencia, transferir, transferencias\n"
+            "  - pago, pagar, pagos\n"
+            "  - deposito, depositar, depósito\n"
+            "  - banco, cuenta, cuenta bancaria\n"
+            "  - enviar dinero, girar dinero\n"
+            "\n"
+            "DEBES hacer EXACTAMENTE ESTO (NO hay excepciones):\n"
+            "1. PRIMERO: Invoca INMEDIATAMENTE la tool 'enviar_datos_bancarios' - SIN DEMORA\n"
+            "2. NO hagas preguntas previas\n"
+            "3. NO respondas con texto diciendo que enviarás los datos\n"
+            "4. SOLO invoca la tool directamente\n"
+            "\n"
+            "Cuando recibas el resultado:\n"
+            "- Copia el campo 'mensaje' tal cual (exactamente como viene, sin cambios)\n"
+            "- Envía ese mensaje al usuario\n"
+            "- NO reescriba, NO parafrasees, NO intentes mejorar el formato\n"
+            "- El mensaje ya está listo para WhatsApp\n"
+            "\n"
+            "Si el usuario envía una imagen (comprobante), luego invoca 'registrar_pago'."
         )
         self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _COBROS_RULE
 
@@ -107,15 +118,6 @@ class AgentEngine:
             )
         self.temperature = client_config.get("temperature", 0.7)
 
-    def set_whatsapp_handler(self, handler: Any) -> None:
-        """Inject WhatsApp handler for owner notifications."""
-        if self.cobros:
-            self.cobros.whatsapp = handler
-
-    def set_redis_client(self, redis_client: Any) -> None:
-        """Inject Redis client for pending amount state."""
-        if self.cobros:
-            self.cobros.redis = redis_client
         self.max_tokens = client_config.get("max_tokens", 4000)
 
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -133,6 +135,16 @@ class AgentEngine:
         self._current_media_type = None
         self._current_conversation_id = None
         self._current_phone_number_id = None
+
+    def set_whatsapp_handler(self, handler: Any) -> None:
+        """Inject WhatsApp handler for owner notifications."""
+        if self.cobros:
+            self.cobros.whatsapp = handler
+
+    def set_redis_client(self, redis_client: Any) -> None:
+        """Inject Redis client for pending amount state."""
+        if self.cobros:
+            self.cobros.redis = redis_client
 
     def _get_available_tools(self) -> list[dict[str, Any]]:
         """
@@ -341,7 +353,7 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "enviar_datos_bancarios",
-                        "description": "CALL THIS IMMEDIATELY when user mentions 'transferencia', 'pago', 'deposito', 'pagar' or any payment intent. Do NOT wait for more information. Send bank details right away. The system automatically retrieves and displays the stored bank account information.",
+                        "description": "MANDATORY: You MUST invoke this tool IMMEDIATELY and ONLY when user mentions ANY of these keywords: transferencia, pagar, pago, deposito, depositar, banco, cuenta, transferir, enviar dinero. NEVER respond with text promising to send data. ALWAYS call this function first, immediately, without asking questions or waiting. The system will return formatted bank account information that you MUST send exactly as-is to the user.",
                         "parameters": {
                             "type": "object",
                             "properties": {
