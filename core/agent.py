@@ -81,13 +81,15 @@ class AgentEngine:
         )
         _COBROS_RULE = (
             "\n\nREGLA DE COBROS:\n"
-            "- CUANDO el usuario mencione 'transferencia', 'pago', 'deposito', 'transferir', 'pagar' "
+            "1. CUANDO el usuario mencione 'transferencia', 'pago', 'deposito', 'transferir', 'pagar' "
             "o cualquier intención de pagar, INMEDIATAMENTE llama la tool 'enviar_datos_bancarios'.\n"
-            "- NO hagas preguntas previas sobre el monto.\n"
-            "- NO pidas confirmación ni datos adicionales.\n"
-            "- Cuando recibas el resultado de 'enviar_datos_bancarios', MUESTRA EL MENSAJE DIRECTAMENTE EN EL CHAT.\n"
-            "- El mensaje ya está formateado para WhatsApp. NUNCA intentes enviarlo por correo.\n"
-            "- El usuario puede luego enviar comprobante de la transferencia para verificación."
+            "2. NO hagas preguntas previas sobre el monto.\n"
+            "3. Cuando recibas el resultado de 'enviar_datos_bancarios':\n"
+            "   - El resultado contiene un campo 'mensaje' con los datos bancarios formateados.\n"
+            "   - COPIA ESE MENSAJE TAL CUAL en tu respuesta al usuario.\n"
+            "   - NO lo reescriba, NO lo parafrasees, NO intentes enviarlo por correo.\n"
+            "   - El mensaje ya está listo para WhatsApp.\n"
+            "4. Después de mostrar los datos, puedes añadir instrucciones claras sobre qué hacer después."
         )
         self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _COBROS_RULE
 
