@@ -5,6 +5,7 @@ Detects critical events (frustrated customer, escalation failures, suspicious pa
 and sends immediate alerts to owner's personal WhatsApp.
 """
 
+import httpx
 import logging
 import re
 from datetime import datetime, timedelta
@@ -45,19 +46,80 @@ class AlertasModule:
         "no longer", "stop using", "quit", "switch providers",
     }
 
-    def __init__(self, supabase_client: Any, whatsapp_handler: Any = None,
-                 email_handler: Any = None):
+    def __init__(self, supabase_client: Any):
         """
         Initialize alerts module.
 
         Args:
             supabase_client: Supabase client instance
-            whatsapp_handler: WhatsApp API handler (optional)
-            email_handler: Email handler via SendGrid (optional)
         """
         self.supabase = supabase_client
-        self.whatsapp = whatsapp_handler
-        self.email = email_handler
+
+    async def _send_whatsapp_via_meta(
+        self,
+        client_id: str,
+        phone_number_id: str,
+        to_phone: str,
+        message: str,
+    ) -> dict[str, Any]:
+        """
+        Send WhatsApp message directly via Meta Cloud API.
+
+        Args:
+            client_id: Client ID
+            phone_number_id: WhatsApp phone number ID
+            to_phone: Recipient phone number (with country code, e.g., +1234567890)
+            message: Message text to send
+
+        Returns:
+            Response with success status
+        """
+        try:
+            # Get access token from canales_config
+            config_response = self.supabase.table("canales_config").select(
+                "access_token"
+            ).eq("cliente_id", client_id).eq("canal", "whatsapp").single().execute()
+
+            if not config_response.data:
+                logger.warning(f"No WhatsApp config found for client {client_id}")
+                return {"success": False, "error": "WhatsApp config not found"}
+
+            access_token = config_response.data.get("access_token")
+            if not access_token:
+                logger.warning(f"No access token for client {client_id}")
+                return {"success": False, "error": "Access token not found"}
+
+            url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": to_phone,
+                "type": "text",
+                "text": {"body": message}
+            }
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(url, headers=headers, json=payload)
+
+                if response.status_code in [200, 201]:
+                    logger.info(
+                        f"WhatsApp message sent via Meta API",
+                        extra={"client_id": client_id, "phone": to_phone}
+                    )
+                    return {"success": True, "message_id": response.json().get("messages", [{}])[0].get("id")}
+                else:
+                    logger.error(
+                        f"Meta API error: {response.status_code} {response.text}",
+                        extra={"client_id": client_id}
+                    )
+                    return {"success": False, "error": f"Meta API returned {response.status_code}"}
+
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp via Meta API: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
 
     async def enviar_recordatorio(
         self,
@@ -627,9 +689,9 @@ Recuerda confirmar asistencia.
         """
         try:
             owner_phone = await self._get_owner_phone(client_id)
-            if not owner_phone or not self.whatsapp:
-                logger.warning(f"Cannot send critical alert: owner_phone={owner_phone}, whatsapp={'yes' if self.whatsapp else 'no'}")
-                return {"success": False, "error": "Owner phone or WhatsApp handler not available"}
+            if not owner_phone:
+                logger.warning(f"Cannot send critical alert: owner_phone not available")
+                return {"success": False, "error": "Owner phone not available"}
 
             # Get conversation and user details for context
             conv_details = None
@@ -653,13 +715,14 @@ Recuerda confirmar asistencia.
                 logger.warning(f"Phone number ID not found for client {client_id}")
                 return {"success": False, "error": "Phone number ID not found"}
 
-            # Send via WhatsApp
-            success = await self.whatsapp.send_message(
-                phone_number_id=phone_number_id,
-                recipient_phone=owner_phone,
-                text=alert_text,
+            # Send via WhatsApp directly through Meta API
+            result = await self._send_whatsapp_via_meta(
                 client_id=client_id,
+                phone_number_id=phone_number_id,
+                to_phone=owner_phone,
+                message=alert_text,
             )
+            success = result.get("success", False)
 
             # Save alert to database
             alert_record = {
@@ -721,8 +784,8 @@ Recuerda confirmar asistencia.
         """
         try:
             owner_phone = await self._get_owner_phone(client_id)
-            if not owner_phone or not self.whatsapp:
-                logger.warning(f"Cannot send important alert: owner_phone={owner_phone}")
+            if not owner_phone:
+                logger.warning(f"Cannot send important alert: owner_phone not available")
                 return {"success": False, "error": "Owner phone not available"}
 
             # Format alert message
@@ -736,13 +799,14 @@ Recuerda confirmar asistencia.
             if not phone_number_id:
                 return {"success": False, "error": "Phone number ID not found"}
 
-            # Send via WhatsApp
-            success = await self.whatsapp.send_message(
-                phone_number_id=phone_number_id,
-                recipient_phone=owner_phone,
-                text=alert_text,
+            # Send via WhatsApp directly through Meta API
+            result = await self._send_whatsapp_via_meta(
                 client_id=client_id,
+                phone_number_id=phone_number_id,
+                to_phone=owner_phone,
+                message=alert_text,
             )
+            success = result.get("success", False)
 
             # Save alert to database
             alert_record = {
@@ -796,8 +860,8 @@ Recuerda confirmar asistencia.
         """
         try:
             owner_phone = await self._get_owner_phone(client_id)
-            if not owner_phone or not self.whatsapp:
-                logger.warning(f"Cannot send daily summary: owner_phone={owner_phone}")
+            if not owner_phone:
+                logger.warning(f"Cannot send daily summary: owner_phone not available")
                 return {"success": False, "error": "Owner phone not available"}
 
             # Get metrics for today
@@ -853,13 +917,14 @@ Recuerda confirmar asistencia.
             if not phone_number_id:
                 return {"success": False, "error": "Phone number ID not found"}
 
-            # Send summary
-            success = await self.whatsapp.send_message(
-                phone_number_id=phone_number_id,
-                recipient_phone=owner_phone,
-                text=summary_text,
+            # Send summary directly through Meta API
+            result = await self._send_whatsapp_via_meta(
                 client_id=client_id,
+                phone_number_id=phone_number_id,
+                to_phone=owner_phone,
+                message=summary_text,
             )
+            success = result.get("success", False)
 
             logger.info(
                 f"Daily summary sent to owner",
