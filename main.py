@@ -9,6 +9,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request, HTTPException, Query, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -72,6 +73,43 @@ instagram_handler: InstagramHandler | None = None
 facebook_handler: FacebookHandler | None = None
 email_handler: EmailHandler | None = None
 
+# Alerts and scheduler
+alertas_module: Any | None = None
+scheduler: AsyncIOScheduler | None = None
+
+
+async def _send_daily_summaries(alertas_module: Any, supabase_client: Any) -> None:
+    """
+    Send daily summary to all business owners at 8 PM.
+
+    Fetches all active clients and sends them their daily metrics.
+    """
+    try:
+        if not alertas_module or not supabase_client:
+            logger.warning("alertas_module or supabase_client not available for daily summaries")
+            return
+
+        # Get all active clients
+        response = supabase_client.table("clientes").select("id").eq("estado", "activo").execute()
+        clients = response.data or []
+
+        logger.info(f"Sending daily summaries to {len(clients)} active clients")
+
+        # Send summary to each client
+        for client in clients:
+            try:
+                client_id = client.get("id")
+                result = await alertas_module.enviar_resumen_diario(client_id)
+                if result.get("success"):
+                    logger.info(f"Daily summary sent to client {client_id}", extra={"client_id": client_id})
+                else:
+                    logger.warning(f"Failed to send daily summary to client {client_id}", extra={"client_id": client_id})
+            except Exception as e:
+                logger.error(f"Error sending daily summary to client {client['id']}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in _send_daily_summaries: {e}", exc_info=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -86,6 +124,7 @@ async def lifespan(app: FastAPI):
     global message_router, auth_manager, rate_limiter, supabase_client
     global normalizer, buffer, memory, validator
     global whatsapp_handler, instagram_handler, facebook_handler, email_handler
+    global alertas_module, scheduler
 
     startup_ok = False
 
@@ -298,6 +337,29 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error("cobros_module_injection_error", error=str(e))
 
+        # 3. Initialize Alerts Module and Scheduler for daily summaries
+        try:
+            from modulos.alertas import AlertasModule
+            alertas_module = AlertasModule(supabase_client=supabase_service_client, whatsapp_handler=whatsapp_handler)
+            logger.info("alertas_module_initialized")
+
+            # Initialize AsyncIO scheduler for daily summary at 8 PM
+            scheduler = AsyncIOScheduler()
+            scheduler.add_job(
+                _send_daily_summaries,
+                "cron",
+                hour=20,
+                minute=0,
+                args=(alertas_module, supabase_service_client),
+                id="daily_summary_job"
+            )
+            scheduler.start()
+            logger.info("scheduler_started", job="daily_summary_at_8pm")
+        except Exception as e:
+            logger.error("alertas_scheduler_init_error", error=str(e))
+            alertas_module = None
+            scheduler = None
+
         startup_ok = True
         logger.info("application_startup_complete")
 
@@ -310,6 +372,13 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("application_shutdown", startup_ok=startup_ok)
     try:
+        if scheduler:
+            try:
+                scheduler.shutdown(wait=False)
+                logger.info("scheduler_shutdown")
+            except Exception as e:
+                logger.error("scheduler_shutdown_error", error=str(e))
+
         if message_router:
             try:
                 await message_router.close()
