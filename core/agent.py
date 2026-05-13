@@ -79,7 +79,16 @@ class AgentEngine:
             "- NUNCA uses IDs inventados o la cadena literal 'cita_id'.\n"
             "- El usuario solo puede modificar citas en estado 'confirmada'."
         )
-        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE
+        _COBROS_RULE = (
+            "\n\nREGLA DE COBROS:\n"
+            "- CUANDO el usuario mencione 'transferencia', 'pago', 'deposito', 'transferir', 'pagar' "
+            "o cualquier intención de pagar, INMEDIATAMENTE llama la tool 'enviar_datos_bancarios'.\n"
+            "- NO hagas preguntas previas sobre el monto.\n"
+            "- NO pidas confirmación ni datos adicionales.\n"
+            "- SIMPLEMENTE envía los datos bancarios de inmediato.\n"
+            "- El usuario puede luego enviar comprobante para verificación."
+        )
+        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _COBROS_RULE
 
         if not client_config.get("system_prompt"):
             logger.warning(
@@ -329,7 +338,7 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "enviar_datos_bancarios",
-                        "description": "Send bank account details for payment transfer. The system automatically retrieves the stored bank details.",
+                        "description": "CALL THIS IMMEDIATELY when user mentions 'transferencia', 'pago', 'deposito', 'pagar' or any payment intent. Do NOT wait for more information. Send bank details right away. The system automatically retrieves and displays the stored bank account information.",
                         "parameters": {
                             "type": "object",
                             "properties": {
