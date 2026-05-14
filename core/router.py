@@ -15,14 +15,16 @@ logger = logging.getLogger(__name__)
 class MessageRouter:
     """Routes messages to correct agent instance per client."""
 
-    def __init__(self, supabase_client: Any):
+    def __init__(self, supabase_client: Any, supabase_service_client: Any = None):
         """
         Initialize message router.
 
         Args:
             supabase_client: Supabase client instance
+            supabase_service_client: Service role Supabase client (for elevated permissions)
         """
         self.supabase = supabase_client
+        self.supabase_service = supabase_service_client or supabase_client
         self.agent_instances = {}  # Cache of AgentEngine instances by client_id
 
     async def initialize(self) -> None:
@@ -149,8 +151,13 @@ class MessageRouter:
         config = await self._get_client_config(client_id)
         config["client_id"] = client_id
 
-        # Create agent instance with service client so AgendamientoModule can bypass RLS
-        agent = AgentEngine(config, supabase_client=self.supabase)
+        # Create agent instance with both regular and service clients
+        # Service client allows CalificacionModule to bypass RLS for lead scoring
+        agent = AgentEngine(
+            config,
+            supabase_client=self.supabase,
+            supabase_service_client=self.supabase_service
+        )
         self.agent_instances[client_id] = agent
 
         logger.info(f"Agent instance created for client {client_id}")

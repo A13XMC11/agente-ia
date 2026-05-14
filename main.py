@@ -147,7 +147,10 @@ async def lifespan(app: FastAPI):
 
         # 2. Initialize core services
         try:
-            message_router = MessageRouter(supabase_client=supabase_service_client)
+            message_router = MessageRouter(
+                supabase_client=supabase_client,
+                supabase_service_client=supabase_service_client
+            )
             logger.info("message_router_created")
         except Exception as e:
             logger.error("message_router_init_error", error=str(e))

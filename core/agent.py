@@ -138,10 +138,22 @@ class AgentEngine:
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
         self._tools_cache = None
+
+        # Log initialization status
+        logger.info(
+            f"AgentEngine init - supabase_service: {supabase_service_client is not None}, "
+            f"supabase_client: {supabase_client is not None}"
+        )
+
         self.alertas = AlertasModule(supabase_client) if supabase_client else None
         self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
+
+        logger.info(
+            f"CalificacionModule created: {self.calificacion is not None} "
+            f"(client_id={self.client_id})"
+        )
 
         # Temporary storage for current message context (passed to tool calls)
         self._current_media_url = None
