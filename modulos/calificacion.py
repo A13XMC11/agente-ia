@@ -476,9 +476,12 @@ class CalificacionModule:
             logger.info(f"Buscando lead: cliente_id={client_id}, usuario_id={usuario_id}")
             lead_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
-            ).eq("telefono", usuario_id).single().execute()
+            ).eq("telefono", usuario_id).limit(1).execute()
 
-            lead = lead_response.data
+            lead = lead_response.data[0] if lead_response.data else None
+            if not lead:
+                logger.warning(f"Lead no encontrado para usuario_id={usuario_id}")
+                return {"error": f"Lead no encontrado para usuario_id {usuario_id}"}
             logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
 
             # Calculate new state based on score
@@ -642,9 +645,11 @@ class CalificacionModule:
             # Fetch lead
             lead_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
-            ).eq("telefono", usuario_id).single().execute()
+            ).eq("telefono", usuario_id).limit(1).execute()
 
-            lead = lead_response.data
+            lead = lead_response.data[0] if lead_response.data else None
+            if not lead:
+                return {"error": f"Lead no encontrado para usuario_id {usuario_id}"}
 
             # Fetch conversation metrics
             conversation_response = self.supabase.table("conversaciones").select(
@@ -845,21 +850,19 @@ class CalificacionModule:
             logger.info(f"Score calculado: {result.score}, estado: {result.state}, señales: {[s.name for s in result.signals]}")
 
             # Fetch existing lead
-            lead = None
-            try:
-                logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
-                lead_response = (
-                    self.supabase.table("leads")
-                    .select("*")
-                    .eq("cliente_id", client_id)
-                    .eq("telefono", usuario_id)
-                    .single()
-                    .execute()
-                )
-                lead = lead_response.data
-                logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
-            except Exception as e:
-                logger.warning(f"Lead no existe para usuario_id={usuario_id}: {e}. Creando nuevo...")
+            logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
+            lead_response = (
+                self.supabase.table("leads")
+                .select("*")
+                .eq("cliente_id", client_id)
+                .eq("telefono", usuario_id)
+                .limit(1)
+                .execute()
+            )
+            lead = lead_response.data[0] if lead_response.data else None
+
+            if not lead:
+                logger.warning(f"Lead no existe para usuario_id={usuario_id}. Creando nuevo...")
                 # Lead doesn't exist yet — create it with a zero score
                 lead = {
                     "id": str(uuid4()),
@@ -870,6 +873,8 @@ class CalificacionModule:
                     "interaction_count": 0,
                 }
                 logger.info(f"Nuevo lead preparado: {lead['id']}")
+            else:
+                logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
 
             # Blended score: keep lead hot once it reaches hot threshold
             old_score = lead.get("score", 0)
