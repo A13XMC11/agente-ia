@@ -828,6 +828,7 @@ class CalificacionModule:
             or {error: str} on failure (never raises)
         """
         try:
+            logger.info(f"=== CALIFICACION INICIADA para {usuario_id} ===", extra={"client_id": client_id})
             logger.info(f"Calculando score para usuario_id={usuario_id}", extra={"client_id": client_id})
 
             if current_ts is None:

@@ -668,8 +668,20 @@ class AgentEngine:
                     logger.warning(f"Error triggering alert detection: {e}")
 
             # Trigger automatic lead scoring in background (non-blocking)
+            logger.info(
+                f"=== LEAD SCORING CHECK ===",
+                extra={
+                    "client_id": cliente_id,
+                    "calificacion_module_exists": bool(self.calificacion),
+                    "module_enabled": self.active_modules.get("calificacion", False),
+                }
+            )
             if self.calificacion and self.active_modules.get("calificacion"):
                 try:
+                    logger.info(
+                        f"=== LEAD SCORING TRIGGERED for {sender_id} ===",
+                        extra={"client_id": cliente_id, "user_id": sender_id}
+                    )
                     asyncio.create_task(
                         self.calificacion.calcular_score_automatico(
                             client_id=cliente_id,
@@ -681,7 +693,16 @@ class AgentEngine:
                         )
                     )
                 except Exception as e:
-                    logger.warning(f"Error triggering auto lead scoring: {e}")
+                    logger.error(f"Error triggering auto lead scoring: {e}", exc_info=True)
+            else:
+                logger.warning(
+                    f"Lead scoring NOT triggered",
+                    extra={
+                        "client_id": cliente_id,
+                        "has_module": bool(self.calificacion),
+                        "is_enabled": self.active_modules.get("calificacion", False),
+                    }
+                )
 
             return response_dict
 
