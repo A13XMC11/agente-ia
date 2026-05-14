@@ -58,6 +58,11 @@ class AgentEngine:
         self.system_prompt = client_config.get("system_prompt", "")
         self.active_modules = client_config.get("active_modules", {})
 
+        logger.info(f"🟢 === AgentEngine.__init__ ===")
+        logger.info(f"client_id: {self.client_id}")
+        logger.info(f"active_modules: {self.active_modules}")
+        logger.info(f"calificacion_enabled: {self.active_modules.get('calificacion', False)}")
+
         # Inject current date and time
         tz = pytz.timezone(client_config.get("business_hours_timezone", "America/Guayaquil"))
         now = datetime.now(tz)
@@ -151,9 +156,13 @@ class AgentEngine:
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
 
         logger.info(
-            f"CalificacionModule created: {self.calificacion is not None} "
+            f"🟢 CalificacionModule created: {self.calificacion is not None} "
             f"(client_id={self.client_id})"
         )
+        if self.calificacion:
+            logger.info(f"🟢 CalificacionModule is NOT None - ready to use")
+        else:
+            logger.warning(f"🔴 CalificacionModule is None - lead scoring will NOT work!")
 
         # Temporary storage for current message context (passed to tool calls)
         self._current_media_url = None
@@ -541,6 +550,7 @@ class AgentEngine:
                 - split_messages: list[str] (if response is long)
                 - escalated: bool
         """
+        logger.info("🔵 === PROCESS_MESSAGE STARTED ===")
         user_message = mensaje_normalizado.get("text", "")
         sender_id = mensaje_normalizado.get("sender_id", "unknown")
         media_url = mensaje_normalizado.get("media_url")
@@ -683,17 +693,24 @@ class AgentEngine:
 
             # Trigger automatic lead scoring
             logger.info(
-                f"=== LEAD SCORING CHECK ===",
+                f"🔴 === LEAD SCORING CHECK ===",
                 extra={
                     "client_id": cliente_id,
+                    "sender_id": sender_id,
                     "calificacion_module_exists": bool(self.calificacion),
                     "module_enabled": self.active_modules.get("calificacion", False),
                 }
             )
+
+            # Debug the condition
+            has_module = bool(self.calificacion)
+            is_enabled = self.active_modules.get("calificacion", False)
+            logger.info(f"DEBUG: has_module={has_module}, is_enabled={is_enabled}, will_execute={has_module and is_enabled}")
+
             if self.calificacion and self.active_modules.get("calificacion"):
                 try:
                     logger.info(
-                        f"=== LEAD SCORING TRIGGERED for {sender_id} ===",
+                        f"✅ === LEAD SCORING TRIGGERED for {sender_id} ===",
                         extra={"client_id": cliente_id, "user_id": sender_id}
                     )
                     await self.calificacion.calcular_score_automatico(
@@ -704,15 +721,17 @@ class AgentEngine:
                         current_ts=datetime.utcnow(),
                         conversation_id=self._current_conversation_id,
                     )
+                    logger.info(f"✅ === LEAD SCORING COMPLETED for {sender_id} ===")
                 except Exception as e:
-                    logger.error(f"Error in auto lead scoring: {e}", exc_info=True)
+                    logger.error(f"❌ Error in auto lead scoring: {e}", exc_info=True)
             else:
                 logger.warning(
-                    f"Lead scoring NOT triggered",
+                    f"❌ Lead scoring NOT triggered",
                     extra={
                         "client_id": cliente_id,
-                        "has_module": bool(self.calificacion),
-                        "is_enabled": self.active_modules.get("calificacion", False),
+                        "sender_id": sender_id,
+                        "has_module": has_module,
+                        "is_enabled": is_enabled,
                     }
                 )
 
