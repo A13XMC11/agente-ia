@@ -369,7 +369,10 @@ class CalificacionModule:
             Lead profile with score
         """
         try:
+            logger.info(f"Guardando lead para usuario_id={usuario_id}, nombre={nombre}", extra={"client_id": client_id})
+
             # Check if lead exists
+            logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
             existing_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
             ).eq("user_id", usuario_id).execute()
@@ -377,9 +380,9 @@ class CalificacionModule:
             lead_data = {
                 "cliente_id": client_id,
                 "user_id": usuario_id,
-                "name": nombre,
+                "nombre": nombre,
                 "email": email,
-                "phone": telefono,
+                "telefono": telefono,
                 "company": empresa,
                 "tags": tags or [],
                 "updated_at": datetime.utcnow().isoformat(),
@@ -388,9 +391,11 @@ class CalificacionModule:
             if existing_response.data:
                 # Update existing lead
                 lead_id = existing_response.data[0]["id"]
-                self.supabase.table("leads").update(lead_data).eq(
+                logger.info(f"Lead encontrado: {lead_id}. Actualizando con datos: {lead_data}")
+                result = self.supabase.table("leads").update(lead_data).eq(
                     "id", lead_id
                 ).execute()
+                logger.info(f"Lead actualizado exitosamente: {lead_id}")
 
                 logger.info(
                     f"Lead updated: {usuario_id} ({nombre})",
@@ -405,11 +410,12 @@ class CalificacionModule:
                 }
             else:
                 # Create new lead
+                logger.info(f"Lead no existe. Creando nuevo lead...")
                 new_lead = {
                     "id": str(uuid4()),
                     **lead_data,
                     "score": 0.0,
-                    "state": "curioso",  # Initial state
+                    "estado": "curioso",
                     "urgency": 0.0,
                     "budget": None,
                     "decision_power": 0.0,
@@ -417,8 +423,9 @@ class CalificacionModule:
                     "last_interaction": datetime.utcnow().isoformat(),
                     "created_at": datetime.utcnow().isoformat(),
                 }
-
-                self.supabase.table("leads").insert(new_lead).execute()
+                logger.info(f"Insertando nuevo lead: {new_lead}")
+                result = self.supabase.table("leads").insert(new_lead).execute()
+                logger.info(f"Lead creado exitosamente: {new_lead['id']}")
 
                 logger.info(
                     f"Lead created: {usuario_id} ({nombre})",
@@ -433,7 +440,7 @@ class CalificacionModule:
                 }
 
         except Exception as e:
-            logger.error(f"Error saving lead: {e}")
+            logger.error(f"Error saving lead: {e}", exc_info=True, extra={"client_id": client_id})
             return {"error": str(e)}
 
     async def actualizar_score_lead(
@@ -461,15 +468,20 @@ class CalificacionModule:
             Updated lead with new state and notifications
         """
         try:
+            logger.info(f"Actualizando score para usuario_id={usuario_id}, score={score}", extra={"client_id": client_id})
+
             if not (0 <= score <= 10):
+                logger.warning(f"Score fuera de rango: {score}")
                 return {"error": "Score must be between 0 and 10"}
 
             # Fetch lead
+            logger.info(f"Buscando lead: cliente_id={client_id}, usuario_id={usuario_id}")
             lead_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
             ).eq("user_id", usuario_id).single().execute()
 
             lead = lead_response.data
+            logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
 
             # Calculate new state based on score
             if score >= self.score_threshold_hot:
@@ -479,21 +491,24 @@ class CalificacionModule:
             else:
                 new_state = "curioso"
 
-            old_state = lead.get("state", "curioso")
+            old_state = lead.get("estado", "curioso")
+            logger.info(f"Transición de estado: {old_state} -> {new_state}")
 
             # Update lead
             update_data = {
                 "score": score,
-                "state": new_state,
+                "estado": new_state,
                 "score_reason": razon,
                 "score_updated_at": datetime.utcnow().isoformat(),
                 "interaction_count": lead.get("interaction_count", 0) + 1,
                 "last_interaction": datetime.utcnow().isoformat(),
             }
 
+            logger.info(f"Guardando score con datos: {update_data}")
             self.supabase.table("leads").update(update_data).eq(
                 "id", lead["id"]
             ).execute()
+            logger.info(f"Lead score guardado exitosamente: {lead['id']}")
 
             result = {
                 "success": True,
@@ -512,6 +527,7 @@ class CalificacionModule:
                 and old_state != "caliente"
                 and self.notification_enabled
             ):
+                logger.info(f"Enviando notificación de lead caliente para {usuario_id}")
                 notification = await self._send_hot_lead_notification(
                     client_id, lead, score
                 )
@@ -525,7 +541,7 @@ class CalificacionModule:
             return result
 
         except Exception as e:
-            logger.error(f"Error updating lead score: {e}")
+            logger.error(f"Error updating lead score: {e}", exc_info=True, extra={"client_id": client_id})
             return {"error": str(e)}
 
     async def _send_hot_lead_notification(
@@ -550,23 +566,28 @@ class CalificacionModule:
             Notification status
         """
         try:
+            lead_name = lead.get("nombre") or lead.get("name", "Lead sin nombre")
+            logger.info(f"Enviando notificación de lead caliente: {lead_name} (score: {score})")
+
             notification = {
                 "id": str(uuid4()),
                 "cliente_id": client_id,
                 "type": "hot_lead",
                 "lead_id": lead["id"],
-                "lead_name": lead.get("name"),
+                "lead_name": lead_name,
                 "score": score,
-                "message": f"🔥 Lead Caliente: {lead.get('name')} (Score: {score}/10)",
+                "message": f"🔥 Lead Caliente: {lead_name} (Score: {score}/10)",
                 "priority": "high",
                 "created_at": datetime.utcnow().isoformat(),
                 "read": False,
             }
 
+            logger.info(f"Insertando notificación: {notification}")
             self.supabase.table("notifications").insert(notification).execute()
+            logger.info(f"Notificación enviada: {notification['id']}")
 
             logger.info(
-                f"Hot lead notification sent for {lead['name']} (score: {score})",
+                f"Hot lead notification sent for {lead_name} (score: {score})",
                 extra={"client_id": client_id},
             )
 
@@ -576,12 +597,13 @@ class CalificacionModule:
                 try:
                     mensaje = (
                         f"Lead muy caliente detectado:\n\n"
-                        f"👤 Nombre: {lead.get('name', 'N/A')}\n"
+                        f"👤 Nombre: {lead_name}\n"
                         f"📊 Score: {score}/10\n"
-                        f"📞 Teléfono: {lead.get('phone', 'N/A')}\n"
+                        f"📞 Teléfono: {lead.get('telefono') or lead.get('phone', 'N/A')}\n"
                         f"📧 Email: {lead.get('email', 'N/A')}\n"
                         f"🏢 Empresa: {lead.get('company', 'N/A')}"
                     )
+                    logger.info(f"Enviando alerta WhatsApp: {mensaje[:100]}...")
                     alert_result = await self.alertas.enviar_alerta_importante(
                         client_id=client_id,
                         tipo="hot_lead",
@@ -589,6 +611,7 @@ class CalificacionModule:
                         usuario_id=lead.get("user_id"),
                         datos_extras={"score": score, "lead_id": lead["id"]},
                     )
+                    logger.info(f"Alerta WhatsApp enviada: {alert_result}")
                 except Exception as alert_err:
                     logger.warning(f"Error sending hot lead WhatsApp alert: {alert_err}")
 
@@ -599,7 +622,7 @@ class CalificacionModule:
             }
 
         except Exception as e:
-            logger.error(f"Error sending notification: {e}")
+            logger.error(f"Error sending notification: {e}", exc_info=True, extra={"client_id": client_id})
             return {"sent": False, "error": str(e)}
 
     async def get_lead_score_factors(
@@ -805,6 +828,8 @@ class CalificacionModule:
             or {error: str} on failure (never raises)
         """
         try:
+            logger.info(f"Calculando score para usuario_id={usuario_id}", extra={"client_id": client_id})
+
             if current_ts is None:
                 current_ts = datetime.utcnow()
 
@@ -812,14 +837,18 @@ class CalificacionModule:
             prior_tuple = tuple(prior_messages or [])
 
             # Run deterministic scoring engine
+            logger.info(f"Ejecutando scoring engine con mensaje: {current_message[:100]}")
             result = self.scoring_engine.score_message(
                 current_message=current_message,
                 prior_messages=prior_tuple,
                 current_ts=current_ts,
             )
+            logger.info(f"Score calculado: {result.score}, estado: {result.state}, señales: {[s.name for s in result.signals]}")
 
             # Fetch existing lead
+            lead = None
             try:
+                logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
                 lead_response = (
                     self.supabase.table("leads")
                     .select("*")
@@ -829,23 +858,28 @@ class CalificacionModule:
                     .execute()
                 )
                 lead = lead_response.data
-            except Exception:
+                logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
+            except Exception as e:
+                logger.warning(f"Lead no existe para usuario_id={usuario_id}: {e}. Creando nuevo...")
                 # Lead doesn't exist yet — create it with a zero score
                 lead = {
                     "id": str(uuid4()),
                     "cliente_id": client_id,
                     "user_id": usuario_id,
                     "score": 0,
-                    "state": "curioso",
+                    "estado": "curioso",
                     "interaction_count": 0,
                 }
+                logger.info(f"Nuevo lead preparado: {lead['id']}")
 
             # Blended score: keep lead hot once it reaches hot threshold
             old_score = lead.get("score", 0)
             new_score = max(old_score, result.score)
             delta = new_score - old_score
             new_state = LeadScoringEngine._state_for_score(new_score)
-            old_state = lead.get("state", "curioso")
+            old_state = lead.get("estado", "curioso")
+
+            logger.info(f"Score blended: {old_score} -> {new_score} (delta: {delta}), estado: {old_state} -> {new_state}")
 
             # Build history row
             history_row = {
@@ -867,13 +901,16 @@ class CalificacionModule:
             }
 
             # Insert history (always, for audit trail)
+            logger.info(f"Guardando history row: {history_row}")
             self.supabase.table("lead_score_history").insert(history_row).execute()
+            logger.info(f"History row guardada: {history_row['id']}")
 
             # Update lead score only if it changed
             if delta > 0:
+                logger.info(f"Score cambió (delta={delta}), actualizando lead...")
                 update_data = {
                     "score": new_score,
-                    "state": new_state,
+                    "estado": new_state,
                     "score_reason": f"Signal: {history_row['signal_type']}",
                     "score_updated_at": current_ts.isoformat(),
                     "interaction_count": lead.get("interaction_count", 0) + 1,
@@ -882,25 +919,31 @@ class CalificacionModule:
 
                 if not lead.get("id"):
                     # Create lead if it doesn't exist
+                    logger.info("Lead ID no existe, creando nuevo lead en Supabase...")
                     lead["id"] = str(uuid4())
                     new_lead = {
                         "id": lead["id"],
                         "cliente_id": client_id,
                         "user_id": usuario_id,
-                        "name": "",
-                        "phone": "",
+                        "nombre": "",
+                        "telefono": "",
                         **update_data,
                         "created_at": current_ts.isoformat(),
                     }
+                    logger.info(f"Insertando nuevo lead: {new_lead}")
                     self.supabase.table("leads").insert(new_lead).execute()
+                    logger.info(f"Lead creado: {lead['id']}")
                 else:
                     # Update existing lead
+                    logger.info(f"Actualizando lead existente: {lead['id']} con datos: {update_data}")
                     self.supabase.table("leads").update(update_data).eq(
                         "id", lead["id"]
                     ).execute()
+                    logger.info(f"Lead actualizado: {lead['id']}")
 
                 # Trigger hot lead notification if state changed to caliente
                 if new_state == "caliente" and old_state != "caliente":
+                    logger.info(f"Lead pasó a estado CALIENTE, enviando notificación...")
                     await self._send_hot_lead_notification(
                         client_id, lead, new_score
                     )
@@ -909,6 +952,8 @@ class CalificacionModule:
                     f"Lead score updated: {usuario_id} -> {new_score} ({new_state})",
                     extra={"client_id": client_id},
                 )
+            else:
+                logger.info(f"Score no cambió (delta={delta}), no actualizando lead")
 
             result_dict = {
                 "success": True,
@@ -931,5 +976,5 @@ class CalificacionModule:
             return result_dict
 
         except Exception as e:
-            logger.error(f"Error in calcular_score_automatico: {e}")
+            logger.error(f"Error in calcular_score_automatico para usuario_id={usuario_id}: {e}", exc_info=True, extra={"client_id": client_id})
             return {"error": str(e)}
