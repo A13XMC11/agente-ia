@@ -72,9 +72,10 @@ class MessageRouter:
 
             if not response.data:
                 logger.warning(
-                    f"No agentes config found for client_id={client_id}, using defaults. "
-                    f"system_prompt (default): {defaults['system_prompt'][:100]!r}"
+                    f"No agentes config found for client_id={client_id}, using defaults with calificacion FORCED ENABLED",
+                    extra={"client_id": client_id}
                 )
+                defaults["active_modules"]["calificacion"] = True
                 return defaults
 
             config = response.data[0]
@@ -91,35 +92,44 @@ class MessageRouter:
                 config["max_tokens"] = config["tokens_maximos"]
 
             merged = {**defaults, **config}
+
+            # Ensure active_modules exists and has calificacion enabled
+            if "active_modules" not in merged or not isinstance(merged["active_modules"], dict):
+                merged["active_modules"] = defaults["active_modules"].copy()
+            else:
+                # Merge with defaults to ensure all modules are present
+                merged["active_modules"] = {
+                    **defaults["active_modules"],
+                    **merged.get("active_modules", {})
+                }
+
+            # CRITICAL: Ensure calificacion is always enabled
+            merged["active_modules"]["calificacion"] = True
+
             system_prompt = merged.get("system_prompt", "")
             logger.info(
                 f"system_prompt for client_id={client_id} "
                 f"({'from agentes' if system_prompt != defaults['system_prompt'] else 'DEFAULT fallback'}): "
-                f"{system_prompt[:100]!r}"
+                f"{system_prompt[:100]!r}",
+                extra={"active_modules": merged.get("active_modules", {})}
             )
             return merged
 
         except Exception as e:
-            logger.warning(f"Could not fetch config for {client_id}: {e}, using defaults")
+            logger.warning(
+                f"Could not fetch config for {client_id}: {e}, using defaults with calificacion FORCED ENABLED",
+                extra={"client_id": client_id}
+            )
+            defaults["active_modules"]["calificacion"] = True
             return {
                 "client_id": client_id,
-                "system_prompt": "You are a helpful business assistant.",
-                "temperature": 0.7,
-                "max_tokens": 4000,
-                "active_modules": {
-                    "ventas": True,
-                    "agendamiento": True,
-                    "cobros": True,
-                    "links_pago": True,
-                    "calificacion": True,
-                    "campanas": False,
-                    "alertas": True,
-                    "seguimientos": True,
-                    "documentos": True,
-                },
-                "business_hours_start": "08:00",
-                "business_hours_end": "18:00",
-                "business_hours_timezone": "America/Guayaquil",
+                "system_prompt": defaults.get("system_prompt", "You are a helpful business assistant."),
+                "temperature": defaults.get("temperature", 0.7),
+                "max_tokens": defaults.get("max_tokens", 4000),
+                "active_modules": defaults["active_modules"].copy(),
+                "business_hours_start": defaults.get("business_hours_start", "08:00"),
+                "business_hours_end": defaults.get("business_hours_end", "18:00"),
+                "business_hours_timezone": defaults.get("business_hours_timezone", "America/Guayaquil"),
             }
 
     async def _get_or_create_agent(self, client_id: str) -> AgentEngine:
