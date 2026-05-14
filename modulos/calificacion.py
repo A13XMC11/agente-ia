@@ -22,21 +22,42 @@ logger = logging.getLogger(__name__)
 # Scoring signals (immutable keyword tuples with point values)
 URGENCY_KEYWORDS = (
     "urgente",
+    "urgencia",
     "ya",
     "hoy",
+    "ahora",
+    "inmediato",
+    "inmediatamente",
+    "pronto",
+    "necesito",
     "esta semana",
     "lo necesito pronto",
-    "inmediatamente",
+    "cuanto antes",
 )
 BUDGET_KEYWORDS = (
-    "cuanto cuesta",
     "precio",
+    "costo",
+    "cuanto",
+    "cuantos",
+    "cuanta",
+    "cuantas",
+    "vale",
+    "cuesta",
+    "cobran",
+    "tarifa",
     "presupuesto",
     "puedo pagar",
     "tengo presupuesto",
-    "costo",
 )
 DECISION_POWER_KEYWORDS = (
+    "dueño",
+    "gerente",
+    "director",
+    "empresa",
+    "negocio",
+    "mi negocio",
+    "somos",
+    "nosotros",
     "yo decido",
     "soy dueño",
     "soy gerente",
@@ -44,7 +65,19 @@ DECISION_POWER_KEYWORDS = (
     "nosotros necesitamos",
     "soy el responsable",
 )
-DEMO_KEYWORDS = ("demo", "demostracion", "cita", "reunion", "quiero ver", "mostrarme")
+DEMO_KEYWORDS = (
+    "demo",
+    "demostración",
+    "demostracion",
+    "cita",
+    "reunión",
+    "reunion",
+    "ver",
+    "mostrar",
+    "probar",
+    "quiero ver",
+    "mostrarme",
+)
 CURIOSITY_KEYWORDS = (
     "solo preguntando",
     "solo viendo",
@@ -869,17 +902,15 @@ class CalificacionModule:
                 new_state = LeadScoringEngine._state_for_score(new_score)
 
                 logger.info(f"Lead encontrado: {lead_id}, score actual: {old_score}")
+                logger.info(f"Score calculado: {result.score}, estado: {result.state}")
                 logger.info(f"Score blended: {old_score} -> {new_score} (delta: {delta})")
+                logger.info(f"Actualizando lead {lead_id} con score={new_score}, estado={new_state}")
 
-                if delta > 0:
-                    logger.info(f"Score cambió, actualizando lead {lead_id}...")
-                    self.supabase.table("leads").update({
-                        "score": new_score,
-                        "estado": new_state
-                    }).eq("id", lead_id).execute()
-                    logger.info(f"Lead actualizado: {lead_id} score={new_score}")
-                else:
-                    logger.info(f"Score no cambió (delta={delta})")
+                self.supabase.table("leads").update({
+                    "score": new_score,
+                    "estado": new_state
+                }).eq("id", lead_id).execute()
+                logger.info(f"Lead actualizado: {lead_id} score={new_score}")
             else:
                 # Crear nuevo lead - INSERT directo
                 logger.info(f"Lead no existe, creando nuevo...")
