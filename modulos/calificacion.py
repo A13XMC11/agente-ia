@@ -416,8 +416,14 @@ class CalificacionModule:
                     "created_at": datetime.utcnow().isoformat(),
                 }
                 logger.info(f"Insertando nuevo lead: {new_lead}")
-                result = self.supabase.table("leads").insert(new_lead).execute()
-                logger.info(f"Lead creado exitosamente: {new_lead['id']}")
+                try:
+                    result = self.supabase.table("leads").insert(new_lead).execute()
+                    logger.info(f"Lead creado exitosamente: {new_lead['id']}")
+                except Exception as e:
+                    logger.error(f"ERROR CRITICO al crear lead: {e}")
+                    logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}, nombre={nombre}")
+                    logger.error(f"Lead data: {new_lead}")
+                    raise
 
                 logger.info(
                     f"Lead created: {usuario_id} ({nombre})",
@@ -891,8 +897,14 @@ class CalificacionModule:
                         "created_at": current_ts.isoformat(),
                     }
                     logger.info(f"Insertando nuevo lead: {new_lead}")
-                    self.supabase.table("leads").insert(new_lead).execute()
-                    logger.info(f"Lead creado: {lead['id']}")
+                    try:
+                        self.supabase.table("leads").insert(new_lead).execute()
+                        logger.info(f"Lead creado: {lead['id']}")
+                    except Exception as e:
+                        logger.error(f"ERROR CRITICO al crear lead: {e}")
+                        logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}")
+                        logger.error(f"Lead data: {new_lead}")
+                        raise
                 else:
                     # Update existing lead
                     logger.info(f"Actualizando lead existente: {lead['id']} con datos: {update_data}")
