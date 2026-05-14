@@ -888,10 +888,11 @@ class CalificacionModule:
             # Update lead score only if it changed
             if delta > 0:
                 logger.info(f"Score cambió (delta={delta}), actualizando lead...")
+                signal_names = ", ".join(sig.name for sig in result.signals) if result.signals else "none"
                 update_data = {
                     "score": new_score,
                     "estado": new_state,
-                    "score_reason": f"Signal: {history_row['signal_type']}",
+                    "score_reason": f"Signals: {signal_names}",
                     "score_updated_at": current_ts.isoformat(),
                     "interaction_count": lead.get("interaction_count", 0) + 1,
                     "last_interaction": current_ts.isoformat(),
