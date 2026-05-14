@@ -415,11 +415,14 @@ class CalificacionModule:
                     "estado": "curioso",
                     "created_at": datetime.utcnow().isoformat(),
                 }
+                logger.info(f"=== INTENTANDO INSERT LEAD ===")
                 logger.info(f"Insertando nuevo lead: {new_lead}")
                 try:
                     result = self.supabase.table("leads").insert(new_lead).execute()
+                    logger.info(f"=== INSERT EXITOSO: {new_lead['id']} ===")
                     logger.info(f"Lead creado exitosamente: {new_lead['id']}")
                 except Exception as e:
+                    logger.error(f"=== INSERT FALLIDO: {str(e)} ===")
                     logger.error(f"ERROR CRITICO al crear lead: {e}")
                     logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}, nombre={nombre}")
                     logger.error(f"Lead data: {new_lead}")
