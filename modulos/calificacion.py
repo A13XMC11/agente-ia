@@ -843,92 +843,81 @@ class CalificacionModule:
             )
             logger.info(f"Score calculado: {result.score}, estado: {result.state}, señales: {[s.name for s in result.signals]}")
 
-            # Fetch existing lead
+            # Buscar lead existente
             logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
-            lead_response = (
+            existing = (
                 self.supabase.table("leads")
-                .select("*")
+                .select("id, score")
                 .eq("cliente_id", client_id)
                 .eq("telefono", usuario_id)
                 .limit(1)
                 .execute()
             )
-            lead = lead_response.data[0] if lead_response.data else None
 
-            if not lead:
-                logger.warning(f"Lead no existe para usuario_id={usuario_id}. Creando nuevo...")
-                # Lead doesn't exist yet — create it with a zero score
-                lead = {
-                    "id": str(uuid4()),
-                    "cliente_id": client_id,
-                    "telefono": usuario_id,
-                    "score": 0,
-                    "estado": "curioso",
-                }
-                logger.info(f"Nuevo lead preparado: {lead['id']}")
-            else:
-                logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
+            old_score = 0
+            old_state = "curioso"
+            lead_id = None
 
-            # Blended score: keep lead hot once it reaches hot threshold
-            old_score = lead.get("score", 0)
-            new_score = max(old_score, result.score)
-            delta = new_score - old_score
-            new_state = LeadScoringEngine._state_for_score(new_score)
-            old_state = lead.get("estado", "curioso")
+            if existing.data:
+                # Actualizar lead existente
+                lead_id = existing.data[0]["id"]
+                old_score = existing.data[0].get("score", 0)
+                old_state = LeadScoringEngine._state_for_score(old_score)
 
-            logger.info(f"Score blended: {old_score} -> {new_score} (delta: {delta}), estado: {old_state} -> {new_state}")
+                new_score = max(old_score, result.score)
+                delta = new_score - old_score
+                new_state = LeadScoringEngine._state_for_score(new_score)
 
-            # Update lead score only if it changed
-            if delta > 0:
-                logger.info(f"Score cambió (delta={delta}), actualizando lead...")
-                update_data = {
-                    "score": new_score,
-                    "estado": new_state,
-                }
+                logger.info(f"Lead encontrado: {lead_id}, score actual: {old_score}")
+                logger.info(f"Score blended: {old_score} -> {new_score} (delta: {delta})")
 
-                if not lead.get("id"):
-                    # Create lead if it doesn't exist
-                    logger.info("Lead ID no existe, creando nuevo lead en Supabase...")
-                    lead["id"] = str(uuid4())
-                    new_lead = {
-                        "id": lead["id"],
-                        "cliente_id": client_id,
-                        "telefono": usuario_id,
-                        "nombre": "",
-                        "canal": "whatsapp",
-                        **update_data,
-                        "created_at": current_ts.isoformat(),
-                    }
-                    logger.info(f"Insertando nuevo lead: {new_lead}")
-                    try:
-                        self.supabase.table("leads").insert(new_lead).execute()
-                        logger.info(f"Lead creado: {lead['id']}")
-                    except Exception as e:
-                        logger.error(f"ERROR CRITICO al crear lead: {e}")
-                        logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}")
-                        logger.error(f"Lead data: {new_lead}")
-                        raise
+                if delta > 0:
+                    logger.info(f"Score cambió, actualizando lead {lead_id}...")
+                    self.supabase.table("leads").update({
+                        "score": new_score,
+                        "estado": new_state
+                    }).eq("id", lead_id).execute()
+                    logger.info(f"Lead actualizado: {lead_id} score={new_score}")
                 else:
-                    # Update existing lead
-                    logger.info(f"Actualizando lead existente: {lead['id']} con datos: {update_data}")
-                    self.supabase.table("leads").update(update_data).eq(
-                        "id", lead["id"]
-                    ).execute()
-                    logger.info(f"Lead actualizado: {lead['id']}")
-
-                # Trigger hot lead notification if state changed to caliente
-                if new_state == "caliente" and old_state != "caliente":
-                    logger.info(f"Lead pasó a estado CALIENTE, enviando notificación...")
-                    await self._send_hot_lead_notification(
-                        client_id, lead, new_score
-                    )
-
-                logger.info(
-                    f"Lead score updated: {usuario_id} -> {new_score} ({new_state})",
-                    extra={"client_id": client_id},
-                )
+                    logger.info(f"Score no cambió (delta={delta})")
             else:
-                logger.info(f"Score no cambió (delta={delta}), no actualizando lead")
+                # Crear nuevo lead - INSERT directo
+                logger.info(f"Lead no existe, creando nuevo...")
+                lead_id = str(uuid4())
+                new_score = result.score
+                new_state = result.state
+                delta = new_score
+
+                logger.info(f"Insertando nuevo lead: {lead_id}")
+                try:
+                    result_insert = self.supabase.table("leads").insert({
+                        "id": lead_id,
+                        "cliente_id": client_id,
+                        "conversacion_id": conversation_id,
+                        "telefono": usuario_id,
+                        "canal": "whatsapp",
+                        "nombre": "",
+                        "score": new_score,
+                        "estado": new_state,
+                        "created_at": current_ts.isoformat(),
+                    }).execute()
+                    logger.info(f"Lead creado: {lead_id} score={new_score}")
+                except Exception as e:
+                    logger.error(f"ERROR CRITICO al crear lead: {e}")
+                    logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}")
+                    raise
+
+            # Trigger hot lead notification if state changed to caliente
+            if new_state == "caliente" and old_state != "caliente" and lead_id:
+                logger.info(f"Lead pasó a estado CALIENTE, enviando notificación...")
+                await self._send_hot_lead_notification(
+                    client_id, {"id": lead_id, "nombre": ""}, new_score
+                )
+
+            logger.info(
+                f"Lead score updated: {usuario_id} -> {new_score} ({new_state})",
+                extra={"client_id": client_id},
+            )
 
             result_dict = {
                 "success": True,

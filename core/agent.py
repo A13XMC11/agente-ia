@@ -37,7 +37,7 @@ class AgentEngine:
     - Error handling and graceful escalation
     """
 
-    def __init__(self, client_config: dict[str, Any], supabase_client: Any = None):
+    def __init__(self, client_config: dict[str, Any], supabase_client: Any = None, supabase_service_client: Any = None):
         """
         Initialize the agent engine.
 
@@ -50,6 +50,8 @@ class AgentEngine:
                 - business_hours_start: str (HH:MM)
                 - business_hours_end: str (HH:MM)
                 - business_hours_timezone: str
+            supabase_client: Regular Supabase client for reads
+            supabase_service_client: Service role Supabase client for writes with elevated permissions
         """
         self.client_config = client_config
         self.client_id = client_config.get("client_id", "unknown")
@@ -138,7 +140,7 @@ class AgentEngine:
         self._tools_cache = None
         self.alertas = AlertasModule(supabase_client) if supabase_client else None
         self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
-        self.calificacion = CalificacionModule(supabase_client, self.alertas) if supabase_client else None
+        self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
 
         # Temporary storage for current message context (passed to tool calls)
@@ -667,7 +669,7 @@ class AgentEngine:
                 except Exception as e:
                     logger.warning(f"Error triggering alert detection: {e}")
 
-            # Trigger automatic lead scoring in background (non-blocking)
+            # Trigger automatic lead scoring
             logger.info(
                 f"=== LEAD SCORING CHECK ===",
                 extra={
@@ -682,18 +684,16 @@ class AgentEngine:
                         f"=== LEAD SCORING TRIGGERED for {sender_id} ===",
                         extra={"client_id": cliente_id, "user_id": sender_id}
                     )
-                    asyncio.create_task(
-                        self.calificacion.calcular_score_automatico(
-                            client_id=cliente_id,
-                            usuario_id=sender_id,
-                            current_message=user_message,
-                            prior_messages=memory_context or [],
-                            current_ts=datetime.utcnow(),
-                            conversation_id=self._current_conversation_id,
-                        )
+                    await self.calificacion.calcular_score_automatico(
+                        client_id=cliente_id,
+                        usuario_id=sender_id,
+                        current_message=user_message,
+                        prior_messages=memory_context or [],
+                        current_ts=datetime.utcnow(),
+                        conversation_id=self._current_conversation_id,
                     )
                 except Exception as e:
-                    logger.error(f"Error triggering auto lead scoring: {e}", exc_info=True)
+                    logger.error(f"Error in auto lead scoring: {e}", exc_info=True)
             else:
                 logger.warning(
                     f"Lead scoring NOT triggered",
