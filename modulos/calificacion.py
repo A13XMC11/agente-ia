@@ -893,7 +893,7 @@ class CalificacionModule:
                     result_insert = self.supabase.table("leads").insert({
                         "id": lead_id,
                         "cliente_id": client_id,
-                        "conversacion_id": conversation_id,
+                        "conversacion_id": conversation_id if conversation_id else None,
                         "telefono": usuario_id,
                         "canal": "whatsapp",
                         "nombre": "",
