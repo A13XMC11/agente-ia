@@ -85,12 +85,20 @@ class MessageRouter:
                 f"agentes row fetched for client_id={client_id}: keys={list(config.keys())}"
             )
 
-            # Map Spanish column names to internal keys
-            if "prompt_sistema" in config and config["prompt_sistema"]:
+            # Map column names to internal keys (handle both Spanish and English naming)
+            if "system_prompt" in config and config["system_prompt"]:
+                config["system_prompt"] = config["system_prompt"]
+            elif "prompt_sistema" in config and config["prompt_sistema"]:
                 config["system_prompt"] = config["prompt_sistema"]
-            if "temperatura" in config and config["temperatura"] is not None:
+
+            if "temperature" in config and config["temperature"] is not None:
+                config["temperature"] = config["temperature"]
+            elif "temperatura" in config and config["temperatura"] is not None:
                 config["temperature"] = config["temperatura"]
-            if "max_tokens" not in config and "tokens_maximos" in config:
+
+            if "max_tokens" in config and config["max_tokens"] is not None:
+                config["max_tokens"] = config["max_tokens"]
+            elif "tokens_maximos" in config and config["tokens_maximos"] is not None:
                 config["max_tokens"] = config["tokens_maximos"]
 
             merged = {**defaults, **config}
