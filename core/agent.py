@@ -718,11 +718,8 @@ class AgentEngine:
 
             if self.calificacion and self.active_modules.get("calificacion"):
                 try:
-                    logger.info(
-                        f"✅ === LEAD SCORING TRIGGERED for {sender_id} ===",
-                        extra={"client_id": cliente_id, "user_id": sender_id}
-                    )
-                    await self.calificacion.calcular_score_automatico(
+                    logger.info(f"=== CALLING calcular_score_automatico ===")
+                    result = await self.calificacion.calcular_score_automatico(
                         client_id=cliente_id,
                         usuario_id=sender_id,
                         current_message=user_message,
@@ -730,9 +727,11 @@ class AgentEngine:
                         current_ts=datetime.utcnow(),
                         conversation_id=self._current_conversation_id,
                     )
-                    logger.info(f"✅ === LEAD SCORING COMPLETED for {sender_id} ===")
+                    logger.info(f"=== SCORE RESULT: {result} ===")
                 except Exception as e:
-                    logger.error(f"❌ Error in auto lead scoring: {e}", exc_info=True)
+                    import traceback
+                    logger.error(f"=== SCORE ERROR: {e} ===")
+                    logger.error(traceback.format_exc())
             else:
                 logger.warning(
                     f"❌ Lead scoring NOT triggered",
