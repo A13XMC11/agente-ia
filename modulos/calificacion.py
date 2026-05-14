@@ -375,16 +375,14 @@ class CalificacionModule:
             logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
             existing_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
-            ).eq("user_id", usuario_id).execute()
+            ).eq("telefono", usuario_id).execute()
 
             lead_data = {
                 "cliente_id": client_id,
-                "user_id": usuario_id,
+                "telefono": usuario_id,
                 "nombre": nombre,
                 "email": email,
-                "telefono": telefono,
-                "company": empresa,
-                "tags": tags or [],
+                "canal": "whatsapp",
                 "updated_at": datetime.utcnow().isoformat(),
             }
 
@@ -478,7 +476,7 @@ class CalificacionModule:
             logger.info(f"Buscando lead: cliente_id={client_id}, usuario_id={usuario_id}")
             lead_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
-            ).eq("user_id", usuario_id).single().execute()
+            ).eq("telefono", usuario_id).single().execute()
 
             lead = lead_response.data
             logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
@@ -608,7 +606,7 @@ class CalificacionModule:
                         client_id=client_id,
                         tipo="hot_lead",
                         mensaje=mensaje,
-                        usuario_id=lead.get("user_id"),
+                        usuario_id=lead.get("telefono"),
                         datos_extras={"score": score, "lead_id": lead["id"]},
                     )
                     logger.info(f"Alerta WhatsApp enviada: {alert_result}")
@@ -644,21 +642,21 @@ class CalificacionModule:
             # Fetch lead
             lead_response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
-            ).eq("user_id", usuario_id).single().execute()
+            ).eq("telefono", usuario_id).single().execute()
 
             lead = lead_response.data
 
             # Fetch conversation metrics
             conversation_response = self.supabase.table("conversaciones").select(
                 "id"
-            ).eq("cliente_id", client_id).eq("user_id", usuario_id).execute()
+            ).eq("cliente_id", client_id).eq("telefono", usuario_id).execute()
 
             num_conversations = len(conversation_response.data or [])
 
             # Fetch message count
             messages_response = self.supabase.table("mensajes").select(
                 "id", count="exact"
-            ).eq("cliente_id", client_id).eq("user_id", usuario_id).execute()
+            ).eq("cliente_id", client_id).eq("telefono", usuario_id).execute()
 
             num_messages = messages_response.count or 0
 
@@ -742,7 +740,7 @@ class CalificacionModule:
         try:
             response = self.supabase.table("leads").select("*").eq(
                 "cliente_id", client_id
-            ).eq("state", state).order(
+            ).eq("estado", state).order(
                 "score", desc=True
             ).limit(limit).execute()
 
@@ -767,7 +765,7 @@ class CalificacionModule:
         """
         try:
             response = self.supabase.table("leads").select(
-                "state, score"
+                "estado, score"
             ).eq("cliente_id", client_id).execute()
 
             leads = response.data or []
@@ -783,7 +781,7 @@ class CalificacionModule:
             score_sums = {state: 0 for state in pipeline}
 
             for lead in leads:
-                state = lead.get("state", "curioso")
+                state = lead.get("estado", "curioso")
                 if state in pipeline:
                     pipeline[state]["count"] += 1
                     score_sums[state] += lead.get("score", 0)
@@ -882,30 +880,6 @@ class CalificacionModule:
 
             logger.info(f"Score blended: {old_score} -> {new_score} (delta: {delta}), estado: {old_state} -> {new_state}")
 
-            # Build history row
-            history_row = {
-                "id": str(uuid4()),
-                "cliente_id": client_id,
-                "lead_id": lead.get("id"),
-                "user_id": usuario_id,
-                "score_before": old_score,
-                "score_after": new_score,
-                "delta": delta,
-                "signal_type": ",".join(sig.name for sig in result.signals)
-                if result.signals
-                else "no_signal",
-                "signal_keywords": [
-                    kw for sig in result.signals for kw in sig.matched_keywords
-                ],
-                "message_excerpt": current_message[:500],
-                "created_at": current_ts.isoformat(),
-            }
-
-            # Insert history (always, for audit trail)
-            logger.info(f"Guardando history row: {history_row}")
-            self.supabase.table("lead_score_history").insert(history_row).execute()
-            logger.info(f"History row guardada: {history_row['id']}")
-
             # Update lead score only if it changed
             if delta > 0:
                 logger.info(f"Score cambió (delta={delta}), actualizando lead...")
@@ -925,9 +899,9 @@ class CalificacionModule:
                     new_lead = {
                         "id": lead["id"],
                         "cliente_id": client_id,
-                        "user_id": usuario_id,
+                        "telefono": usuario_id,
                         "nombre": "",
-                        "telefono": "",
+                        "canal": "whatsapp",
                         **update_data,
                         "created_at": current_ts.isoformat(),
                     }
