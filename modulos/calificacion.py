@@ -852,7 +852,7 @@ class CalificacionModule:
                     self.supabase.table("leads")
                     .select("*")
                     .eq("cliente_id", client_id)
-                    .eq("user_id", usuario_id)
+                    .eq("telefono", usuario_id)
                     .single()
                     .execute()
                 )
@@ -864,7 +864,7 @@ class CalificacionModule:
                 lead = {
                     "id": str(uuid4()),
                     "cliente_id": client_id,
-                    "user_id": usuario_id,
+                    "telefono": usuario_id,
                     "score": 0,
                     "estado": "curioso",
                     "interaction_count": 0,
