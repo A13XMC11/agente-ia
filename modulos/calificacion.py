@@ -383,7 +383,6 @@ class CalificacionModule:
                 "nombre": nombre,
                 "email": email,
                 "canal": "whatsapp",
-                "updated_at": datetime.utcnow().isoformat(),
             }
 
             if existing_response.data:
@@ -414,11 +413,6 @@ class CalificacionModule:
                     **lead_data,
                     "score": 0.0,
                     "estado": "curioso",
-                    "urgency": 0.0,
-                    "budget": None,
-                    "decision_power": 0.0,
-                    "interaction_count": 0,
-                    "last_interaction": datetime.utcnow().isoformat(),
                     "created_at": datetime.utcnow().isoformat(),
                 }
                 logger.info(f"Insertando nuevo lead: {new_lead}")
@@ -499,10 +493,6 @@ class CalificacionModule:
             update_data = {
                 "score": score,
                 "estado": new_state,
-                "score_reason": razon,
-                "score_updated_at": datetime.utcnow().isoformat(),
-                "interaction_count": lead.get("interaction_count", 0) + 1,
-                "last_interaction": datetime.utcnow().isoformat(),
             }
 
             logger.info(f"Guardando score con datos: {update_data}")
@@ -665,30 +655,25 @@ class CalificacionModule:
 
             num_messages = messages_response.count or 0
 
-            # Calculate recency score (0-2 points)
-            last_interaction = datetime.fromisoformat(lead.get("last_interaction", ""))
-            days_since = (datetime.utcnow() - last_interaction).days
-            recency_score = max(0, 2 - (days_since / 7))
+            # Calculate recency score (0-2 points) based on created_at
+            created_at = lead.get("created_at")
+            if created_at:
+                created_ts = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
+                days_since = (datetime.utcnow() - created_ts).days
+                recency_score = max(0, 2 - (days_since / 7))
+            else:
+                recency_score = 0
 
             # Calculate engagement score (0-3 points)
             engagement_score = min(3, num_messages / 10)
 
-            # Get other factors
-            urgency = lead.get("urgency", 0)
-            decision_power = lead.get("decision_power", 0)
-            budget = lead.get("budget", 0)
-
             factors = {
                 "recency": round(recency_score, 2),
                 "engagement": round(engagement_score, 2),
-                "urgency": urgency,
-                "decision_power": decision_power,
-                "budget": budget,
                 "conversations": num_conversations,
                 "messages": num_messages,
-                "interaction_count": lead.get("interaction_count", 0),
                 "current_score": lead.get("score", 0),
-                "current_state": lead.get("state", "curioso"),
+                "current_state": lead.get("estado", "curioso"),
             }
 
             return factors
@@ -888,14 +873,9 @@ class CalificacionModule:
             # Update lead score only if it changed
             if delta > 0:
                 logger.info(f"Score cambió (delta={delta}), actualizando lead...")
-                signal_names = ", ".join(sig.name for sig in result.signals) if result.signals else "none"
                 update_data = {
                     "score": new_score,
                     "estado": new_state,
-                    "score_reason": f"Signals: {signal_names}",
-                    "score_updated_at": current_ts.isoformat(),
-                    "interaction_count": lead.get("interaction_count", 0) + 1,
-                    "last_interaction": current_ts.isoformat(),
                 }
 
                 if not lead.get("id"):
