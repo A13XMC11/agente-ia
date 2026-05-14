@@ -855,7 +855,6 @@ class CalificacionModule:
                     "telefono": usuario_id,
                     "score": 0,
                     "estado": "curioso",
-                    "interaction_count": 0,
                 }
                 logger.info(f"Nuevo lead preparado: {lead['id']}")
             else:
