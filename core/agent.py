@@ -550,6 +550,9 @@ class AgentEngine:
                 - split_messages: list[str] (if response is long)
                 - escalated: bool
         """
+        print(f"\n\n{'#'*80}")
+        print(f"# PROCESS_MESSAGE STARTED")
+        print(f"{'#'*80}\n")
         logger.info("🔵 === PROCESS_MESSAGE STARTED ===")
         user_message = mensaje_normalizado.get("text", "")
         sender_id = mensaje_normalizado.get("sender_id", "unknown")
@@ -692,6 +695,12 @@ class AgentEngine:
                     logger.warning(f"Error triggering alert detection: {e}")
 
             # Trigger automatic lead scoring
+            print(f"\n{'='*60}")
+            print(f"🔴 LEAD SCORING CHECK for {sender_id}")
+            print(f"calificacion module exists: {self.calificacion is not None}")
+            print(f"calificacion enabled: {self.active_modules.get('calificacion', False)}")
+            print(f"{'='*60}\n")
+
             logger.info(
                 f"🔴 === LEAD SCORING CHECK ===",
                 extra={
