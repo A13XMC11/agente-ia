@@ -287,9 +287,13 @@ class MessageRouter:
             agent = await self._get_or_create_agent(client_id)
 
             # Process message
+            logger.info(f"🟡 === CALLING agent.process_message ===")
+            logger.info(f"🟡 client_id={client_id}, sender_id={mensaje_normalizado.get('sender_id')}")
             response = await agent.process_message(
                 mensaje_normalizado, client_id, memory_context
             )
+            logger.info(f"🟡 === agent.process_message RETURNED ===")
+            logger.info(f"🟡 response_text length={len(response.get('response_text', ''))}")
 
             logger.info(
                 f"Message processed",
