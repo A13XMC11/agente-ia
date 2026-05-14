@@ -199,8 +199,10 @@ class WhatsAppHandler:
             message: Message object from webhook
         """
         try:
+            print(f"\n\n>>> WHATSAPP MESSAGE RECEIVED <<<")
             sender_id = message.get("from", "")
             timestamp = message.get("timestamp", "")
+            print(f">>> sender_id={sender_id}, client_id={client_id}")
 
             logger.info(
                 f"Processing WhatsApp message from {sender_id}",
@@ -333,6 +335,7 @@ class WhatsAppHandler:
                     f"memory_not_initialized_degraded_mode client_id={client_id} sender_id={sender_id}"
                 )
 
+            print(f"\n>>> CALLING router.route_message for {sender_id}")
             agent_response = await self.router.route_message(
                 client_id,
                 {
