@@ -897,9 +897,30 @@ class CalificacionModule:
                 old_score = existing.data[0].get("score", 0)
                 old_state = LeadScoringEngine._state_for_score(old_score)
 
-                new_score = max(old_score, result.score)
+                # Score acumulativo - suma los puntos del mensaje actual
+                # al score anterior, máximo 10
+                puntos_mensaje = sum(sig.delta for sig in result.signals if sig.delta > 0)
+                new_score = min(old_score + puntos_mensaje, 10)
+
+                # Solo baja el score si hay señales muy negativas
+                puntos_negativos = sum(sig.delta for sig in result.signals if sig.delta < 0)
+                if puntos_negativos < -2:
+                    new_score = max(new_score + puntos_negativos, 0)
+
+                # Determinar estado según nuevo score
+                if new_score <= 2:
+                    new_state = "curioso"
+                elif new_score <= 4:
+                    new_state = "prospecto"
+                elif new_score <= 6:
+                    new_state = "interesado"
+                elif new_score <= 8:
+                    new_state = "caliente"
+                else:
+                    new_state = "urgente"
+
+                # Siempre actualizar
                 delta = new_score - old_score
-                new_state = LeadScoringEngine._state_for_score(new_score)
 
                 logger.info(f"Lead encontrado: {lead_id}, score actual: {old_score}")
                 logger.info(f"Score calculado: {result.score}, estado: {result.state}")
@@ -916,7 +937,19 @@ class CalificacionModule:
                 logger.info(f"Lead no existe, creando nuevo...")
                 lead_id = str(uuid4())
                 new_score = result.score
-                new_state = result.state
+
+                # Determinar estado según score (consistente con lógica acumulativa)
+                if new_score <= 2:
+                    new_state = "curioso"
+                elif new_score <= 4:
+                    new_state = "prospecto"
+                elif new_score <= 6:
+                    new_state = "interesado"
+                elif new_score <= 8:
+                    new_state = "caliente"
+                else:
+                    new_state = "urgente"
+
                 delta = new_score
 
                 logger.info(f"Insertando nuevo lead: {lead_id}")
