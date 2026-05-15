@@ -81,6 +81,7 @@ class GoogleCalendarService:
                 timeMax=end_dt.isoformat() + "Z",
                 singleEvents=True,
                 orderBy="startTime",
+                showDeleted=False,
             ).execute()
 
             events = [
