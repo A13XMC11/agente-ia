@@ -694,54 +694,26 @@ class AgentEngine:
                 except Exception as e:
                     logger.warning(f"Error triggering alert detection: {e}")
 
-            # Trigger automatic lead scoring
-            print(f"\n{'='*60}")
-            print(f"🔴 LEAD SCORING CHECK for {sender_id}")
-            print(f"calificacion module exists: {self.calificacion is not None}")
-            print(f"calificacion enabled: {self.active_modules.get('calificacion', False)}")
-            print(f"{'='*60}\n")
-
-            logger.info(
-                f"🔴 === LEAD SCORING CHECK ===",
-                extra={
-                    "client_id": cliente_id,
-                    "sender_id": sender_id,
-                    "calificacion_module_exists": bool(self.calificacion),
-                    "module_enabled": self.active_modules.get("calificacion", False),
-                }
-            )
-
-            # Debug the condition
-            has_module = bool(self.calificacion)
-            is_enabled = self.active_modules.get("calificacion", False)
-            logger.info(f"DEBUG: has_module={has_module}, is_enabled={is_enabled}, will_execute={has_module and is_enabled}")
-
-            if self.calificacion and self.active_modules.get("calificacion"):
+            # ============ LEAD SCORING ============
+            logger.info(f"SCORING_START: sender={sender_id}")
+            if self.calificacion:
                 try:
-                    logger.info(f"=== CALLING calcular_score_automatico ===")
-                    result = await self.calificacion.calcular_score_automatico(
+                    score_result = await self.calificacion.calcular_score_automatico(
                         client_id=cliente_id,
                         usuario_id=sender_id,
                         current_message=user_message,
                         prior_messages=memory_context or [],
                         current_ts=datetime.utcnow(),
-                        conversation_id=self._current_conversation_id,
+                        conversation_id=self._current_conversation_id or None,
                     )
-                    logger.info(f"=== SCORE RESULT: {result} ===")
+                    logger.info(f"SCORING_DONE: {score_result}")
                 except Exception as e:
+                    logger.error(f"SCORING_ERROR: {e}")
                     import traceback
-                    logger.error(f"=== SCORE ERROR: {e} ===")
                     logger.error(traceback.format_exc())
             else:
-                logger.warning(
-                    f"❌ Lead scoring NOT triggered",
-                    extra={
-                        "client_id": cliente_id,
-                        "sender_id": sender_id,
-                        "has_module": has_module,
-                        "is_enabled": is_enabled,
-                    }
-                )
+                logger.warning("SCORING_SKIP: no calificacion module")
+            # ======================================
 
             return response_dict
 
