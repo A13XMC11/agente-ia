@@ -602,22 +602,33 @@ class AgentEngine:
         messages.append({"role": "user", "content": content})
 
         try:
-            # First GPT-4o call — may return tool calls
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=self._get_available_tools(),
-                tool_choice="auto",
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
+            logger.info(f"PM_STEP_1: Received message from {sender_id}")
 
+            # First GPT-4o call — may return tool calls
+            logger.info(f"PM_STEP_2: Calling GPT-4o for {sender_id}")
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=self._get_available_tools(),
+                    tool_choice="auto",
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+            except Exception as e:
+                logger.error(f"SILENT_ERROR in GPT-4o_FIRST_CALL: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                raise
+
+            logger.info(f"PM_STEP_3: GPT-4o call succeeded, processing response")
             assistant_message = response.choices[0].message
             response_text = assistant_message.content or ""
             function_calls = []
 
             # Agentic loop: execute tool calls and get a final natural-language response
             if assistant_message.tool_calls:
+                logger.info(f"PM_STEP_3a: Found {len(assistant_message.tool_calls)} tool calls")
                 for tool_call in assistant_message.tool_calls:
                     function_calls.append(
                         {
@@ -632,12 +643,20 @@ class AgentEngine:
 
                 # Execute each tool and feed result back
                 for tool_call in assistant_message.tool_calls:
-                    tool_result = await self._execute_tool_call(
-                        tool_call.function.name,
-                        json.loads(tool_call.function.arguments),
-                        cliente_id,
-                        sender_id,
-                    )
+                    try:
+                        tool_result = await self._execute_tool_call(
+                            tool_call.function.name,
+                            json.loads(tool_call.function.arguments),
+                            cliente_id,
+                            sender_id,
+                        )
+                        logger.info(f"PM_STEP_3b: Tool {tool_call.function.name} executed")
+                    except Exception as e:
+                        logger.error(f"SILENT_ERROR in TOOL_CALL {tool_call.function.name}: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        tool_result = json.dumps({"error": str(e)})
+
                     messages.append(
                         {
                             "role": "tool",
@@ -647,22 +666,32 @@ class AgentEngine:
                     )
 
                 # Second GPT-4o call to get a natural-language response from tool results
-                final_response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                response_text = final_response.choices[0].message.content or ""
+                logger.info(f"PM_STEP_3c: Calling GPT-4o for final response")
+                try:
+                    final_response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                    )
+                    response_text = final_response.choices[0].message.content or ""
+                except Exception as e:
+                    logger.error(f"SILENT_ERROR in GPT-4o_SECOND_CALL: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    raise
 
             # Simulate response delay
-            response_delay = self._calculate_response_delay(len(response_text))
-
-            # Split long messages
-            split_messages = self._split_long_messages(response_text)
-
-            # Check if escalation was triggered
-            escalated = any(call["name"] == "escalar_a_humano" for call in function_calls)
+            logger.info(f"PM_STEP_4: Building response dict")
+            try:
+                response_delay = self._calculate_response_delay(len(response_text))
+                split_messages = self._split_long_messages(response_text)
+                escalated = any(call["name"] == "escalar_a_humano" for call in function_calls)
+            except Exception as e:
+                logger.error(f"SILENT_ERROR in RESPONSE_BUILDING: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                raise
 
             if not response_text:
                 logger.warning(
@@ -682,30 +711,40 @@ class AgentEngine:
             }
 
             # ============ LEAD SCORING (FIRST, before alerts) ============
-            logger.info(f"PM_BEFORE_SCORING: {sender_id}")
-            logger.info(f"SCORING_START: sender={sender_id}")
-            if self.calificacion:
-                try:
-                    score_result = await self.calificacion.calcular_score_automatico(
-                        client_id=cliente_id,
-                        usuario_id=sender_id,
-                        current_message=user_message,
-                        prior_messages=memory_context or [],
-                        current_ts=datetime.utcnow(),
-                        conversation_id=self._current_conversation_id or None,
-                    )
-                    logger.info(f"SCORING_DONE: {score_result}")
-                except Exception as e:
-                    logger.error(f"SCORING_ERROR: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-            else:
-                logger.warning("SCORING_SKIP: no calificacion module")
+            logger.info(f"PM_STEP_5: Before SCORING - {sender_id}")
+            logger.info(f"SCORING_START: sender={sender_id}, calificacion={self.calificacion is not None}")
+            try:
+                if self.calificacion:
+                    try:
+                        logger.info(f"SCORING: Calling calcular_score_automatico for {sender_id}")
+                        score_result = await self.calificacion.calcular_score_automatico(
+                            client_id=cliente_id,
+                            usuario_id=sender_id,
+                            current_message=user_message,
+                            prior_messages=memory_context or [],
+                            current_ts=datetime.utcnow(),
+                            conversation_id=self._current_conversation_id or None,
+                        )
+                        logger.info(f"SCORING_DONE: {score_result}")
+                    except Exception as e:
+                        logger.error(f"SILENT_ERROR in SCORING_EXECUTION: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        raise
+                else:
+                    logger.warning("SCORING_SKIP: no calificacion module")
+            except Exception as e:
+                logger.error(f"SILENT_ERROR in SCORING_BLOCK: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
             # ======================================
+
+            logger.info(f"PM_STEP_6: After SCORING - preparing alerts for {sender_id}")
 
             # Trigger alert detection in background
             if self.alertas:
                 try:
+                    logger.info(f"PM_STEP_6a: Creating alert detection task")
                     asyncio.create_task(self.alertas.detectar_y_enviar_alertas(
                         client_id=cliente_id,
                         user_message=user_message,
@@ -715,16 +754,21 @@ class AgentEngine:
                         sender_id=sender_id,
                     ))
                 except Exception as e:
-                    logger.warning(f"Error triggering alert detection: {e}")
+                    logger.error(f"SILENT_ERROR in ALERT_TRIGGER: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
 
+            logger.info(f"PM_STEP_7: Returning response for {sender_id}")
             return response_dict
 
         except Exception as e:
             logger.error(
-                f"Error processing message: {str(e)}",
+                f"FATAL_ERROR in process_message: {str(e)}",
                 extra={"client_id": cliente_id, "sender_id": sender_id},
                 exc_info=True,
             )
+            import traceback
+            logger.error(f"FATAL_TRACEBACK:\n{traceback.format_exc()}")
 
             # Graceful fallback: escalate
             error_response = {
@@ -760,7 +804,9 @@ class AgentEngine:
                         usuario_id=sender_id,
                     ))
                 except Exception as alert_err:
-                    logger.warning(f"Error sending error alert: {alert_err}")
+                    logger.error(f"SILENT_ERROR in ERROR_ALERT: {alert_err}")
+                    import traceback
+                    logger.error(traceback.format_exc())
 
             return error_response
 
