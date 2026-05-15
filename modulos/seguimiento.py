@@ -319,7 +319,7 @@ class SeguimientoModule:
             hace_25h = now - timedelta(hours=25)
             hace_23h = now - timedelta(hours=23)
 
-            response = self.supabase.table("payments").select(
+            response = self.supabase.table("pagos").select(
                 "id, nombre_cliente, telefono_cliente, created_at"
             ).eq(
                 "cliente_id", cliente_id
