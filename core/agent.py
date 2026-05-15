@@ -680,22 +680,7 @@ class AgentEngine:
                 "request_id": str(uuid4()),
             }
 
-            # Trigger alert detection in background
-            if self.alertas:
-                try:
-                    asyncio.create_task(self.alertas.detectar_y_enviar_alertas(
-                        client_id=cliente_id,
-                        user_message=user_message,
-                        agent_response=response_dict,
-                        conversation_id=self._current_conversation_id,
-                        user_id=sender_id,
-                        sender_id=sender_id,
-                    ))
-                except Exception as e:
-                    logger.warning(f"Error triggering alert detection: {e}")
-
-            logger.info(f"🔵 About to run scoring. calificacion={self.calificacion}, active_modules={self.active_modules}")
-            # ============ LEAD SCORING ============
+            # ============ LEAD SCORING (FIRST, before alerts) ============
             logger.info(f"SCORING_START: sender={sender_id}")
             if self.calificacion:
                 try:
@@ -715,6 +700,20 @@ class AgentEngine:
             else:
                 logger.warning("SCORING_SKIP: no calificacion module")
             # ======================================
+
+            # Trigger alert detection in background
+            if self.alertas:
+                try:
+                    asyncio.create_task(self.alertas.detectar_y_enviar_alertas(
+                        client_id=cliente_id,
+                        user_message=user_message,
+                        agent_response=response_dict,
+                        conversation_id=self._current_conversation_id,
+                        user_id=sender_id,
+                        sender_id=sender_id,
+                    ))
+                except Exception as e:
+                    logger.warning(f"Error triggering alert detection: {e}")
 
             return response_dict
 
