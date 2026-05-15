@@ -563,6 +563,7 @@ class AgentEngine:
             f"Processing message from {sender_id} in client {cliente_id}",
             extra={"client_id": cliente_id, "sender_id": sender_id},
         )
+        logger.info(f"PM_START: {sender_id}")
 
         # Simulate typing indicator
         typing_delay = self._calculate_typing_delay(user_message)
@@ -681,6 +682,7 @@ class AgentEngine:
             }
 
             # ============ LEAD SCORING (FIRST, before alerts) ============
+            logger.info(f"PM_BEFORE_SCORING: {sender_id}")
             logger.info(f"SCORING_START: sender={sender_id}")
             if self.calificacion:
                 try:

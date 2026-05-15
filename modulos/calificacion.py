@@ -444,7 +444,7 @@ class CalificacionModule:
                 new_lead = {
                     "id": str(uuid4()),
                     **lead_data,
-                    "score": 0.0,
+                    "score": 0,
                     "estado": "curioso",
                     "created_at": datetime.utcnow().isoformat(),
                 }
@@ -533,7 +533,7 @@ class CalificacionModule:
 
             # Update lead
             update_data = {
-                "score": score,
+                "score": int(score),
                 "estado": new_state,
             }
 
@@ -608,7 +608,7 @@ class CalificacionModule:
                 "type": "hot_lead",
                 "lead_id": lead["id"],
                 "lead_name": lead_name,
-                "score": score,
+                "score": int(score),
                 "message": f"🔥 Lead Caliente: {lead_name} (Score: {score}/10)",
                 "priority": "high",
                 "created_at": datetime.utcnow().isoformat(),
@@ -642,7 +642,7 @@ class CalificacionModule:
                         tipo="hot_lead",
                         mensaje=mensaje,
                         usuario_id=lead.get("telefono"),
-                        datos_extras={"score": score, "lead_id": lead["id"]},
+                        datos_extras={"score": int(score), "lead_id": lead["id"]},
                     )
                     logger.info(f"Alerta WhatsApp enviada: {alert_result}")
                 except Exception as alert_err:
@@ -907,7 +907,7 @@ class CalificacionModule:
                 logger.info(f"Actualizando lead {lead_id} con score={new_score}, estado={new_state}")
 
                 self.supabase.table("leads").update({
-                    "score": new_score,
+                    "score": int(new_score),
                     "estado": new_state
                 }).eq("id", lead_id).execute()
                 logger.info(f"Lead actualizado: {lead_id} score={new_score}")
@@ -928,7 +928,7 @@ class CalificacionModule:
                         "telefono": usuario_id,
                         "canal": "whatsapp",
                         "nombre": "",
-                        "score": new_score,
+                        "score": int(new_score),
                         "estado": new_state,
                         "created_at": current_ts.isoformat(),
                     }).execute()
