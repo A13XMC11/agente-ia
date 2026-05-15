@@ -73,8 +73,9 @@ instagram_handler: InstagramHandler | None = None
 facebook_handler: FacebookHandler | None = None
 email_handler: EmailHandler | None = None
 
-# Alerts and scheduler
+# Alerts, follow-ups, and scheduler
 alertas_module: Any | None = None
+seguimiento_module: Any | None = None
 scheduler: AsyncIOScheduler | None = None
 
 
@@ -124,7 +125,7 @@ async def lifespan(app: FastAPI):
     global message_router, auth_manager, rate_limiter, supabase_client
     global normalizer, buffer, memory, validator
     global whatsapp_handler, instagram_handler, facebook_handler, email_handler
-    global alertas_module, scheduler
+    global alertas_module, seguimiento_module, scheduler
 
     startup_ok = False
 
@@ -343,11 +344,18 @@ async def lifespan(app: FastAPI):
         # 7. Initialize Alerts Module and Scheduler for daily summaries
         try:
             from modulos.alertas import AlertasModule
+            from modulos.seguimiento import SeguimientoModule
 
             alertas_module = AlertasModule(
                 supabase_client=supabase_service_client
             )
             logger.info("alertas_module_initialized")
+
+            # Initialize SeguimientoModule for automatic follow-ups
+            seguimiento_module = SeguimientoModule(
+                supabase_client=supabase_service_client
+            )
+            logger.info("seguimiento_module_initialized")
 
             # Initialize AsyncIO scheduler for daily summary at 8 PM
             scheduler = AsyncIOScheduler()
@@ -359,8 +367,43 @@ async def lifespan(app: FastAPI):
                 args=(alertas_module, supabase_service_client),
                 id="daily_summary_job"
             )
+
+            # Add job for automatic follow-ups every 30 minutes
+            async def _verificar_todos_los_seguimientos(seg_module, supabase_client):
+                """Check and send all pending follow-ups for all active clients."""
+                try:
+                    response = supabase_client.table("clientes").select("id").eq("estado", "activo").execute()
+                    clients = response.data or []
+
+                    logger.info(f"Checking follow-ups for {len(clients)} active clients")
+
+                    for client in clients:
+                        try:
+                            client_id = client.get("id")
+                            result = await seg_module.verificar_seguimientos_pendientes(client_id)
+                            total = sum(result.values())
+                            if total > 0:
+                                logger.info(f"Sent {total} follow-ups to client {client_id}", extra={
+                                    "cliente_id": client_id,
+                                    "resumen": result,
+                                })
+                        except Exception as e:
+                            logger.error(f"Error checking follow-ups for client {client.get('id')}: {e}")
+
+                except Exception as e:
+                    logger.error(f"Error in seguimientos job: {e}", exc_info=True)
+
+            scheduler.add_job(
+                _verificar_todos_los_seguimientos,
+                "interval",
+                minutes=30,
+                args=(seguimiento_module, supabase_service_client),
+                id="seguimientos_automaticos_job",
+                misfire_grace_time=60,
+            )
+
             scheduler.start()
-            logger.info("scheduler_started", job="daily_summary_at_8pm")
+            logger.info("scheduler_started", jobs=["daily_summary_at_8pm", "seguimientos_automaticos_job"])
         except Exception as e:
             logger.error("alertas_scheduler_init_error", error=str(e), exc_info=True)
             alertas_module = None
@@ -384,6 +427,13 @@ async def lifespan(app: FastAPI):
                 logger.info("scheduler_shutdown")
             except Exception as e:
                 logger.error("scheduler_shutdown_error", error=str(e))
+
+        if seguimiento_module:
+            try:
+                await seguimiento_module.close()
+                logger.info("seguimiento_module_closed")
+            except Exception as e:
+                logger.error("seguimiento_module_close_error", error=str(e))
 
         if message_router:
             try:

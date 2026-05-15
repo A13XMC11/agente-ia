@@ -1,446 +1,514 @@
 """
-Follow-up module: automated follow-up campaigns and lead nurturing.
+Automatic follow-up system: 6 types of follow-ups (cold leads, hot leads, appointment reminders, post-sale, reactivation).
 
-Handles scheduled follow-ups, reminder sequences, and engagement tracking.
+REQUIRED SQL MIGRATION before deployment:
+    ALTER TABLE citas ADD COLUMN IF NOT EXISTS recordatorio_24h_enviado BOOLEAN DEFAULT FALSE;
+    ALTER TABLE citas ADD COLUMN IF NOT EXISTS recordatorio_1h_enviado BOOLEAN DEFAULT FALSE;
+    ALTER TABLE alertas ADD COLUMN IF NOT EXISTS referencia_id TEXT;
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Optional
-from uuid import uuid4
+from datetime import datetime, timedelta, time
+from typing import Any
+import httpx
 
 logger = logging.getLogger(__name__)
 
 
 class SeguimientoModule:
-    """Follow-up and lead nurturing operations."""
+    """Automatic follow-up system for leads and appointments."""
 
     def __init__(self, supabase_client: Any):
-        """
-        Initialize follow-up module.
+        """Initialize follow-up module.
 
         Args:
             supabase_client: Supabase client instance
         """
         self.supabase = supabase_client
+        self.http_client = httpx.AsyncClient(timeout=30.0)
 
-    async def crear_seguimiento(
-        self,
-        client_id: str,
-        usuario_id: str,
-        tipo: str,
-        titulo: str,
-        mensaje: str,
-        programar_para: Optional[datetime] = None,
-        canal: str = "whatsapp",
-    ) -> dict[str, Any]:
+    async def close(self):
+        """Close HTTP client."""
+        await self.http_client.aclose()
+
+    async def verificar_seguimientos_pendientes(self, cliente_id: str) -> dict[str, int]:
         """
-        Create a follow-up sequence.
+        Verify and send all pending follow-ups for a client.
 
-        Types: follow_up (24h), post_sale (48h), reactivation (7d)
+        Entry point called every 30 minutes by scheduler.
 
         Args:
-            client_id: Client ID
-            usuario_id: User ID to follow up with
-            tipo: Follow-up type (follow_up, post_sale, reactivation)
-            titulo: Follow-up title
-            mensaje: Follow-up message
-            programar_para: When to send (default based on type)
-            canal: Channel (whatsapp, email)
+            cliente_id: Client ID
 
         Returns:
-            Follow-up creation confirmation
+            Summary: {"frios": int, "calientes": int, "cita_24h": int, "cita_1h": int, "post_venta": int, "reactivacion": int}
         """
         try:
-            # Default timing based on type
-            if not programar_para:
-                if tipo == "follow_up":
-                    programar_para = datetime.utcnow() + timedelta(hours=24)
-                elif tipo == "post_sale":
-                    programar_para = datetime.utcnow() + timedelta(hours=48)
-                elif tipo == "reactivation":
-                    programar_para = datetime.utcnow() + timedelta(days=7)
-                else:
-                    programar_para = datetime.utcnow() + timedelta(hours=24)
+            logger.info(f"Verificando seguimientos para cliente {cliente_id}")
 
-            followup = {
-                "id": str(uuid4()),
-                "cliente_id": client_id,
-                "user_id": usuario_id,
-                "type": tipo,
-                "title": titulo,
-                "message": mensaje,
-                "channel": canal,
-                "scheduled_for": programar_para.isoformat(),
-                "status": "scheduled",
+            result = {
+                "frios": await self._verificar_prospectos_frios(cliente_id),
+                "calientes": await self._verificar_leads_calientes(cliente_id),
+                "cita_24h": await self._verificar_recordatorio_cita_24h(cliente_id),
+                "cita_1h": await self._verificar_recordatorio_cita_1h(cliente_id),
+                "post_venta": await self._verificar_post_venta(cliente_id),
+                "reactivacion": await self._verificar_reactivacion(cliente_id),
+            }
+
+            total = sum(result.values())
+            logger.info(f"Seguimientos enviados para {cliente_id}: {total} total", extra={
+                "cliente_id": cliente_id,
+                "resumen": result,
+            })
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error verificando seguimientos para {cliente_id}: {e}", exc_info=True)
+            return {
+                "frios": 0, "calientes": 0, "cita_24h": 0, "cita_1h": 0, "post_venta": 0, "reactivacion": 0
+            }
+
+    async def _verificar_prospectos_frios(self, cliente_id: str) -> int:
+        """
+        Cold lead follow-up: score < 5, no response in 24h.
+
+        Message: "Hola {nombre} 👋 Hace un momento hablamos..."
+        """
+        try:
+            enviados = 0
+            now = datetime.utcnow()
+            hace_24h = now - timedelta(hours=24)
+
+            # Get cold leads (score < 5, not discarded)
+            response = self.supabase.table("leads").select("*").eq(
+                "cliente_id", cliente_id
+            ).lt("score", 5).neq("estado", "descartado").execute()
+
+            leads = response.data or []
+            logger.debug(f"Found {len(leads)} cold leads for client {cliente_id}")
+
+            for lead in leads:
+                lead_id = lead.get("id")
+                nombre = lead.get("nombre", "Amigo/a")
+                telefono = lead.get("telefono")
+
+                if not telefono:
+                    continue
+
+                # Check last message time
+                conv_response = self.supabase.table("conversaciones").select(
+                    "fecha_ultimo_mensaje"
+                ).eq("cliente_id", cliente_id).eq(
+                    "usuario_id", telefono
+                ).order("fecha_ultimo_mensaje", desc=True).limit(1).execute()
+
+                if not conv_response.data:
+                    continue
+
+                conv = conv_response.data[0]
+                fecha_ultimo = datetime.fromisoformat(conv.get("fecha_ultimo_mensaje", "").replace("Z", "+00:00"))
+
+                # Check if 24h have passed and no duplicate alert
+                if fecha_ultimo < hace_24h:
+                    if not await self._ya_enviado(cliente_id, "seguimiento_frio", lead_id, ventana_horas=24):
+                        mensaje = (
+                            f"Hola {nombre} 👋 Hace un momento hablamos sobre nuestros servicios. "
+                            f"¿Pudiste revisar la información? Estoy aquí para resolver cualquier duda 😊"
+                        )
+                        if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
+                            await self._guardar_alerta_enviada(cliente_id, "seguimiento_frio", lead_id, mensaje)
+                            enviados += 1
+
+            return enviados
+
+        except Exception as e:
+            logger.error(f"Error in _verificar_prospectos_frios for {cliente_id}: {e}", exc_info=True)
+            return 0
+
+    async def _verificar_leads_calientes(self, cliente_id: str) -> int:
+        """
+        Hot lead follow-up: score >= 7, no response in 2h.
+
+        Message: "Hola {nombre} 🔥 Vi que estabas muy interesado..."
+        """
+        try:
+            enviados = 0
+            now = datetime.utcnow()
+            hace_2h = now - timedelta(hours=2)
+
+            response = self.supabase.table("leads").select("*").eq(
+                "cliente_id", cliente_id
+            ).gte("score", 7).execute()
+
+            leads = response.data or []
+            logger.debug(f"Found {len(leads)} hot leads for client {cliente_id}")
+
+            for lead in leads:
+                lead_id = lead.get("id")
+                nombre = lead.get("nombre", "Amigo/a")
+                telefono = lead.get("telefono")
+
+                if not telefono:
+                    continue
+
+                conv_response = self.supabase.table("conversaciones").select(
+                    "fecha_ultimo_mensaje"
+                ).eq("cliente_id", cliente_id).eq(
+                    "usuario_id", telefono
+                ).order("fecha_ultimo_mensaje", desc=True).limit(1).execute()
+
+                if not conv_response.data:
+                    continue
+
+                conv = conv_response.data[0]
+                fecha_ultimo = datetime.fromisoformat(conv.get("fecha_ultimo_mensaje", "").replace("Z", "+00:00"))
+
+                if fecha_ultimo < hace_2h:
+                    if not await self._ya_enviado(cliente_id, "seguimiento_caliente", lead_id, ventana_horas=24):
+                        mensaje = (
+                            f"Hola {nombre} 🔥 Vi que estabas muy interesado en nuestros servicios. "
+                            f"¿Tienes alguna pregunta que pueda resolver ahora mismo?"
+                        )
+                        if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
+                            await self._guardar_alerta_enviada(cliente_id, "seguimiento_caliente", lead_id, mensaje)
+                            enviados += 1
+
+            return enviados
+
+        except Exception as e:
+            logger.error(f"Error in _verificar_leads_calientes for {cliente_id}: {e}", exc_info=True)
+            return 0
+
+    async def _verificar_recordatorio_cita_24h(self, cliente_id: str) -> int:
+        """
+        Appointment reminder 24h before at 9am.
+
+        Message: "Hola {nombre} 👋 Te recuerdo que mañana tienes..."
+        """
+        try:
+            enviados = 0
+            now = datetime.utcnow()
+            tomorrow = (now + timedelta(days=1)).date()
+
+            # Get confirmed appointments for tomorrow
+            response = self.supabase.table("citas").select("*").eq(
+                "cliente_id", cliente_id
+            ).eq("estado", "confirmada").eq(
+                "recordatorio_24h_enviado", False
+            ).execute()
+
+            citas = response.data or []
+
+            for cita in citas:
+                cita_id = cita.get("id")
+                fecha_str = cita.get("fecha")
+
+                if not fecha_str:
+                    continue
+
+                fecha_cita = datetime.fromisoformat(fecha_str).date()
+
+                if fecha_cita == tomorrow:
+                    nombre = cita.get("nombre_cliente", "Amigo/a")
+                    hora = cita.get("hora", "la hora acordada")
+                    telefono = cita.get("telefono_cliente")
+
+                    if telefono:
+                        mensaje = (
+                            f"Hola {nombre} 👋 Te recuerdo que mañana tienes una cita con nosotros a las {hora}. "
+                            f"¿Confirmas tu asistencia? 😊"
+                        )
+                        if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
+                            self.supabase.table("citas").update(
+                                {"recordatorio_24h_enviado": True}
+                            ).eq("id", cita_id).execute()
+                            enviados += 1
+
+            return enviados
+
+        except Exception as e:
+            logger.error(f"Error in _verificar_recordatorio_cita_24h for {cliente_id}: {e}", exc_info=True)
+            return 0
+
+    async def _verificar_recordatorio_cita_1h(self, cliente_id: str) -> int:
+        """
+        Appointment reminder 1h before.
+
+        Message: "Hola {nombre} ⏰ En una hora tienes tu cita..."
+        """
+        try:
+            enviados = 0
+            now = datetime.utcnow()
+            today = now.date()
+            hora_actual = now.time()
+            hace_1h = now - timedelta(hours=1)
+
+            response = self.supabase.table("citas").select("*").eq(
+                "cliente_id", cliente_id
+            ).eq("estado", "confirmada").eq(
+                "recordatorio_1h_enviado", False
+            ).execute()
+
+            citas = response.data or []
+
+            for cita in citas:
+                cita_id = cita.get("id")
+                fecha_str = cita.get("fecha")
+                hora_str = cita.get("hora")
+
+                if not fecha_str or not hora_str:
+                    continue
+
+                fecha_cita = datetime.fromisoformat(fecha_str).date()
+
+                if fecha_cita == today:
+                    try:
+                        hora_cita = datetime.strptime(hora_str, "%H:%M").time()
+                    except ValueError:
+                        continue
+
+                    # Check if appointment is within next 1 hour
+                    if hora_cita > hora_actual:
+                        tiempo_falta = datetime.combine(today, hora_cita) - now
+                        if timedelta(minutes=0) <= tiempo_falta <= timedelta(hours=1):
+                            nombre = cita.get("nombre_cliente", "Amigo/a")
+                            telefono = cita.get("telefono_cliente")
+
+                            if telefono:
+                                mensaje = (
+                                    f"Hola {nombre} ⏰ En una hora tienes tu cita con nosotros. ¡Te esperamos!"
+                                )
+                                if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
+                                    self.supabase.table("citas").update(
+                                        {"recordatorio_1h_enviado": True}
+                                    ).eq("id", cita_id).execute()
+                                    enviados += 1
+
+            return enviados
+
+        except Exception as e:
+            logger.error(f"Error in _verificar_recordatorio_cita_1h for {cliente_id}: {e}", exc_info=True)
+            return 0
+
+    async def _verificar_post_venta(self, cliente_id: str) -> int:
+        """
+        Post-sale follow-up: 24h after confirmed payment.
+
+        Message: "Hola {nombre} 😊 ¿Cómo ha sido tu experiencia..."
+        """
+        try:
+            enviados = 0
+            now = datetime.utcnow()
+            hace_25h = now - timedelta(hours=25)
+            hace_23h = now - timedelta(hours=23)
+
+            response = self.supabase.table("payments").select("*").eq(
+                "cliente_id", cliente_id
+            ).eq("estado", "confirmado").execute()
+
+            pagos = response.data or []
+
+            for pago in pagos:
+                pago_id = pago.get("id")
+                created_at_str = pago.get("created_at", "")
+
+                if not created_at_str:
+                    continue
+
+                try:
+                    created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+
+                # Send follow-up 24h after payment
+                if hace_25h <= created_at <= hace_23h:
+                    if not await self._ya_enviado(cliente_id, "seguimiento_post_venta", pago_id, ventana_horas=48):
+                        # Get customer name/phone from payment metadata
+                        nombre = pago.get("nombre_cliente", "Amigo/a")
+                        telefono = pago.get("telefono_cliente")
+
+                        if telefono:
+                            mensaje = (
+                                f"Hola {nombre} 😊 ¿Cómo ha sido tu experiencia con nuestro servicio? "
+                                f"Tu opinión es muy importante para nosotros."
+                            )
+                            if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
+                                await self._guardar_alerta_enviada(cliente_id, "seguimiento_post_venta", pago_id, mensaje)
+                                enviados += 1
+
+            return enviados
+
+        except Exception as e:
+            logger.error(f"Error in _verificar_post_venta for {cliente_id}: {e}", exc_info=True)
+            return 0
+
+    async def _verificar_reactivacion(self, cliente_id: str) -> int:
+        """
+        Reactivation follow-up: 7 days without activity.
+
+        Message: "Hola {nombre} 👋 Hace tiempo que no sabemos de ti..."
+        """
+        try:
+            enviados = 0
+            now = datetime.utcnow()
+            hace_7d = now - timedelta(days=7)
+
+            response = self.supabase.table("conversaciones").select("*").eq(
+                "cliente_id", cliente_id
+            ).lt("fecha_ultimo_mensaje", hace_7d.isoformat()).execute()
+
+            conversaciones = response.data or []
+            logger.debug(f"Found {len(conversaciones)} inactive conversations for client {cliente_id}")
+
+            for conv in conversaciones:
+                conv_id = conv.get("id")
+                usuario_id = conv.get("usuario_id")
+                nombre = conv.get("usuario_nombre", "Amigo/a")
+
+                if not usuario_id:
+                    continue
+
+                if not await self._ya_enviado(cliente_id, "reactivacion", conv_id, ventana_horas=168):
+                    mensaje = (
+                        f"Hola {nombre} 👋 Hace tiempo que no sabemos de ti. "
+                        f"¿Hay algo en lo que podamos ayudarte?"
+                    )
+                    if await self.enviar_seguimiento(cliente_id, usuario_id, mensaje):
+                        await self._guardar_alerta_enviada(cliente_id, "reactivacion", conv_id, mensaje)
+                        enviados += 1
+
+            return enviados
+
+        except Exception as e:
+            logger.error(f"Error in _verificar_reactivacion for {cliente_id}: {e}", exc_info=True)
+            return 0
+
+    async def _ya_enviado(
+        self,
+        cliente_id: str,
+        tipo: str,
+        referencia_id: str,
+        ventana_horas: int,
+    ) -> bool:
+        """
+        Check if a follow-up of this type was already sent recently.
+
+        Args:
+            cliente_id: Client ID
+            tipo: Follow-up type (seguimiento_frio, seguimiento_caliente, etc)
+            referencia_id: Lead ID or appointment ID
+            ventana_horas: Time window in hours to check
+
+        Returns:
+            True if already sent within the time window
+        """
+        try:
+            hace_x_horas = (datetime.utcnow() - timedelta(hours=ventana_horas)).isoformat()
+
+            response = self.supabase.table("alertas").select("id").eq(
+                "cliente_id", cliente_id
+            ).eq("tipo", tipo).eq(
+                "referencia_id", referencia_id
+            ).gte("created_at", hace_x_horas).limit(1).execute()
+
+            return bool(response.data)
+
+        except Exception as e:
+            logger.error(f"Error checking if already sent: {e}")
+            return False
+
+    async def _guardar_alerta_enviada(
+        self,
+        cliente_id: str,
+        tipo: str,
+        referencia_id: str,
+        mensaje: str,
+    ) -> None:
+        """
+        Save a sent follow-up alert to prevent duplicates.
+
+        Args:
+            cliente_id: Client ID
+            tipo: Follow-up type
+            referencia_id: Lead ID or appointment ID
+            mensaje: Message sent
+        """
+        try:
+            alerta = {
+                "cliente_id": cliente_id,
+                "tipo": tipo,
+                "referencia_id": referencia_id,
+                "mensaje": mensaje,
+                "canal_envio": "whatsapp",
+                "leida": False,
                 "created_at": datetime.utcnow().isoformat(),
             }
+            self.supabase.table("alertas").insert(alerta).execute()
 
-            self.supabase.table("followups").insert(followup).execute()
+        except Exception as e:
+            logger.error(f"Error saving alert: {e}")
 
-            logger.info(
-                f"Follow-up created: {tipo} for user {usuario_id}, scheduled for {programar_para}",
-                extra={"client_id": client_id},
-            )
+    async def enviar_seguimiento(
+        self,
+        cliente_id: str,
+        telefono: str,
+        mensaje: str,
+    ) -> bool:
+        """
+        Send follow-up message via WhatsApp using Meta API.
 
-            return {
-                "success": True,
-                "followup_id": followup["id"],
-                "tipo": tipo,
-                "programado_para": programar_para.isoformat(),
-                "mensaje": "Seguimiento programado",
+        Args:
+            cliente_id: Client ID
+            telefono: Recipient phone (format: 34612345678)
+            mensaje: Message text
+
+        Returns:
+            True if sent successfully
+        """
+        try:
+            # Get WhatsApp credentials from canales_config
+            creds_response = self.supabase.table("canales_config").select(
+                "token, phone_number_id"
+            ).eq("cliente_id", cliente_id).eq("canal", "whatsapp").limit(1).execute()
+
+            if not creds_response.data:
+                logger.warning(f"No WhatsApp credentials found for client {cliente_id}")
+                return False
+
+            creds = creds_response.data[0]
+            token = creds.get("token")
+            phone_number_id = creds.get("phone_number_id")
+
+            if not token or not phone_number_id:
+                logger.warning(f"Missing credentials for client {cliente_id}")
+                return False
+
+            # Construct Meta API request
+            url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": telefono,
+                "type": "text",
+                "text": {"body": mensaje},
             }
 
-        except Exception as e:
-            logger.error(f"Error creating follow-up: {e}")
-            return {"error": str(e)}
+            response = await self.http_client.post(url, json=payload, headers=headers)
 
-    async def crear_secuencia_24h(
-        self,
-        client_id: str,
-        usuario_id: str,
-        titulo: str,
-    ) -> dict[str, Any]:
-        """
-        Create 24-hour follow-up sequence.
-
-        Default flow: 1h, 6h, 24h
-
-        Args:
-            client_id: Client ID
-            usuario_id: User ID
-            titulo: Sequence title
-
-        Returns:
-            Sequence creation confirmation
-        """
-        try:
-            now = datetime.utcnow()
-
-            messages = [
-                {
-                    "title": f"{titulo} - Recordatorio 1h",
-                    "message": f"Hola! 👋 Te escribo para confirmar tu interés en {titulo}. ¿Tienes alguna pregunta?",
-                    "delay_hours": 1,
-                },
-                {
-                    "title": f"{titulo} - Recordatorio 6h",
-                    "message": f"Sabemos que {titulo} puede ser una decisión importante. Estamos aquí para resolver tus dudas.",
-                    "delay_hours": 6,
-                },
-                {
-                    "title": f"{titulo} - Última Oportunidad",
-                    "message": f"Esta es tu última oportunidad hoy para obtener {titulo}. Contáctanos antes de las 5pm.",
-                    "delay_hours": 24,
-                },
-            ]
-
-            sequence_id = str(uuid4())
-
-            for idx, msg in enumerate(messages):
-                schedule_time = now + timedelta(hours=msg["delay_hours"])
-
-                followup = {
-                    "id": str(uuid4()),
-                    "cliente_id": client_id,
-                    "user_id": usuario_id,
-                    "type": "follow_up_sequence",
-                    "sequence_id": sequence_id,
-                    "sequence_step": idx + 1,
-                    "title": msg["title"],
-                    "message": msg["message"],
-                    "scheduled_for": schedule_time.isoformat(),
-                    "status": "scheduled",
-                    "created_at": datetime.utcnow().isoformat(),
-                }
-
-                self.supabase.table("followups").insert(followup).execute()
-
-            logger.info(
-                f"24h follow-up sequence created: {sequence_id} for user {usuario_id}",
-                extra={"client_id": client_id},
-            )
-
-            return {
-                "success": True,
-                "sequence_id": sequence_id,
-                "steps": len(messages),
-                "mensaje": "Secuencia de 24h programada",
-            }
+            if response.status_code in (200, 201):
+                logger.info(f"Seguimiento sent to {telefono}", extra={"cliente_id": cliente_id})
+                return True
+            else:
+                logger.error(
+                    f"Failed to send seguimiento to {telefono}: {response.status_code}",
+                    extra={"cliente_id": cliente_id, "response": response.text}
+                )
+                return False
 
         except Exception as e:
-            logger.error(f"Error creating 24h sequence: {e}")
-            return {"error": str(e)}
-
-    async def crear_secuencia_post_venta(
-        self,
-        client_id: str,
-        usuario_id: str,
-        producto: str,
-    ) -> dict[str, Any]:
-        """
-        Create post-sale follow-up sequence.
-
-        Sequence: 48h, 3d, 7d
-
-        Args:
-            client_id: Client ID
-            usuario_id: User ID who purchased
-            producto: Product name
-
-        Returns:
-            Sequence creation confirmation
-        """
-        try:
-            now = datetime.utcnow()
-
-            messages = [
-                {
-                    "title": "Gracias por tu compra",
-                    "message": f"¡Gracias por comprar {producto}! 🎉 ¿Cómo te está yendo con tu compra?",
-                    "delay_days": 2,
-                },
-                {
-                    "title": "Necesitas ayuda?",
-                    "message": f"Queremos asegurarnos que {producto} cumpla tus expectativas. ¿Preguntas o problemas?",
-                    "delay_days": 3,
-                },
-                {
-                    "title": "Déjanos un testimonio",
-                    "message": f"Tu experiencia con {producto} es importante. ¿Podrías compartir tu opinión?",
-                    "delay_days": 7,
-                },
-            ]
-
-            sequence_id = str(uuid4())
-
-            for idx, msg in enumerate(messages):
-                schedule_time = now + timedelta(days=msg["delay_days"])
-
-                followup = {
-                    "id": str(uuid4()),
-                    "cliente_id": client_id,
-                    "user_id": usuario_id,
-                    "type": "post_sale_sequence",
-                    "sequence_id": sequence_id,
-                    "sequence_step": idx + 1,
-                    "title": msg["title"],
-                    "message": msg["message"],
-                    "scheduled_for": schedule_time.isoformat(),
-                    "status": "scheduled",
-                    "created_at": datetime.utcnow().isoformat(),
-                }
-
-                self.supabase.table("followups").insert(followup).execute()
-
-            logger.info(
-                f"Post-sale sequence created: {sequence_id} for user {usuario_id}",
-                extra={"client_id": client_id},
-            )
-
-            return {
-                "success": True,
-                "sequence_id": sequence_id,
-                "steps": len(messages),
-                "mensaje": "Secuencia post-venta programada",
-            }
-
-        except Exception as e:
-            logger.error(f"Error creating post-sale sequence: {e}")
-            return {"error": str(e)}
-
-    async def crear_secuencia_reactivacion(
-        self,
-        client_id: str,
-        usuario_id: str,
-        dias_inactivo: int = 30,
-    ) -> dict[str, Any]:
-        """
-        Create reactivation campaign for inactive leads.
-
-        Sequence: 1d, 3d, 7d, 14d
-
-        Args:
-            client_id: Client ID
-            usuario_id: Inactive user ID
-            dias_inactivo: Days without interaction
-
-        Returns:
-            Sequence creation confirmation
-        """
-        try:
-            now = datetime.utcnow()
-
-            messages = [
-                {
-                    "title": "Te echamos de menos",
-                    "message": f"¡Hola! Hace {dias_inactivo} días que no te vemos. ¿Cómo estás? 👋",
-                    "delay_days": 1,
-                },
-                {
-                    "title": "Nostalgia",
-                    "message": "Tenemos nuevas ofertas que creo te interesarían. ¿Te gustaría verlas?",
-                    "delay_days": 3,
-                },
-                {
-                    "title": "Descuento Especial",
-                    "message": "Solo para ti: 15% de descuento en tu próxima compra. ¡Válido por 7 días!",
-                    "delay_days": 7,
-                },
-                {
-                    "title": "Última Chance",
-                    "message": "El descuento especial vence hoy. ¿Te lo vas a perder? 😢",
-                    "delay_days": 14,
-                },
-            ]
-
-            sequence_id = str(uuid4())
-
-            for idx, msg in enumerate(messages):
-                schedule_time = now + timedelta(days=msg["delay_days"])
-
-                followup = {
-                    "id": str(uuid4()),
-                    "cliente_id": client_id,
-                    "user_id": usuario_id,
-                    "type": "reactivation_sequence",
-                    "sequence_id": sequence_id,
-                    "sequence_step": idx + 1,
-                    "title": msg["title"],
-                    "message": msg["message"],
-                    "scheduled_for": schedule_time.isoformat(),
-                    "status": "scheduled",
-                    "created_at": datetime.utcnow().isoformat(),
-                }
-
-                self.supabase.table("followups").insert(followup).execute()
-
-            logger.info(
-                f"Reactivation sequence created: {sequence_id} for user {usuario_id}",
-                extra={"client_id": client_id},
-            )
-
-            return {
-                "success": True,
-                "sequence_id": sequence_id,
-                "steps": len(messages),
-                "mensaje": "Secuencia de reactivación programada",
-            }
-
-        except Exception as e:
-            logger.error(f"Error creating reactivation sequence: {e}")
-            return {"error": str(e)}
-
-    async def ejecutar_seguimientos_vencidos(
-        self,
-        client_id: str,
-    ) -> dict[str, Any]:
-        """
-        Execute all due follow-ups (internal cron job).
-
-        Args:
-            client_id: Client ID
-
-        Returns:
-            Execution summary
-        """
-        try:
-            now = datetime.utcnow()
-
-            # Fetch due follow-ups
-            response = self.supabase.table("followups").select("*").eq(
-                "cliente_id", client_id
-            ).eq("status", "scheduled").lte(
-                "scheduled_for", now.isoformat()
-            ).execute()
-
-            due_followups = response.data or []
-
-            executed = 0
-            failed = 0
-
-            for followup in due_followups:
-                try:
-                    # Mark as sent (actual delivery handled by worker)
-                    self.supabase.table("followups").update(
-                        {"status": "sent", "sent_at": datetime.utcnow().isoformat()}
-                    ).eq("id", followup["id"]).execute()
-
-                    executed += 1
-
-                except Exception as e:
-                    logger.error(f"Error executing followup {followup['id']}: {e}")
-                    failed += 1
-
-            logger.info(
-                f"Executed {executed} follow-ups, {failed} failed",
-                extra={"client_id": client_id},
-            )
-
-            return {
-                "executed": executed,
-                "failed": failed,
-                "total": len(due_followups),
-            }
-
-        except Exception as e:
-            logger.error(f"Error executing followups: {e}")
-            return {"error": str(e)}
-
-    async def get_followups_pendientes(
-        self,
-        client_id: str,
-        limit: int = 10,
-    ) -> list[dict[str, Any]]:
-        """
-        Get pending follow-ups for a client.
-
-        Args:
-            client_id: Client ID
-            limit: Max results
-
-        Returns:
-            List of pending follow-ups
-        """
-        try:
-            now = datetime.utcnow()
-
-            response = self.supabase.table("followups").select("*").eq(
-                "cliente_id", client_id
-            ).eq("status", "scheduled").lte(
-                "scheduled_for", now.isoformat()
-            ).order("scheduled_for", desc=True).limit(limit).execute()
-
-            return response.data or []
-
-        except Exception as e:
-            logger.error(f"Error fetching pending followups: {e}")
-            return []
-
-    async def get_seguimientos_por_usuario(
-        self,
-        client_id: str,
-        usuario_id: str,
-    ) -> list[dict[str, Any]]:
-        """
-        Get all follow-ups for a specific user.
-
-        Args:
-            client_id: Client ID
-            usuario_id: User ID
-
-        Returns:
-            List of follow-ups
-        """
-        try:
-            response = self.supabase.table("followups").select("*").eq(
-                "cliente_id", client_id
-            ).eq("user_id", usuario_id).order(
-                "scheduled_for", desc=True
-            ).execute()
-
-            return response.data or []
-
-        except Exception as e:
-            logger.error(f"Error fetching user followups: {e}")
-            return []
+            logger.error(f"Error sending seguimiento to {telefono}: {e}", exc_info=True)
+            return False
