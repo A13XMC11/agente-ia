@@ -694,6 +694,7 @@ class AgentEngine:
                 except Exception as e:
                     logger.warning(f"Error triggering alert detection: {e}")
 
+            logger.info(f"🔵 About to run scoring. calificacion={self.calificacion}, active_modules={self.active_modules}")
             # ============ LEAD SCORING ============
             logger.info(f"SCORING_START: sender={sender_id}")
             if self.calificacion:
