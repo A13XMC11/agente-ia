@@ -162,7 +162,11 @@ class WhatsAppHandler:
 
                 if not phone_number_id:
                     logger.warning("Missing phone_number_id in webhook")
+                    print("\n❌ DEBUG: Missing phone_number_id in webhook metadata")
                     continue
+
+                print(f"\n📱 DEBUG: Webhook received with phone_number_id = {phone_number_id}")
+                logger.info(f"[WEBHOOK_DEBUG] phone_number_id = {phone_number_id}")
 
                 client_id = await self.router.identify_client(
                     phone_number_id,
@@ -171,7 +175,12 @@ class WhatsAppHandler:
 
                 if not client_id:
                     logger.warning(f"Could not identify client for {phone_number_id}")
+                    print(f"\n❌ DEBUG: No client found in DB for phone_number_id = {phone_number_id}")
+                    print(f"   Expected: 1108311609031850 (from Supabase)")
+                    print(f"   Received: {phone_number_id}")
                     continue
+
+                print(f"✅ DEBUG: Client identified = {client_id}")
 
                 messages = value.get("messages", [])
                 for message in messages:

@@ -199,13 +199,20 @@ class MessageRouter:
 
             elif identifier_type == "phone_number_id":
                 # Map WhatsApp phone_number_id to client
+                print(f"\n🔍 [IDENTIFY] Searching for phone_number_id = {identifier}")
                 response = self.supabase.table("canales_config").select(
                     "cliente_id"
                 ).eq("canal", "whatsapp").eq(
                     "phone_number_id", identifier
                 ).single().execute()
 
-                return response.data["cliente_id"] if response.data else None
+                if response.data:
+                    client_id = response.data["cliente_id"]
+                    print(f"✅ [IDENTIFY] Found client_id = {client_id}")
+                    return client_id
+                else:
+                    print(f"❌ [IDENTIFY] NO MATCH in canales_config for phone_number_id = {identifier}")
+                    return None
 
             elif identifier_type == "page_id":
                 # Map Instagram/Facebook page_id to client
