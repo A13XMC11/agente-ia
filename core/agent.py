@@ -716,37 +716,33 @@ class AgentEngine:
             logger.info(f"PM_STEP_5: Before SCORING - {sender_id}")
             print(f"\n>>> SCORING CHECK: calificacion is {'INITIALIZED' if self.calificacion else 'NONE'}")
             logger.info(f"SCORING_START: sender={sender_id}, calificacion={self.calificacion is not None}")
+            print(f">>> ABOUT TO CALL calcular_score_automatico for {sender_id}")
             try:
                 if self.calificacion:
-                    try:
-                        logger.info(f"SCORING: Calling calcular_score_automatico for {sender_id}")
-                        score_result = await self.calificacion.calcular_score_automatico(
-                            client_id=cliente_id,
-                            usuario_id=sender_id,
-                            current_message=user_message,
-                            prior_messages=memory_context or [],
-                            current_ts=datetime.utcnow(),
-                            conversation_id=self._current_conversation_id or None,
-                        )
-                        logger.info(f"SCORING_DONE: {score_result}")
-                    except Exception as e:
-                        logger.error(f"SILENT_ERROR in SCORING_EXECUTION: {e}")
-                        import traceback
-                        logger.error(traceback.format_exc())
-                        raise
+                    score_result = await self.calificacion.calcular_score_automatico(
+                        client_id=cliente_id,
+                        usuario_id=sender_id,
+                        current_message=user_message,
+                        prior_messages=memory_context or [],
+                        current_ts=datetime.utcnow(),
+                        conversation_id=self._current_conversation_id or None,
+                    )
+                    print(f">>> SCORING SUCCESS: result={score_result}")
+                    logger.info(f"SCORING_DONE: {score_result}")
                 else:
+                    print(f">>> SCORING SKIPPED: no calificacion module")
                     logger.warning("SCORING_SKIP: no calificacion module")
             except Exception as e:
                 import traceback
                 full_trace = traceback.format_exc()
-                print(f"\n{'*'*80}")
-                print(f"* SCORING_BLOCK ERROR CAUGHT (not re-raised)")
-                print(f"* Exception: {type(e).__name__}: {str(e)}")
-                print(f"* Traceback:\n{full_trace}")
-                print(f"{'*'*80}\n")
-                logger.error(f"SCORING_BLOCK_ERROR: {type(e).__name__}: {e}")
-                logger.error(f"SCORING_BLOCK_TRACE:\n{full_trace}")
-                # REMOVED RAISE - continuing execution
+                print(f"\n{'!'*80}")
+                print(f"! SCORING EXCEPTION CAUGHT")
+                print(f"! Exception type: {type(e).__name__}")
+                print(f"! Exception message: {str(e)}")
+                print(f"! Traceback:\n{full_trace}")
+                print(f"{'!'*80}\n")
+                logger.error(f"SCORING_EXCEPTION: {type(e).__name__}: {e}")
+                logger.error(f"SCORING_TRACEBACK:\n{full_trace}")
             # ======================================
 
             logger.info(f"PM_STEP_6: After SCORING - preparing alerts for {sender_id}")
