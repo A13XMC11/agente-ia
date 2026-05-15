@@ -361,7 +361,7 @@ export default function ConfiguracionPage() {
                 <div key={banco.id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
                     <p className="font-medium">{banco.banco}</p>
-                    <p className="text-sm text-text-secondary">{banco.tipo_cuenta.capitalize()}</p>
+                    <p className="text-sm text-text-secondary capitalize">{banco.tipo_cuenta}</p>
                     <p className="text-sm text-text-secondary">Titular: {banco.titular}</p>
                     <p className="text-sm text-text-secondary">Cuenta: {banco.numero_cuenta.slice(-4)}</p>
                   </div>
