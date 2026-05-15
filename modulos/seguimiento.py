@@ -8,7 +8,7 @@ REQUIRED SQL MIGRATION before deployment:
 """
 
 import logging
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, timezone
 from typing import Any
 import httpx
 
@@ -56,10 +56,11 @@ class SeguimientoModule:
             }
 
             total = sum(result.values())
-            logger.info(f"Seguimientos enviados para {cliente_id}: {total} total", extra={
-                "cliente_id": cliente_id,
-                "resumen": result,
-            })
+            if total > 0:
+                logger.info(f"Seguimientos enviados para {cliente_id}: {total} total", extra={
+                    "cliente_id": cliente_id,
+                    "resumen": result,
+                })
 
             return result
 
@@ -77,13 +78,15 @@ class SeguimientoModule:
         """
         try:
             enviados = 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             hace_24h = now - timedelta(hours=24)
 
             # Get cold leads (score < 5, not discarded)
-            response = self.supabase.table("leads").select("*").eq(
+            response = self.supabase.table("leads").select(
+                "id, nombre, telefono"
+            ).eq(
                 "cliente_id", cliente_id
-            ).lt("score", 5).neq("estado", "descartado").execute()
+            ).lt("score", 5).neq("estado", "descartado").limit(200).execute()
 
             leads = response.data or []
             logger.debug(f"Found {len(leads)} cold leads for client {cliente_id}")
@@ -107,7 +110,11 @@ class SeguimientoModule:
                     continue
 
                 conv = conv_response.data[0]
-                fecha_ultimo = datetime.fromisoformat(conv.get("fecha_ultimo_mensaje", "").replace("Z", "+00:00"))
+                fecha_str = conv.get("fecha_ultimo_mensaje")
+                if not fecha_str:
+                    continue
+
+                fecha_ultimo = datetime.fromisoformat(fecha_str)
 
                 # Check if 24h have passed and no duplicate alert
                 if fecha_ultimo < hace_24h:
@@ -134,12 +141,14 @@ class SeguimientoModule:
         """
         try:
             enviados = 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             hace_2h = now - timedelta(hours=2)
 
-            response = self.supabase.table("leads").select("*").eq(
+            response = self.supabase.table("leads").select(
+                "id, nombre, telefono"
+            ).eq(
                 "cliente_id", cliente_id
-            ).gte("score", 7).execute()
+            ).gte("score", 7).limit(200).execute()
 
             leads = response.data or []
             logger.debug(f"Found {len(leads)} hot leads for client {cliente_id}")
@@ -162,7 +171,11 @@ class SeguimientoModule:
                     continue
 
                 conv = conv_response.data[0]
-                fecha_ultimo = datetime.fromisoformat(conv.get("fecha_ultimo_mensaje", "").replace("Z", "+00:00"))
+                fecha_str = conv.get("fecha_ultimo_mensaje")
+                if not fecha_str:
+                    continue
+
+                fecha_ultimo = datetime.fromisoformat(fecha_str)
 
                 if fecha_ultimo < hace_2h:
                     if not await self._ya_enviado(cliente_id, "seguimiento_caliente", lead_id, ventana_horas=24):
@@ -188,15 +201,17 @@ class SeguimientoModule:
         """
         try:
             enviados = 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             tomorrow = (now + timedelta(days=1)).date()
 
             # Get confirmed appointments for tomorrow
-            response = self.supabase.table("citas").select("*").eq(
+            response = self.supabase.table("citas").select(
+                "id, nombre_cliente, hora, telefono_cliente, fecha"
+            ).eq(
                 "cliente_id", cliente_id
             ).eq("estado", "confirmada").eq(
                 "recordatorio_24h_enviado", False
-            ).execute()
+            ).limit(200).execute()
 
             citas = response.data or []
 
@@ -239,16 +254,17 @@ class SeguimientoModule:
         """
         try:
             enviados = 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             today = now.date()
             hora_actual = now.time()
-            hace_1h = now - timedelta(hours=1)
 
-            response = self.supabase.table("citas").select("*").eq(
+            response = self.supabase.table("citas").select(
+                "id, nombre_cliente, hora, telefono_cliente, fecha"
+            ).eq(
                 "cliente_id", cliente_id
             ).eq("estado", "confirmada").eq(
                 "recordatorio_1h_enviado", False
-            ).execute()
+            ).limit(200).execute()
 
             citas = response.data or []
 
@@ -299,25 +315,27 @@ class SeguimientoModule:
         """
         try:
             enviados = 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             hace_25h = now - timedelta(hours=25)
             hace_23h = now - timedelta(hours=23)
 
-            response = self.supabase.table("payments").select("*").eq(
+            response = self.supabase.table("payments").select(
+                "id, nombre_cliente, telefono_cliente, created_at"
+            ).eq(
                 "cliente_id", cliente_id
-            ).eq("estado", "confirmado").execute()
+            ).eq("estado", "confirmado").limit(200).execute()
 
             pagos = response.data or []
 
             for pago in pagos:
                 pago_id = pago.get("id")
-                created_at_str = pago.get("created_at", "")
+                created_at_str = pago.get("created_at")
 
                 if not created_at_str:
                     continue
 
                 try:
-                    created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                    created_at = datetime.fromisoformat(created_at_str)
                 except ValueError:
                     continue
 
@@ -345,28 +363,32 @@ class SeguimientoModule:
 
     async def _verificar_reactivacion(self, cliente_id: str) -> int:
         """
-        Reactivation follow-up: 7 days without activity.
+        Reactivation follow-up: 7 days without activity (WhatsApp only).
 
         Message: "Hola {nombre} 👋 Hace tiempo que no sabemos de ti..."
         """
         try:
             enviados = 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             hace_7d = now - timedelta(days=7)
 
-            response = self.supabase.table("conversaciones").select("*").eq(
+            response = self.supabase.table("conversaciones").select(
+                "id, usuario_id, canal, usuario_nombre, fecha_ultimo_mensaje"
+            ).eq(
                 "cliente_id", cliente_id
-            ).lt("fecha_ultimo_mensaje", hace_7d.isoformat()).execute()
+            ).eq("canal", "whatsapp").lt(
+                "fecha_ultimo_mensaje", hace_7d.isoformat()
+            ).limit(200).execute()
 
             conversaciones = response.data or []
-            logger.debug(f"Found {len(conversaciones)} inactive conversations for client {cliente_id}")
+            logger.debug(f"Found {len(conversaciones)} inactive WhatsApp conversations for client {cliente_id}")
 
             for conv in conversaciones:
                 conv_id = conv.get("id")
                 usuario_id = conv.get("usuario_id")
                 nombre = conv.get("usuario_nombre", "Amigo/a")
 
-                if not usuario_id:
+                if not usuario_id or not isinstance(usuario_id, str):
                     continue
 
                 if not await self._ya_enviado(cliente_id, "reactivacion", conv_id, ventana_horas=168):
@@ -404,7 +426,7 @@ class SeguimientoModule:
             True if already sent within the time window
         """
         try:
-            hace_x_horas = (datetime.utcnow() - timedelta(hours=ventana_horas)).isoformat()
+            hace_x_horas = (datetime.now(timezone.utc) - timedelta(hours=ventana_horas)).isoformat()
 
             response = self.supabase.table("alertas").select("id").eq(
                 "cliente_id", cliente_id
@@ -442,7 +464,7 @@ class SeguimientoModule:
                 "mensaje": mensaje,
                 "canal_envio": "whatsapp",
                 "leida": False,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
             self.supabase.table("alertas").insert(alerta).execute()
 

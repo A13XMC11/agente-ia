@@ -79,6 +79,38 @@ seguimiento_module: Any | None = None
 scheduler: AsyncIOScheduler | None = None
 
 
+async def _verificar_todos_los_seguimientos(
+    seg_module: Any,
+    supabase_client: Any,
+) -> None:
+    """
+    Check and send all pending follow-ups for all active clients.
+
+    Called every 30 minutes by scheduler.
+    """
+    try:
+        response = supabase_client.table("clientes").select("id").eq("estado", "activo").execute()
+        clients = response.data or []
+
+        logger.info(f"Checking follow-ups for {len(clients)} active clients")
+
+        for client in clients:
+            try:
+                client_id = client.get("id")
+                result = await seg_module.verificar_seguimientos_pendientes(client_id)
+                total = sum(result.values())
+                if total > 0:
+                    logger.info(f"Sent {total} follow-ups to client {client_id}", extra={
+                        "cliente_id": client_id,
+                        "resumen": result,
+                    })
+            except Exception as e:
+                logger.error(f"Error checking follow-ups for client {client.get('id')}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in seguimientos job: {e}", exc_info=True)
+
+
 async def _send_daily_summaries(alertas_module: Any, supabase_client: Any) -> None:
     """
     Send daily summary to all business owners at 8 PM.
@@ -357,42 +389,19 @@ async def lifespan(app: FastAPI):
             )
             logger.info("seguimiento_module_initialized")
 
-            # Initialize AsyncIO scheduler for daily summary at 8 PM
-            scheduler = AsyncIOScheduler()
+            # Initialize AsyncIO scheduler for cron jobs (UTC timezone)
+            scheduler = AsyncIOScheduler(timezone="UTC")
             scheduler.add_job(
                 _send_daily_summaries,
                 "cron",
                 hour=20,
                 minute=0,
                 args=(alertas_module, supabase_service_client),
-                id="daily_summary_job"
+                id="daily_summary_job",
+                misfire_grace_time=300,
             )
 
             # Add job for automatic follow-ups every 30 minutes
-            async def _verificar_todos_los_seguimientos(seg_module, supabase_client):
-                """Check and send all pending follow-ups for all active clients."""
-                try:
-                    response = supabase_client.table("clientes").select("id").eq("estado", "activo").execute()
-                    clients = response.data or []
-
-                    logger.info(f"Checking follow-ups for {len(clients)} active clients")
-
-                    for client in clients:
-                        try:
-                            client_id = client.get("id")
-                            result = await seg_module.verificar_seguimientos_pendientes(client_id)
-                            total = sum(result.values())
-                            if total > 0:
-                                logger.info(f"Sent {total} follow-ups to client {client_id}", extra={
-                                    "cliente_id": client_id,
-                                    "resumen": result,
-                                })
-                        except Exception as e:
-                            logger.error(f"Error checking follow-ups for client {client.get('id')}: {e}")
-
-                except Exception as e:
-                    logger.error(f"Error in seguimientos job: {e}", exc_info=True)
-
             scheduler.add_job(
                 _verificar_todos_los_seguimientos,
                 "interval",
