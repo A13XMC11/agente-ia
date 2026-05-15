@@ -734,9 +734,16 @@ class AgentEngine:
                 else:
                     logger.warning("SCORING_SKIP: no calificacion module")
             except Exception as e:
-                logger.error(f"SILENT_ERROR in SCORING_BLOCK: {e}")
                 import traceback
-                logger.error(traceback.format_exc())
+                full_trace = traceback.format_exc()
+                print(f"\n{'*'*80}")
+                print(f"* SCORING_BLOCK ERROR CAUGHT (not re-raised)")
+                print(f"* Exception: {type(e).__name__}: {str(e)}")
+                print(f"* Traceback:\n{full_trace}")
+                print(f"{'*'*80}\n")
+                logger.error(f"SCORING_BLOCK_ERROR: {type(e).__name__}: {e}")
+                logger.error(f"SCORING_BLOCK_TRACE:\n{full_trace}")
+                # REMOVED RAISE - continuing execution
             # ======================================
 
             logger.info(f"PM_STEP_6: After SCORING - preparing alerts for {sender_id}")
@@ -759,16 +766,31 @@ class AgentEngine:
                     logger.error(traceback.format_exc())
 
             logger.info(f"PM_STEP_7: Returning response for {sender_id}")
+            print(f"\n✓ PROCESS_MESSAGE RETURNING NORMALLY for {sender_id}")
+            print(f"  Response keys: {list(response_dict.keys())}")
+            print(f"  Response text: {response_dict.get('response_text', '')[:100]}...")
             return response_dict
 
         except Exception as e:
+            import traceback
+            full_trace = traceback.format_exc()
+
+            # AGGRESSIVE LOGGING — capture everything
+            print(f"\n\n{'!'*80}")
+            print(f"! OUTER CATCH IN PROCESS_MESSAGE")
+            print(f"! Exception type: {type(e).__name__}")
+            print(f"! Exception message: {str(e)}")
+            print(f"! Full traceback:\n{full_trace}")
+            print(f"{'!'*80}\n")
+
             logger.error(
                 f"FATAL_ERROR in process_message: {str(e)}",
                 extra={"client_id": cliente_id, "sender_id": sender_id},
                 exc_info=True,
             )
-            import traceback
-            logger.error(f"FATAL_TRACEBACK:\n{traceback.format_exc()}")
+            logger.error(f"OUTER_CATCH_TYPE: {type(e).__name__}")
+            logger.error(f"OUTER_CATCH_MESSAGE: {str(e)}")
+            logger.error(f"FATAL_TRACEBACK:\n{full_trace}")
 
             # Graceful fallback: escalate
             error_response = {
@@ -808,6 +830,8 @@ class AgentEngine:
                     import traceback
                     logger.error(traceback.format_exc())
 
+            print(f"\n✗ PROCESS_MESSAGE RETURNING ERROR RESPONSE for {sender_id}")
+            print(f"  Error message: {error_response.get('response_text', '')}")
             return error_response
 
     async def _execute_tool_call(
