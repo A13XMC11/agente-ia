@@ -160,8 +160,10 @@ class AgentEngine:
             f"(client_id={self.client_id})"
         )
         if self.calificacion:
+            print(f"✅ CalificacionModule READY for {self.client_id}")
             logger.info(f"🟢 CalificacionModule is NOT None - ready to use")
         else:
+            print(f"❌ CalificacionModule is None for {self.client_id} - SCORING WILL BE SKIPPED")
             logger.warning(f"🔴 CalificacionModule is None - lead scoring will NOT work!")
 
         # Temporary storage for current message context (passed to tool calls)
@@ -712,6 +714,7 @@ class AgentEngine:
 
             # ============ LEAD SCORING (FIRST, before alerts) ============
             logger.info(f"PM_STEP_5: Before SCORING - {sender_id}")
+            print(f"\n>>> SCORING CHECK: calificacion is {'INITIALIZED' if self.calificacion else 'NONE'}")
             logger.info(f"SCORING_START: sender={sender_id}, calificacion={self.calificacion is not None}")
             try:
                 if self.calificacion:
