@@ -150,6 +150,7 @@ class AgentEngine:
             f"supabase_client: {supabase_client is not None}"
         )
 
+        self.supabase = supabase_client
         self.alertas = AlertasModule(supabase_client) if supabase_client else None
         self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
@@ -862,6 +863,19 @@ class AgentEngine:
             if tool_name == "crear_cita":
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
+
+                # Buscar lead_id del usuario para vincular con la cita
+                lead_id = None
+                if self.supabase:
+                    try:
+                        lead_response = self.supabase.table("leads").select("id").eq(
+                            "cliente_id", client_id
+                        ).eq("telefono", sender_id).limit(1).execute()
+                        if lead_response.data:
+                            lead_id = lead_response.data[0].get("id")
+                    except Exception as e:
+                        logger.warning(f"Error fetching lead_id for cita: {e}")
+
                 result = await self.agendamiento.crear_cita(
                     cliente_id=client_id,
                     fecha=arguments.get("fecha", ""),
@@ -871,6 +885,8 @@ class AgentEngine:
                     servicio=arguments.get("servicio", ""),
                     email_cliente=arguments.get("email_cliente", ""),
                     duracion_minutos=arguments.get("duracion_minutos", 60),
+                    conversacion_id=self._current_conversation_id or None,
+                    lead_id=lead_id,
                 )
                 return json.dumps(result, ensure_ascii=False)
 
@@ -932,6 +948,7 @@ class AgentEngine:
                     telefono=arguments.get("telefono"),
                     empresa=arguments.get("empresa"),
                     tags=arguments.get("tags"),
+                    conversacion_id=self._current_conversation_id or None,
                 )
                 return json.dumps(result, ensure_ascii=False)
 

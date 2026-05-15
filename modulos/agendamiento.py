@@ -284,6 +284,8 @@ class AgendamientoModule:
         servicio: str,
         email_cliente: str = "",
         duracion_minutos: int = 60,
+        conversacion_id: Optional[str] = None,
+        lead_id: Optional[str] = None,
     ) -> dict[str, Any]:
         logger.info(
             f"Creating appointment: cliente_id={cliente_id}, "
@@ -330,6 +332,8 @@ class AgendamientoModule:
                 "duracion_minutos": duracion_minutos,
                 "estado": "confirmada",
                 "google_event_id": google_event_id,
+                "conversacion_id": conversacion_id,
+                "lead_id": lead_id,
             }
 
             response = self.supabase.table("citas").insert(appointment).execute()

@@ -385,6 +385,7 @@ class CalificacionModule:
         telefono: Optional[str] = None,
         empresa: Optional[str] = None,
         tags: Optional[list[str]] = None,
+        conversacion_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Save or update lead information.
@@ -446,6 +447,7 @@ class CalificacionModule:
                     **lead_data,
                     "score": 0,
                     "estado": "curioso",
+                    "conversacion_id": conversacion_id,
                     "created_at": datetime.utcnow().isoformat(),
                 }
                 logger.info(f"=== INTENTANDO INSERT LEAD ===")
