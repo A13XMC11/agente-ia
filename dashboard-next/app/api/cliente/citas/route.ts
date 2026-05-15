@@ -15,7 +15,20 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('citas')
-      .select('id, usuario_id, fecha, hora, duracion_minutos, estado, descripcion')
+      .select(`
+        id,
+        usuario_id,
+        fecha,
+        hora,
+        duracion_minutos,
+        estado,
+        descripcion,
+        usuarios:usuario_id (
+          nombre,
+          email,
+          telefono
+        )
+      `)
       .eq('cliente_id', session.cliente_id)
 
     if (start) {
@@ -37,7 +50,20 @@ export async function GET(request: Request) {
       throw error
     }
 
-    return NextResponse.json({ success: true, data: data || [] })
+    // Map the data to include usuario_nombre and usuario_email
+    const mapped = (data || []).map((cita: any) => ({
+      id: cita.id,
+      usuario_id: cita.usuario_id,
+      usuario_nombre: cita.usuarios?.nombre || 'Usuario desconocido',
+      usuario_email: cita.usuarios?.email || '',
+      fecha: cita.fecha,
+      hora: cita.hora,
+      duracion_minutos: cita.duracion_minutos,
+      estado: cita.estado,
+      descripcion: cita.descripcion
+    }))
+
+    return NextResponse.json({ success: true, data: mapped })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error('Error fetching citas:', errorMessage)
