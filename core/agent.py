@@ -58,8 +58,20 @@ class AgentEngine:
         self.system_prompt = client_config.get("system_prompt", "")
         self.active_modules = client_config.get("active_modules", {})
 
+        # 🔍 DIAGNOSTIC: Log initial system_prompt
+        print(f"\n{'='*80}")
+        print(f"🔍 [AGENT INIT] AgentEngine constructor called:")
+        print(f"   client_id: {self.client_id}")
+        print(f"   system_prompt from client_config (before rules):")
+        print(f"      Length: {len(self.system_prompt)}")
+        print(f"      First 200 chars: {self.system_prompt[:200]!r}")
+        print(f"   active_modules: {self.active_modules}")
+        print(f"{'='*80}\n")
+
         logger.info(f"🟢 === AgentEngine.__init__ ===")
         logger.info(f"client_id: {self.client_id}")
+        logger.info(f"system_prompt length: {len(self.system_prompt)}")
+        logger.info(f"system_prompt preview: {self.system_prompt[:100]!r}")
         logger.info(f"active_modules: {self.active_modules}")
         logger.info(f"calificacion_enabled: {self.active_modules.get('calificacion', False)}")
 
@@ -572,6 +584,18 @@ class AgentEngine:
         typing_delay = self._calculate_typing_delay(user_message)
 
         # Build conversation history for context
+        # 🔍 DIAGNOSTIC: Log what system_prompt is being used
+        print(f"\n{'='*80}")
+        print(f"🔍 [AGENT PROCESS_MESSAGE] Building messages for GPT-4o:")
+        print(f"   client_id: {cliente_id}")
+        print(f"   sender_id: {sender_id}")
+        print(f"   system_prompt length: {len(self.system_prompt)}")
+        print(f"   system_prompt first 300 chars:")
+        print(f"      {self.system_prompt[:300]!r}")
+        if len(self.system_prompt) > 300:
+            print(f"   ... (total {len(self.system_prompt)} chars)")
+        print(f"{'='*80}\n")
+
         messages = [{"role": "system", "content": self.system_prompt}]
         if memory_context:
             for turn in memory_context:

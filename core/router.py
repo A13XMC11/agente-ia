@@ -5,6 +5,7 @@ Handles client identification, agent instantiation, and message processing.
 """
 
 import logging
+import time
 from typing import Any, Optional
 
 from core.agent import AgentEngine
@@ -26,6 +27,8 @@ class MessageRouter:
         self.supabase = supabase_client
         self.supabase_service = supabase_service_client or supabase_client
         self.agent_instances = {}  # Cache of AgentEngine instances by client_id
+        self.agent_cache_timestamps = {}  # Track creation time for TTL invalidation
+        self.AGENT_CACHE_TTL_SECONDS = 300  # 5 minutes
 
     async def initialize(self) -> None:
         """Initialize message router. Supabase client is already initialized."""
@@ -68,11 +71,34 @@ class MessageRouter:
         }
 
         try:
+            # 🔍 DIAGNOSTIC: Log the query parameters
+            print(f"\n{'='*80}")
+            print(f"🔍 [ROUTER CONFIG QUERY] Starting to fetch agentes config")
+            print(f"   client_id being queried: {client_id!r}")
+            print(f"{'='*80}\n")
+            logger.info(
+                f"🔍 Fetching agentes config for client_id={client_id!r}",
+                extra={"client_id": client_id}
+            )
+
             response = self.supabase.table("agentes").select("*").eq(
                 "cliente_id", client_id
             ).limit(1).execute()
 
+            # 🔍 DIAGNOSTIC: Log the query response
+            print(f"\n{'='*80}")
+            print(f"🔍 [ROUTER CONFIG RESPONSE] Query returned:")
+            print(f"   Number of records: {len(response.data) if response.data else 0}")
+            print(f"   response.data is None: {response.data is None}")
+            print(f"   response.data is empty list: {response.data == []}")
+            if response.data:
+                print(f"   Available keys in first record: {list(response.data[0].keys())}")
+            print(f"{'='*80}\n")
+
             if not response.data:
+                print(f"\n❌ [ROUTER] NO CONFIG FOUND for client_id={client_id}")
+                print(f"   → Falling back to DEFAULTS")
+                print(f"   → Default system_prompt: {defaults['system_prompt'][:50]}...\n")
                 logger.warning(
                     f"No agentes config found for client_id={client_id}, using defaults with calificacion FORCED ENABLED",
                     extra={"client_id": client_id}
@@ -81,15 +107,32 @@ class MessageRouter:
                 return defaults
 
             config = response.data[0]
+
+            # 🔍 DIAGNOSTIC: Log the raw config from DB
+            print(f"\n{'='*80}")
+            print(f"🔍 [ROUTER CONFIG DATA] Raw data from agentes table:")
+            print(f"   config['sistema_prompt'] = {config.get('sistema_prompt', 'KEY NOT FOUND')!r}")
+            print(f"   config['system_prompt'] = {config.get('system_prompt', 'KEY NOT FOUND')!r}")
+            print(f"   config['prompt_sistema'] = {config.get('prompt_sistema', 'KEY NOT FOUND')!r}")
+            print(f"   All keys: {list(config.keys())}")
+            print(f"{'='*80}\n")
+
             logger.info(
                 f"agentes row fetched for client_id={client_id}: keys={list(config.keys())}"
             )
 
             # Map column names to internal keys (handle both Spanish and English naming)
             if "system_prompt" in config and config["system_prompt"]:
+                print(f"✅ Found 'system_prompt' in config (EN), length={len(config['system_prompt'])}")
                 config["system_prompt"] = config["system_prompt"]
             elif "prompt_sistema" in config and config["prompt_sistema"]:
+                print(f"✅ Found 'prompt_sistema' in config (ES), length={len(config['prompt_sistema'])}")
                 config["system_prompt"] = config["prompt_sistema"]
+            elif "sistema_prompt" in config and config["sistema_prompt"]:
+                print(f"✅ Found 'sistema_prompt' in config (ES alt), length={len(config['sistema_prompt'])}")
+                config["system_prompt"] = config["sistema_prompt"]
+            else:
+                print(f"❌ NO system_prompt found in config! Available keys: {list(config.keys())}")
 
             if "temperature" in config and config["temperature"] is not None:
                 config["temperature"] = config["temperature"]
@@ -117,6 +160,18 @@ class MessageRouter:
             merged["active_modules"]["calificacion"] = True
 
             system_prompt = merged.get("system_prompt", "")
+
+            # 🔍 DIAGNOSTIC: Log final merged config
+            print(f"\n{'='*80}")
+            print(f"🔍 [ROUTER MERGED CONFIG] Final config after merge:")
+            print(f"   system_prompt source: {'DB (agentes)' if system_prompt != defaults['system_prompt'] else 'DEFAULT'}")
+            print(f"   system_prompt length: {len(system_prompt)}")
+            print(f"   system_prompt first 150 chars: {system_prompt[:150]!r}")
+            print(f"   temperature: {merged.get('temperature')}")
+            print(f"   max_tokens: {merged.get('max_tokens')}")
+            print(f"   active_modules: {merged.get('active_modules')}")
+            print(f"{'='*80}\n")
+
             logger.info(
                 f"system_prompt for client_id={client_id} "
                 f"({'from agentes' if system_prompt != defaults['system_prompt'] else 'DEFAULT fallback'}): "
@@ -126,6 +181,11 @@ class MessageRouter:
             return merged
 
         except Exception as e:
+            print(f"\n❌ [ROUTER EXCEPTION] Error fetching config:")
+            print(f"   Exception: {type(e).__name__}: {e}\n")
+            import traceback
+            traceback.print_exc()
+
             logger.warning(
                 f"Could not fetch config for {client_id}: {e}, using defaults with calificacion FORCED ENABLED",
                 extra={"client_id": client_id}
@@ -146,16 +206,38 @@ class MessageRouter:
         """
         Get cached agent instance or create new one.
 
+        Implements TTL-based cache invalidation: agents are refreshed every 5 minutes
+        to pick up config changes (especially system_prompt) from the database.
+
         Args:
             client_id: Client ID
 
         Returns:
             AgentEngine instance for this client
         """
-        if client_id in self.agent_instances:
+        now = time.time()
+        cache_age = now - self.agent_cache_timestamps.get(client_id, 0)
+        is_cached = client_id in self.agent_instances
+        cache_expired = is_cached and cache_age > self.AGENT_CACHE_TTL_SECONDS
+
+        # If cached and still fresh, use it
+        if is_cached and not cache_expired:
+            print(f"\n{'='*80}")
+            print(f"✅ [AGENT CACHE HIT] Returning cached agent for {client_id}")
+            print(f"   Cache age: {cache_age:.1f}s (TTL: {self.AGENT_CACHE_TTL_SECONDS}s)")
+            print(f"{'='*80}\n")
             return self.agent_instances[client_id]
 
-        # Fetch client config
+        # Cache miss or expired: invalidate and recreate
+        if cache_expired:
+            print(f"\n{'='*80}")
+            print(f"⏰ [AGENT CACHE EXPIRED] Invalidating old agent for {client_id}")
+            print(f"   Cache age: {cache_age:.1f}s (TTL: {self.AGENT_CACHE_TTL_SECONDS}s)")
+            print(f"{'='*80}\n")
+            del self.agent_instances[client_id]
+            logger.info(f"Agent cache expired for client {client_id} (age: {cache_age:.1f}s)")
+
+        # Fetch fresh client config from database
         config = await self._get_client_config(client_id)
         config["client_id"] = client_id
 
@@ -167,6 +249,7 @@ class MessageRouter:
             supabase_service_client=self.supabase_service
         )
         self.agent_instances[client_id] = agent
+        self.agent_cache_timestamps[client_id] = now
 
         logger.info(f"Agent instance created for client {client_id}")
 
@@ -195,23 +278,38 @@ class MessageRouter:
         """
         try:
             if identifier_type == "id":
+                print(f"\n🔍 [IDENTIFY] Direct ID provided: {identifier}")
                 return identifier
 
             elif identifier_type == "phone_number_id":
                 # Map WhatsApp phone_number_id to client
-                print(f"\n🔍 [IDENTIFY] Searching for phone_number_id = {identifier}")
+                print(f"\n{'='*80}")
+                print(f"🔍 [IDENTIFY] Searching for phone_number_id in canales_config:")
+                print(f"   phone_number_id: {identifier!r}")
+                print(f"{'='*80}\n")
+
                 response = self.supabase.table("canales_config").select(
-                    "cliente_id"
+                    "*"  # Select all to see what fields are available
                 ).eq("canal", "whatsapp").eq(
                     "phone_number_id", identifier
                 ).single().execute()
 
+                print(f"🔍 [IDENTIFY] Query response:")
                 if response.data:
+                    print(f"   Found record: {list(response.data.keys())}")
                     client_id = response.data["cliente_id"]
-                    print(f"✅ [IDENTIFY] Found client_id = {client_id}")
+                    print(f"✅ [IDENTIFY] Resolved phone_number_id={identifier} → client_id={client_id!r}")
                     return client_id
                 else:
-                    print(f"❌ [IDENTIFY] NO MATCH in canales_config for phone_number_id = {identifier}")
+                    print(f"❌ [IDENTIFY] NO MATCH in canales_config")
+                    print(f"   Checking all records in canales_config for debugging...")
+                    try:
+                        all_canales = self.supabase.table("canales_config").select("*").execute()
+                        print(f"   Total records in canales_config: {len(all_canales.data or [])}")
+                        for i, record in enumerate((all_canales.data or [])[:5]):
+                            print(f"      [{i}] canal={record.get('canal')}, phone_id={record.get('phone_number_id')}, cliente_id={record.get('cliente_id')}")
+                    except Exception as debug_e:
+                        print(f"   Could not fetch debug info: {debug_e}")
                     return None
 
             elif identifier_type == "page_id":
@@ -299,7 +397,20 @@ class MessageRouter:
                 }
 
             # Get agent instance for this client
+            print(f"\n{'='*80}")
+            print(f"🔍 [ROUTE_MESSAGE] Getting or creating agent instance:")
+            print(f"   client_id: {client_id!r}")
+            print(f"   Checking if already cached... {client_id in self.agent_instances}")
+            print(f"{'='*80}\n")
+
             agent = await self._get_or_create_agent(client_id)
+
+            print(f"\n{'='*80}")
+            print(f"🔍 [ROUTE_MESSAGE] Agent obtained:")
+            print(f"   Agent.client_id: {agent.client_id!r}")
+            print(f"   Agent.system_prompt length: {len(agent.system_prompt)}")
+            print(f"   Agent.system_prompt preview: {agent.system_prompt[:150]!r}")
+            print(f"{'='*80}\n")
 
             # Process message
             logger.info(f"🟡 === CALLING agent.process_message ===")
@@ -346,7 +457,9 @@ class MessageRouter:
         """
         if client_id in self.agent_instances:
             del self.agent_instances[client_id]
-            logger.info(f"Agent cache invalidated for client {client_id}")
+        if client_id in self.agent_cache_timestamps:
+            del self.agent_cache_timestamps[client_id]
+        logger.info(f"Agent cache invalidated for client {client_id}")
 
     def get_agent_status(self, client_id: str) -> dict[str, Any]:
         """
