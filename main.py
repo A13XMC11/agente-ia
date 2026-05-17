@@ -353,10 +353,11 @@ async def lifespan(app: FastAPI):
                 from openai import AsyncOpenAI
 
                 # Create cobros module instance
+                redis_client = getattr(buffer, 'redis', None) if buffer else None
                 cobros_module = CobrosModule(
                     supabase_client=supabase_service_client,
                     openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
-                    redis_client=buffer._redis if buffer else None,
+                    redis_client=redis_client,
                     whatsapp_handler=whatsapp_handler,
                 )
 
@@ -367,7 +368,7 @@ async def lifespan(app: FastAPI):
                 for agent in message_router.agent_instances.values():
                     agent.set_whatsapp_handler(whatsapp_handler)
                     if buffer:
-                        agent.set_redis_client(buffer._redis)
+                        agent.set_redis_client(getattr(buffer, 'redis', None))
 
                 logger.info("cobros_module_injected")
         except Exception as e:
