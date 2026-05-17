@@ -49,11 +49,13 @@ export default function CitasPage() {
     .slice(0, 10)
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-CO', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long'
-    })
+    // Avoid timezone conversion by parsing the date string directly
+    const [year, month, day] = dateString.split('-')
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+    const dayOfWeek = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][date.getDay()]
+    return `${dayOfWeek}, ${parseInt(day)} de ${meses[parseInt(month) - 1]} de ${year}`
   }
 
   const getEstadoBg = (estado: string) => {
