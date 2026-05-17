@@ -74,22 +74,31 @@ class CobrosModule:
         """
         try:
             # 1. Read bank details from datos_bancarios
+            logger.info(f"🔍 Buscando datos bancarios para cliente: {client_id}")
+
             response = self.supabase.table("datos_bancarios").select(
                 "banco, tipo_cuenta, numero_cuenta, titular, ruc"
             ).eq("cliente_id", client_id).eq("activo", True).limit(1).execute()
 
+            logger.info(f"✅ Query ejecutado - Resultado: {response.data}")
+            if response.error:
+                logger.error(f"❌ Error en query: {response.error}")
+
             if not response.data:
+                logger.warning(f"⚠️ No hay datos bancarios para {client_id} (activo=True)")
                 return {
                     "exito": False,
                     "mensaje": "No hay datos bancarios configurados para este negocio",
                 }
 
             cuenta = response.data[0]
+            logger.info(f"💳 Datos bancarios encontrados: {cuenta.get('banco')} - {cuenta.get('numero_cuenta')}")
 
             # 2. Store pending amount in Redis for 24h (for later validation)
             if self.redis and monto_esperado:
                 key = f"cobros:pending:{client_id}:{sender_id}"
                 await self.redis.setex(key, 86400, str(monto_esperado))
+                logger.info(f"💾 Monto esperado almacenado en Redis: ${monto_esperado}")
 
             # 3. Format message for WhatsApp chat (not email)
             mensaje = (
