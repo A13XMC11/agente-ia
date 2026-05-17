@@ -11,13 +11,12 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('conversaciones')
-      .select('id, usuario_id, canal, ultimo_mensaje, fecha_ultimo_mensaje, estado')
+      .select('id, usuario_id, usuario_nombre, usuario_telefono, canal, estado, fecha_inicio, fecha_ultimo_mensaje')
       .eq('cliente_id', session.cliente_id)
       .order('fecha_ultimo_mensaje', { ascending: false })
 
     if (error) {
-      // Return empty array if table doesn't exist yet
-      if (error.code === '42703' || error.code === 'PGRST204') {
+      if (error.code === '42P01' || error.code === 'PGRST204') {
         return NextResponse.json({ success: true, data: [] })
       }
       throw error

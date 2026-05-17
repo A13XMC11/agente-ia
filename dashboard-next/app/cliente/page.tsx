@@ -1,7 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { MessageSquare, TrendingUp, Calendar, AlertCircle } from 'lucide-react'
-import { getClienteId } from '@/lib/get-user'
+import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 
 interface Metrics {
   conversacionesHoy: number
@@ -14,8 +15,11 @@ interface Metrics {
 interface Conversacion {
   id: string
   usuario_id: string
+  usuario_nombre?: string
+  usuario_telefono?: string
   canal: string
-  ultimo_mensaje: string
+  estado?: string
+  ultimo_mensaje?: string
   fecha_ultimo_mensaje: string
 }
 
@@ -79,7 +83,7 @@ async function getMetrics(clienteId: string): Promise<Metrics> {
 async function getConversacionesRecientes(clienteId: string): Promise<Conversacion[]> {
   const { data } = await supabase
     .from('conversaciones')
-    .select('id, usuario_id, canal, ultimo_mensaje, fecha_ultimo_mensaje')
+    .select('id, usuario_id, usuario_nombre, usuario_telefono, canal, estado, fecha_ultimo_mensaje')
     .eq('cliente_id', clienteId)
     .order('fecha_ultimo_mensaje', { ascending: false })
     .limit(5)
@@ -103,7 +107,7 @@ async function getProximasCitas(clienteId: string) {
 
   const { data } = await supabase
     .from('citas')
-    .select('id, usuario_id, canal, descripcion, fecha')
+    .select('id, nombre_cliente, usuario_telefono, servicio, estado, fecha')
     .eq('cliente_id', clienteId)
     .gte('fecha', today)
     .order('fecha', { ascending: true })
@@ -111,39 +115,27 @@ async function getProximasCitas(clienteId: string) {
 
   return (data || []).map((item: any) => ({
     id: item.id,
-    usuario_id: item.usuario_id,
-    canal: item.canal || 'cita',
-    ultimo_mensaje: item.descripcion,
+    usuario_id: item.nombre_cliente,
+    usuario_nombre: item.nombre_cliente,
+    canal: 'cita',
+    estado: item.estado,
+    ultimo_mensaje: item.servicio,
     fecha_ultimo_mensaje: item.fecha
   })) as Conversacion[]
 }
 
 export default async function ClienteDashboard() {
-  const clienteId = await getClienteId()
+  const session = await getServerSession()
 
-  if (!clienteId) {
-    return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-4xl font-bold text-text-primary">Dashboard</h1>
-          <p className="text-text-secondary mt-2">Resumen de tu negocio y agente IA</p>
-        </div>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-12">
-              <p className="text-text-secondary">No hay cliente asociado a tu cuenta</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  if (!session || !session.cliente_id) {
+    redirect('/login')
   }
 
   const [metrics, conversacionesRecientes, topLeads, proximasCitas] = await Promise.all([
-    getMetrics(clienteId),
-    getConversacionesRecientes(clienteId),
-    getTopLeads(clienteId),
-    getProximasCitas(clienteId)
+    getMetrics(session.cliente_id),
+    getConversacionesRecientes(session.cliente_id),
+    getTopLeads(session.cliente_id),
+    getProximasCitas(session.cliente_id)
   ])
 
   return (

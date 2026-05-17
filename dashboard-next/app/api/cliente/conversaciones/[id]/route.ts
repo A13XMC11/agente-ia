@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase/server'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession()
@@ -12,30 +12,30 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const conversacionId = params.id
+    const { id: conversacionId } = await params
 
-    // Get conversation details
+    // Obtener conversación
     const { data: conversation, error: convError } = await supabase
       .from('conversaciones')
-      .select('*')
+      .select('id, usuario_id, usuario_nombre, usuario_telefono, canal, estado, fecha_inicio, fecha_ultimo_mensaje')
       .eq('id', conversacionId)
       .eq('cliente_id', session.cliente_id)
       .single()
 
-    if (convError || !conversation) {
+    if (convError) {
       return NextResponse.json({ success: false, error: 'Conversación no encontrada' }, { status: 404 })
     }
 
-    // Get messages
+    // Obtener mensajes ordenados por fecha
     const { data: messages, error: msgError } = await supabase
       .from('mensajes')
-      .select('*')
+      .select('id, conversacion_id, sender_id, sender_type, contenido, tipo, created_at')
       .eq('conversacion_id', conversacionId)
+      .eq('cliente_id', session.cliente_id)
       .order('created_at', { ascending: true })
 
     if (msgError) {
-      console.error('Error fetching messages:', msgError)
-      return NextResponse.json({ success: false, error: 'Failed to fetch messages' }, { status: 500 })
+      return NextResponse.json({ success: false, error: 'Error al obtener mensajes' }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -46,7 +46,7 @@ export async function GET(
       }
     })
   } catch (error) {
-    console.error('Error fetching conversation:', error)
-    return NextResponse.json({ success: false, error: 'Failed to fetch conversation' }, { status: 500 })
+    console.error('Error fetching conversación:', error)
+    return NextResponse.json({ success: false, error: 'Failed to fetch conversación' }, { status: 500 })
   }
 }

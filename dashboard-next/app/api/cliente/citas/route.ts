@@ -15,20 +15,7 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('citas')
-      .select(`
-        id,
-        usuario_id,
-        fecha,
-        hora,
-        duracion_minutos,
-        estado,
-        descripcion,
-        usuarios:usuario_id (
-          nombre,
-          email,
-          telefono
-        )
-      `)
+      .select('id, usuario_id, nombre_cliente, telefono_cliente, email_cliente, fecha, hora, duracion_minutos, servicio, estado, created_at')
       .eq('cliente_id', session.cliente_id)
 
     if (start) {
@@ -50,17 +37,18 @@ export async function GET(request: Request) {
       throw error
     }
 
-    // Map the data to include usuario_nombre and usuario_email
     const mapped = (data || []).map((cita: any) => ({
       id: cita.id,
       usuario_id: cita.usuario_id,
-      usuario_nombre: cita.usuarios?.nombre || 'Usuario desconocido',
-      usuario_email: cita.usuarios?.email || '',
+      usuario_nombre: cita.nombre_cliente || 'Cliente desconocido',
+      usuario_email: cita.email_cliente || '',
+      usuario_telefono: cita.telefono_cliente || '',
       fecha: cita.fecha,
       hora: cita.hora,
       duracion_minutos: cita.duracion_minutos,
+      servicio: cita.servicio || 'Sin servicio',
       estado: cita.estado,
-      descripcion: cita.descripcion
+      created_at: cita.created_at
     }))
 
     return NextResponse.json({ success: true, data: mapped })

@@ -11,33 +11,29 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('leads')
-      .select('id, nombre, name, email, telefono, phone, score, estado, state, created_at, urgency, budget, decision_power, last_interaction, interaction_count, score_updated_at')
+      .select('id, nombre, email, telefono, score, estado, created_at, urgency, budget, decision_power, last_interaction, interaction_count')
       .eq('cliente_id', session.cliente_id)
       .order('score', { ascending: false })
-      .order('last_interaction', { ascending: false })
 
     if (error) {
-      // Return empty array if table doesn't exist yet
-      if (error.code === '42703' || error.code === 'PGRST204') {
+      if (error.code === '42P01' || error.code === 'PGRST204') {
         return NextResponse.json({ success: true, data: [] })
       }
       throw error
     }
 
-    // Normalize field names (use new schema names, fall back to old Spanish names)
     const normalized = (data || []).map((lead: any) => ({
       id: lead.id,
-      name: lead.name || lead.nombre,
+      name: lead.nombre,
       email: lead.email,
-      phone: lead.phone || lead.telefono,
+      phone: lead.telefono,
       score: lead.score || 0,
-      state: lead.state || lead.estado || 'curioso',
+      state: lead.estado || 'curioso',
       urgency: lead.urgency || 0,
       budget: lead.budget,
       decision_power: lead.decision_power || 0,
       last_interaction: lead.last_interaction,
       interaction_count: lead.interaction_count || 0,
-      score_updated_at: lead.score_updated_at,
       created_at: lead.created_at,
     }))
 
