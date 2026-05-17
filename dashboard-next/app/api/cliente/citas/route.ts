@@ -5,37 +5,55 @@ import { supabase } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   try {
     const session = await getServerSession()
+    console.log('[CITAS] Session:', { id: session?.id, email: session?.email, cliente_id: session?.cliente_id })
+
     if (!session || !session.cliente_id) {
+      console.log('[CITAS] Unauthorized: no session or cliente_id')
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
+
+    const clienteId = session.cliente_id
+    console.log('[CITAS] Fetching citas for cliente_id:', clienteId)
 
     const url = new URL(request.url)
     const start = url.searchParams.get('start')
     const end = url.searchParams.get('end')
+    console.log('[CITAS] Date filters:', { start, end })
 
     let query = supabase
       .from('citas')
-      .select('id, usuario_id, nombre_cliente, telefono_cliente, email_cliente, fecha, hora, duracion_minutos, servicio, estado, created_at')
-      .eq('cliente_id', session.cliente_id)
+      .select('*')
+      .eq('cliente_id', clienteId)
 
-    if (start) {
-      query = query.gte('fecha', start)
-    }
+    // Temporarily disabled date filters for debugging
+    // if (start) {
+    //   query = query.gte('fecha', start)
+    // }
 
-    if (end) {
-      query = query.lte('fecha', end)
-    }
+    // if (end) {
+    //   query = query.lte('fecha', end)
+    // }
 
-    const { data, error } = await query.order('fecha', { ascending: true })
+    const result = await query.order('fecha', { ascending: true })
+    const { data, error } = result
+
+    console.log('[CITAS] Query result:', {
+      hasData: !!data,
+      dataLength: data?.length || 0,
+      error: error ? { message: error.message, code: error.code } : null
+    })
 
     if (error) {
-      console.error('Supabase error fetching citas:', error)
+      console.log('[CITAS] Error details:', JSON.stringify(error, null, 2))
       // Return empty array if table doesn't exist yet
-      if (error.code === '42703' || error.code === 'PGRST204') {
+      if (error.code === '42P01' || error.code === 'PGRST204') {
+        console.log('[CITAS] Table does not exist, returning empty array')
         return NextResponse.json({ success: true, data: [] })
       }
       throw error
     }
+
+    console.log('[CITAS] Raw data sample:', data && data.length > 0 ? JSON.stringify(data[0], null, 2) : 'No data')
 
     const mapped = (data || []).map((cita: any) => ({
       id: cita.id,
@@ -51,10 +69,11 @@ export async function GET(request: Request) {
       created_at: cita.created_at
     }))
 
+    console.log('[CITAS] Mapped data length:', mapped.length)
     return NextResponse.json({ success: true, data: mapped })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('Error fetching citas:', errorMessage)
+    console.error('[CITAS] Error fetching citas:', errorMessage)
     return NextResponse.json({ success: false, error: `Failed to fetch citas: ${errorMessage}` }, { status: 500 })
   }
 }
