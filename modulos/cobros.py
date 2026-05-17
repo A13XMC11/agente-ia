@@ -75,11 +75,15 @@ class CobrosModule:
         try:
             # 1. Read bank details from datos_bancarios
             logger.info(f"🔍 Buscando datos bancarios para cliente: {client_id}")
+            logger.info(f"Supabase client type: {type(self.supabase)}")
+            logger.info(f"Buscando con cliente_id: {client_id}")
 
             response = self.supabase.table("datos_bancarios").select(
-                "banco, tipo_cuenta, numero_cuenta, titular, ruc"
+                "*"
             ).eq("cliente_id", client_id).eq("activo", True).limit(1).execute()
 
+            logger.info(f"Result data: {response.data}")
+            logger.info(f"Result count: {len(response.data) if response.data else 0}")
             logger.info(f"✅ Query ejecutado - Resultado: {response.data}")
 
             if not response.data:
