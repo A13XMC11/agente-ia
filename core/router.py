@@ -81,7 +81,7 @@ class MessageRouter:
                 extra={"client_id": client_id}
             )
 
-            response = self.supabase.table("agentes").select("*").eq(
+            response = self.supabase_service.table("agentes").select("*").eq(
                 "cliente_id", client_id
             ).limit(1).execute()
 
@@ -288,7 +288,7 @@ class MessageRouter:
                 print(f"   phone_number_id: {identifier!r}")
                 print(f"{'='*80}\n")
 
-                response = self.supabase.table("canales_config").select(
+                response = self.supabase_service.table("canales_config").select(
                     "*"  # Select all to see what fields are available
                 ).eq("canal", "whatsapp").eq(
                     "phone_number_id", identifier
@@ -304,7 +304,7 @@ class MessageRouter:
                     print(f"❌ [IDENTIFY] NO MATCH in canales_config")
                     print(f"   Checking all records in canales_config for debugging...")
                     try:
-                        all_canales = self.supabase.table("canales_config").select("*").execute()
+                        all_canales = self.supabase_service.table("canales_config").select("*").execute()
                         print(f"   Total records in canales_config: {len(all_canales.data or [])}")
                         for i, record in enumerate((all_canales.data or [])[:5]):
                             print(f"      [{i}] canal={record.get('canal')}, phone_id={record.get('phone_number_id')}, cliente_id={record.get('cliente_id')}")
@@ -314,7 +314,7 @@ class MessageRouter:
 
             elif identifier_type == "page_id":
                 # Map Instagram/Facebook page_id to client
-                response = self.supabase.table("canales_config").select(
+                response = self.supabase_service.table("canales_config").select(
                     "cliente_id"
                 ).eq("canal", "instagram").eq(
                     "page_id", identifier
@@ -324,7 +324,7 @@ class MessageRouter:
 
             elif identifier_type == "sender_email":
                 # Map email domain to client
-                response = self.supabase.table("canales_config").select(
+                response = self.supabase_service.table("canales_config").select(
                     "cliente_id"
                 ).eq("canal", "email").eq(
                     "email_address", identifier
@@ -375,7 +375,7 @@ class MessageRouter:
             )
 
             # Validate client exists
-            client_response = self.supabase.table("clientes").select("id, estado").eq(
+            client_response = self.supabase_service.table("clientes").select("id, estado").eq(
                 "id", client_id
             ).single().execute()
 
