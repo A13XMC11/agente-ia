@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { useState, useEffect } from 'react'
+import { formatFechaCompleta } from '@/lib/date-format'
 
 interface Agente {
   id: string
@@ -459,7 +460,7 @@ export default function ConfiguracionPage() {
                     {pago.banco_origen ? `De: ${pago.banco_origen}` : 'Transferencia bancaria'}
                   </p>
                   <p className="text-sm text-text-secondary">
-                    {new Date(pago.created_at).toLocaleDateString()}
+                    {formatFechaCompleta(pago.created_at.split('T')[0])}
                   </p>
                   {pago.numero_transaccion && (
                     <p className="text-xs text-text-secondary">Ref: {pago.numero_transaccion}</p>

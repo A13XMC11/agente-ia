@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { TrendingUp, Zap, X } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { formatTimestamp } from '@/lib/date-format'
 
 type LeadState = 'curioso' | 'prospecto' | 'interesado' | 'caliente' | 'urgente'
 
@@ -338,7 +339,7 @@ export default function LeadsPage() {
                     </p>
 
                     <p className="text-xs text-text-muted">
-                      {new Date(event.created_at).toLocaleString('es-ES')}
+                      {formatTimestamp(event.created_at)}
                     </p>
                   </div>
                 ))

@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Calendar } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { formatFecha } from '@/lib/date-format'
 
 interface Cita {
   id: string
@@ -48,15 +49,6 @@ export default function CitasPage() {
     .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
     .slice(0, 10)
 
-  const formatDate = (dateString: string) => {
-    // Avoid timezone conversion by parsing the date string directly
-    const [year, month, day] = dateString.split('-')
-    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-                   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
-    const dayOfWeek = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][date.getDay()]
-    return `${dayOfWeek}, ${parseInt(day)} de ${meses[parseInt(month) - 1]} de ${year}`
-  }
 
   const getEstadoBg = (estado: string) => {
     switch (estado) {
@@ -101,7 +93,11 @@ export default function CitasPage() {
           Siguiente →
         </Button>
         <span className="px-4 py-2 text-text-primary font-medium">
-          {currentMonth.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
+          {(() => {
+            const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                          'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+            return `${meses[currentMonth.getMonth()]} de ${currentMonth.getFullYear()}`
+          })()}
         </span>
       </div>
 
@@ -130,7 +126,7 @@ export default function CitasPage() {
                           <p className="font-medium text-text-primary">{cita.usuario_nombre}</p>
                           <p className="text-sm text-text-secondary">{cita.descripcion}</p>
                           <p className="text-xs text-text-muted mt-1">
-                            {formatDate(cita.fecha)} a las {cita.hora} ({cita.duracion_minutos} min)
+                            {formatFecha(cita.fecha)} a las {cita.hora} ({cita.duracion_minutos} min)
                           </p>
                         </div>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${getEstadoBg(cita.estado)} capitalize`}>
@@ -162,7 +158,7 @@ export default function CitasPage() {
                   {proximasCitas.map((cita) => (
                     <div key={cita.id} className="p-3 bg-surface rounded-lg">
                       <p className="font-medium text-text-primary text-sm">{cita.usuario_nombre}</p>
-                      <p className="text-xs text-text-muted">{formatDate(cita.fecha)} {cita.hora}</p>
+                      <p className="text-xs text-text-muted">{formatFecha(cita.fecha)} {cita.hora}</p>
                       <span className={`text-xs font-medium mt-2 inline-block px-2 py-1 rounded ${getEstadoBg(cita.estado)}`}>
                         {cita.estado}
                       </span>

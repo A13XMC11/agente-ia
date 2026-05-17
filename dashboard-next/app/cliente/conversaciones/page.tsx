@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { MessageSquare, X, ArrowLeft } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { formatFecha, formatHora } from '@/lib/date-format'
 
 interface Conversacion {
   id: string
@@ -93,19 +94,21 @@ export default function ConversacionesPage() {
   }, [search, conversaciones])
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-CO', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    const date = new Date(dateString)
+    const day = date.getDate()
+    const month = date.getMonth()
+    const year = date.getFullYear()
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    return `${day} ${meses[month]} ${year} ${hours}:${minutes}`
   }
 
   const formatMessageTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('es-CO', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    const date = new Date(dateString)
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${hours}:${minutes}`
   }
 
   const getEstadoBg = (estado: string) => {
