@@ -360,12 +360,14 @@ async def lifespan(app: FastAPI):
                     redis_client=redis_client,
                     whatsapp_handler=whatsapp_handler,
                 )
+                logger.info(f"COBROS CREATED: {id(cobros_module)}")
 
                 # Inject into WhatsApp handler for owner approval processing
                 whatsapp_handler.cobros_module = cobros_module
 
                 # Inject into all agent instances in the router for cobros tool access
                 for agent in message_router.agent_instances.values():
+                    agent.set_cobros_module(cobros_module)
                     agent.set_whatsapp_handler(whatsapp_handler)
                     if buffer:
                         agent.set_redis_client(getattr(buffer, 'redis', None))
