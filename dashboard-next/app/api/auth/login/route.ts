@@ -29,14 +29,22 @@ export async function POST(request: Request) {
 
     // Leer rol de tabla usuarios
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+    console.log('[LOGIN] Querying usuarios table for email:', body.email)
     const { data: usuario, error: userError } = await supabaseAdmin
       .from('usuarios')
       .select('rol, cliente_id')
       .eq('email', body.email)
       .single()
 
+    if (userError) {
+      console.log('[LOGIN] Error querying usuarios:', userError)
+    } else {
+      console.log('[LOGIN] Usuario found:', usuario)
+    }
+
     const rol = usuario?.rol || 'admin'
     const clienteId = usuario?.cliente_id || null
+    console.log('[LOGIN] JWT will include:', { sub: authData.user.id, email: body.email, role: rol, cliente_id: clienteId })
 
     // Crear JWT
     const secret = new TextEncoder().encode(jwtSecret)
@@ -49,6 +57,8 @@ export async function POST(request: Request) {
       .setProtectedHeader({ alg: 'HS256' })
       .setExpirationTime('24h')
       .sign(secret)
+
+    console.log('[LOGIN] JWT created successfully')
 
     // Cookie
     const cookieStore = await cookies()
