@@ -81,8 +81,6 @@ class CobrosModule:
             ).eq("cliente_id", client_id).eq("activo", True).limit(1).execute()
 
             logger.info(f"✅ Query ejecutado - Resultado: {response.data}")
-            if response.error:
-                logger.error(f"❌ Error en query: {response.error}")
 
             if not response.data:
                 logger.warning(f"⚠️ No hay datos bancarios para {client_id} (activo=True)")
