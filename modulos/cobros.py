@@ -79,6 +79,11 @@ class CobrosModule:
                 "banco, tipo_cuenta, numero_cuenta, titular, ruc"
             ).eq("cliente_id", client_id).eq("activo", True).limit(1).execute()
 
+            print(f"QUERY cliente_id: '{client_id}'")
+            print(f"QUERY activo: True")
+            print(f"RESPONSE DATA: {response.data}")
+            print(f"RESPONSE COUNT: {len(response.data) if response.data else 0}")
+
             if not response.data:
                 return {
                     "exito": False,
