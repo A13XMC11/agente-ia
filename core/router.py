@@ -100,10 +100,11 @@ class MessageRouter:
                 print(f"   → Falling back to DEFAULTS")
                 print(f"   → Default system_prompt: {defaults['system_prompt'][:50]}...\n")
                 logger.warning(
-                    f"No agentes config found for client_id={client_id}, using defaults with calificacion FORCED ENABLED",
+                    f"No agentes config found for client_id={client_id}, using defaults with calificacion and cobros FORCED ENABLED",
                     extra={"client_id": client_id}
                 )
                 defaults["active_modules"]["calificacion"] = True
+                defaults["active_modules"]["cobros"] = True
                 return defaults
 
             config = response.data[0]
@@ -156,8 +157,9 @@ class MessageRouter:
                     **merged.get("active_modules", {})
                 }
 
-            # CRITICAL: Ensure calificacion is always enabled
+            # CRITICAL: Ensure calificacion and cobros are always enabled
             merged["active_modules"]["calificacion"] = True
+            merged["active_modules"]["cobros"] = True
 
             system_prompt = merged.get("system_prompt", "")
 
@@ -187,10 +189,11 @@ class MessageRouter:
             traceback.print_exc()
 
             logger.warning(
-                f"Could not fetch config for {client_id}: {e}, using defaults with calificacion FORCED ENABLED",
+                f"Could not fetch config for {client_id}: {e}, using defaults with calificacion and cobros FORCED ENABLED",
                 extra={"client_id": client_id}
             )
             defaults["active_modules"]["calificacion"] = True
+            defaults["active_modules"]["cobros"] = True
             return {
                 "client_id": client_id,
                 "system_prompt": defaults.get("system_prompt", "You are a helpful business assistant."),
