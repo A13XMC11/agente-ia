@@ -579,7 +579,7 @@ class AgentEngine:
             extra={"client_id": cliente_id, "sender_id": sender_id},
         )
         logger.info(f"PM_START: {sender_id}")
-        logger.info("PM_ABOUT_TO_CALL_GPT4O")
+        print("PM_ABOUT_TO_CALL_GPT4O")
 
         # Simulate typing indicator
         typing_delay = self._calculate_typing_delay(user_message)
@@ -637,10 +637,10 @@ class AgentEngine:
 
             # DEBUG: Log available tools
             available_tools = self._get_available_tools()
-            logger.info(f"TOOLS AVAILABLE COUNT: {len(available_tools)}")
-            logger.info(f"TOOLS NAMES: {[t['function']['name'] for t in available_tools]}")
+            print(f"TOOLS AVAILABLE COUNT: {len(available_tools)}")
+            print(f"TOOLS NAMES: {[t['function']['name'] for t in available_tools]}")
 
-            logger.info(f"PM_CALLING_GPT4O_NOW with {len(messages)} messages")
+            print(f"PM_CALLING_GPT4O_NOW with {len(messages)} messages")
             try:
                 response = await self.client.chat.completions.create(
                     model=self.model,
@@ -659,12 +659,12 @@ class AgentEngine:
             logger.info(f"PM_STEP_3: GPT-4o call succeeded, processing response")
 
             # DEBUG: Log GPT-4o response details
-            logger.info(f"GPT4O FINISH REASON: {response.choices[0].finish_reason}")
-            logger.info(f"GPT4O HAS TOOL CALLS: {bool(response.choices[0].message.tool_calls)}")
-            logger.info(f"GPT4O CONTENT: {response.choices[0].message.content}")
+            print(f"GPT4O FINISH REASON: {response.choices[0].finish_reason}")
+            print(f"GPT4O HAS TOOL CALLS: {bool(response.choices[0].message.tool_calls)}")
+            print(f"GPT4O CONTENT: {response.choices[0].message.content}")
             if response.choices[0].message.tool_calls:
                 for tc in response.choices[0].message.tool_calls:
-                    logger.info(f"GPT4O TOOL CALL: {tc.function.name} args={tc.function.arguments}")
+                    print(f"GPT4O TOOL CALL: {tc.function.name} args={tc.function.arguments}")
 
             assistant_message = response.choices[0].message
             response_text = assistant_message.content or ""
