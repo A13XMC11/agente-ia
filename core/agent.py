@@ -952,6 +952,10 @@ class AgentEngine:
                 return json.dumps(result, ensure_ascii=False)
 
             if tool_name == "enviar_datos_bancarios":
+                print(f"COBROS SELF: {self.cobros}")
+                print(f"COBROS TYPE: {type(self.cobros)}")
+                print(f"COBROS IS NONE: {self.cobros is None}")
+                print(f"CLIENT ID PASSED: {client_id}")
                 if not self.cobros:
                     return json.dumps({"error": "Módulo de cobros no disponible"})
                 monto = arguments.get("monto_esperado")
@@ -960,6 +964,7 @@ class AgentEngine:
                     sender_id=sender_id,
                     monto_esperado=float(monto) if monto else None,
                 )
+                print(f"COBROS RESULT: {result}")
                 return json.dumps(result, ensure_ascii=False)
 
             if tool_name == "registrar_pago":
