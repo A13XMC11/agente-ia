@@ -65,7 +65,6 @@ interface CreateAgentData {
   nombre: string
   tono: string
   idioma: string
-  modelo: string
   system_prompt: string
 }
 
@@ -85,7 +84,6 @@ export async function createAgent(data: CreateAgentData): Promise<CreateAgentRes
           nombre: data.nombre,
           tono: data.tono,
           idioma: data.idioma,
-          modelo: data.modelo,
           system_prompt: data.system_prompt,
         },
       ])

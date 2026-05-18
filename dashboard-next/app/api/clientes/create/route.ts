@@ -12,7 +12,6 @@ interface CreateClienteRequest {
   nombreAgente: string
   tono: string
   idioma: string
-  modelo: string
   systemPrompt: string
   modulos: Record<string, boolean>
   whatsappEnabled: boolean
@@ -78,7 +77,6 @@ export async function POST(request: Request): Promise<Response> {
       nombre: body.nombreAgente,
       tono: body.tono,
       idioma: body.idioma,
-      modelo: body.modelo,
       system_prompt: body.systemPrompt,
     })
 
