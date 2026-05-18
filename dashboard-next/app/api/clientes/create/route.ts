@@ -9,7 +9,6 @@ interface CreateClienteRequest {
   industria?: string
   website?: string
   plan: 'basico' | 'profesional' | 'empresarial'
-  precio_mensual: number
   nombreAgente: string
   tono: string
   idioma: string
@@ -62,7 +61,6 @@ export async function POST(request: Request): Promise<Response> {
       email: body.email,
       telefono: body.telefono,
       plan,
-      precio_mensual: body.precio_mensual,
       industria: body.industria,
       whatsapp_dueno: body.whatsapp_dueno,
       website: body.website,
