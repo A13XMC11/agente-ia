@@ -6,12 +6,30 @@ import { Input } from '@/components/ui/input'
 import Link from 'next/link'
 import { Users } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import type { Cliente } from '@/lib/data/clientes'
+import type { Cliente } from '@/lib/data/clientes-server'
 
 interface ApiResponse {
   success: boolean
   data?: Cliente[]
   error?: string
+}
+
+const PLAN_PRECIOS: Record<string, number> = {
+  basico: 149,
+  profesional: 249,
+  empresarial: 399,
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  basico: 'Plan Básico',
+  profesional: 'Plan Profesional',
+  empresarial: 'Plan Empresarial',
+}
+
+function formatPlan(plan: string): string {
+  const label = PLAN_LABELS[plan.toLowerCase()] ?? plan
+  const precio = PLAN_PRECIOS[plan.toLowerCase()]
+  return precio ? `${label} - $${precio}/mes` : label
 }
 
 export default function ClientesPage() {
@@ -58,17 +76,12 @@ export default function ClientesPage() {
     handleSearch()
   }, [searchQuery, clientes])
 
-  const formatCurrency = (value?: number) => {
-    if (!value) return '-'
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(value)
-  }
-
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-CO')
+    return new Date(dateString).toLocaleDateString('es-EC', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
   }
 
   return (
@@ -122,11 +135,10 @@ export default function ClientesPage() {
                   <tr className="border-b">
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Nombre</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Email</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Teléfono</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Industria</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Plan</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Precio/Mes</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Estado</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Fecha</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Creado</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Acciones</th>
                   </tr>
                 </thead>
@@ -138,13 +150,16 @@ export default function ClientesPage() {
                           {cliente.nombre}
                         </Link>
                       </td>
-                      <td className="py-3 px-4 text-text-secondary">{cliente.email}</td>
-                      <td className="py-3 px-4 text-text-secondary">{cliente.telefono || '-'}</td>
-                      <td className="py-3 px-4 text-text-secondary">{cliente.plan}</td>
-                      <td className="py-3 px-4 text-text-secondary">{formatCurrency(cliente.precio_mensual)}</td>
+                      <td className="py-3 px-4 text-text-secondary text-sm">{cliente.email}</td>
+                      <td className="py-3 px-4 text-text-secondary text-sm capitalize">
+                        {cliente.industria || <span className="text-text-muted">-</span>}
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        <span className="text-text-primary font-medium">{formatPlan(cliente.plan)}</span>
+                      </td>
                       <td className="py-3 px-4">
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
                             cliente.estado === 'activo'
                               ? 'bg-success/10 text-success'
                               : cliente.estado === 'pausado'

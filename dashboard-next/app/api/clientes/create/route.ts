@@ -1,10 +1,14 @@
-import { createCliente, createAgent, activateModulos, configureWhatsApp } from '@/lib/data/clientes'
+import { createCliente, createAgent, activateModulos, configureWhatsApp, saveDatosBancarios } from '@/lib/data/clientes'
+import { randomBytes } from 'crypto'
 
 interface CreateClienteRequest {
   nombre: string
   email: string
   telefono: string
-  plan: string
+  whatsapp_dueno?: string
+  industria?: string
+  website?: string
+  plan: 'basico' | 'profesional' | 'empresarial'
   precio_mensual: number
   nombreAgente: string
   tono: string
@@ -15,13 +19,21 @@ interface CreateClienteRequest {
   whatsappEnabled: boolean
   whatsappPhone?: string
   whatsappToken?: string
+  whatsappWabaId?: string
+  banco?: string
+  tipo_cuenta?: string
+  numero_cuenta?: string
+  titular?: string
+  ruc?: string
 }
 
 interface ApiResponse {
   success: boolean
-  data?: any
+  data?: { clienteId: string; email: string; password: string }
   error?: string
 }
+
+const VALID_PLANS = ['basico', 'profesional', 'empresarial'] as const
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -42,13 +54,18 @@ export async function POST(request: Request): Promise<Response> {
       )
     }
 
+    const plan = VALID_PLANS.includes(body.plan) ? body.plan : 'basico'
+
     // 1. Create cliente
     const clienteResult = await createCliente({
       nombre: body.nombre,
       email: body.email,
       telefono: body.telefono,
-      plan: body.plan,
+      plan,
       precio_mensual: body.precio_mensual,
+      industria: body.industria,
+      whatsapp_dueno: body.whatsapp_dueno,
+      website: body.website,
     })
 
     if (!clienteResult.success || !clienteResult.cliente) {
@@ -79,23 +96,47 @@ export async function POST(request: Request): Promise<Response> {
 
     // 4. Configure WhatsApp if enabled
     if (body.whatsappEnabled && body.whatsappPhone && body.whatsappToken) {
-      const whatsappResult = await configureWhatsApp(clienteId, body.whatsappPhone, body.whatsappToken)
+      const whatsappResult = await configureWhatsApp(
+        clienteId,
+        body.whatsappPhone,
+        body.whatsappToken,
+        body.whatsappWabaId
+      )
       if (!whatsappResult.success) {
         throw new Error(whatsappResult.error || 'Error configuring WhatsApp')
       }
     }
 
+    // 5. Save bank data if provided
+    if (body.banco && body.numero_cuenta && body.titular) {
+      const bancosResult = await saveDatosBancarios({
+        cliente_id: clienteId,
+        banco: body.banco,
+        tipo_cuenta: body.tipo_cuenta || 'ahorros',
+        numero_cuenta: body.numero_cuenta,
+        titular: body.titular,
+        ruc: body.ruc,
+      })
+      if (!bancosResult.success) {
+        throw new Error(bancosResult.error || 'Error saving bank data')
+      }
+    }
+
+    // Generate a temporary password for the client
+    const tempPassword = randomBytes(6).toString('hex')
+
     return Response.json({
       success: true,
-      data: { clienteId },
+      data: {
+        clienteId,
+        email: body.email,
+        password: tempPassword,
+      },
     } as ApiResponse)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error creating cliente'
     return Response.json(
-      {
-        success: false,
-        error: message,
-      } as ApiResponse,
+      { success: false, error: message } as ApiResponse,
       { status: 500 }
     )
   }
