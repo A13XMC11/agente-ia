@@ -579,6 +579,7 @@ class AgentEngine:
             extra={"client_id": cliente_id, "sender_id": sender_id},
         )
         logger.info(f"PM_START: {sender_id}")
+        logger.info("PM_ABOUT_TO_CALL_GPT4O")
 
         # Simulate typing indicator
         typing_delay = self._calculate_typing_delay(user_message)
@@ -639,6 +640,7 @@ class AgentEngine:
             logger.info(f"TOOLS AVAILABLE COUNT: {len(available_tools)}")
             logger.info(f"TOOLS NAMES: {[t['function']['name'] for t in available_tools]}")
 
+            logger.info(f"PM_CALLING_GPT4O_NOW with {len(messages)} messages")
             try:
                 response = await self.client.chat.completions.create(
                     model=self.model,
