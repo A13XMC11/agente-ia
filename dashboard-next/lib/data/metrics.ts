@@ -13,14 +13,19 @@ export async function getMetrics(): Promise<Metrics> {
       .from('clientes')
       .select('*', { count: 'exact', head: true })
 
-    // MRR (Monthly Recurring Revenue)
+    const PLAN_PRECIOS: Record<string, number> = {
+      basico: 149,
+      profesional: 249,
+      empresarial: 399,
+    }
+
     const { data: mrrData } = await supabase
       .from('clientes')
-      .select('precio_mensual')
+      .select('plan')
       .eq('estado', 'activo')
 
     const mrr = (mrrData || []).reduce((sum, client) => {
-      return sum + (client.precio_mensual || 0)
+      return sum + (PLAN_PRECIOS[client.plan?.toLowerCase()] || 0)
     }, 0)
 
     // Mensajes hoy
