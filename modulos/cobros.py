@@ -72,6 +72,7 @@ class CobrosModule:
         Returns:
             Dict with mensaje (formatted bank details to show in WhatsApp) and exito flag
         """
+        print("COBROS FUNCTION START")
         try:
             # 1. Read bank details from datos_bancarios
             response = self.supabase.table("datos_bancarios").select(
@@ -116,7 +117,9 @@ class CobrosModule:
             return {"exito": True, "mensaje": mensaje}
 
         except Exception as e:
-            logger.error(f"Error sending bank details: {e}")
+            import traceback
+            print(f"COBROS EXCEPTION: {e}")
+            print(f"COBROS TRACEBACK: {traceback.format_exc()}")
             return {"exito": False, "mensaje": f"Error: {str(e)}"}
 
     async def _exchange_meta_media_id(
