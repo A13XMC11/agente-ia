@@ -633,11 +633,17 @@ class AgentEngine:
 
             # First GPT-4o call — may return tool calls
             logger.info(f"PM_STEP_2: Calling GPT-4o for {sender_id}")
+
+            # DEBUG: Log available tools
+            available_tools = self._get_available_tools()
+            logger.info(f"TOOLS AVAILABLE COUNT: {len(available_tools)}")
+            logger.info(f"TOOLS NAMES: {[t['function']['name'] for t in available_tools]}")
+
             try:
                 response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    tools=self._get_available_tools(),
+                    tools=available_tools,
                     tool_choice="auto",
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
@@ -649,6 +655,15 @@ class AgentEngine:
                 raise
 
             logger.info(f"PM_STEP_3: GPT-4o call succeeded, processing response")
+
+            # DEBUG: Log GPT-4o response details
+            logger.info(f"GPT4O FINISH REASON: {response.choices[0].finish_reason}")
+            logger.info(f"GPT4O HAS TOOL CALLS: {bool(response.choices[0].message.tool_calls)}")
+            logger.info(f"GPT4O CONTENT: {response.choices[0].message.content}")
+            if response.choices[0].message.tool_calls:
+                for tc in response.choices[0].message.tool_calls:
+                    logger.info(f"GPT4O TOOL CALL: {tc.function.name} args={tc.function.arguments}")
+
             assistant_message = response.choices[0].message
             response_text = assistant_message.content or ""
             function_calls = []
