@@ -579,7 +579,6 @@ class AgentEngine:
             extra={"client_id": cliente_id, "sender_id": sender_id},
         )
         logger.info(f"PM_START: {sender_id}")
-        print("PM_ABOUT_TO_CALL_GPT4O")
 
         # Simulate typing indicator
         typing_delay = self._calculate_typing_delay(user_message)
@@ -635,12 +634,7 @@ class AgentEngine:
             # First GPT-4o call — may return tool calls
             logger.info(f"PM_STEP_2: Calling GPT-4o for {sender_id}")
 
-            # DEBUG: Log available tools
             available_tools = self._get_available_tools()
-            print(f"TOOLS AVAILABLE COUNT: {len(available_tools)}")
-            print(f"TOOLS NAMES: {[t['function']['name'] for t in available_tools]}")
-
-            print(f"PM_CALLING_GPT4O_NOW with {len(messages)} messages")
             try:
                 response = await self.client.chat.completions.create(
                     model=self.model,
@@ -657,14 +651,6 @@ class AgentEngine:
                 raise
 
             logger.info(f"PM_STEP_3: GPT-4o call succeeded, processing response")
-
-            # DEBUG: Log GPT-4o response details
-            print(f"GPT4O FINISH REASON: {response.choices[0].finish_reason}")
-            print(f"GPT4O HAS TOOL CALLS: {bool(response.choices[0].message.tool_calls)}")
-            print(f"GPT4O CONTENT: {response.choices[0].message.content}")
-            if response.choices[0].message.tool_calls:
-                for tc in response.choices[0].message.tool_calls:
-                    print(f"GPT4O TOOL CALL: {tc.function.name} args={tc.function.arguments}")
 
             assistant_message = response.choices[0].message
             response_text = assistant_message.content or ""
@@ -952,10 +938,6 @@ class AgentEngine:
                 return json.dumps(result, ensure_ascii=False)
 
             if tool_name == "enviar_datos_bancarios":
-                print(f"COBROS SELF: {self.cobros}")
-                print(f"COBROS TYPE: {type(self.cobros)}")
-                print(f"COBROS IS NONE: {self.cobros is None}")
-                print(f"CLIENT ID PASSED: {client_id}")
                 if not self.cobros:
                     return json.dumps({"error": "Módulo de cobros no disponible"})
                 monto = arguments.get("monto_esperado")
@@ -964,7 +946,6 @@ class AgentEngine:
                     sender_id=sender_id,
                     monto_esperado=float(monto) if monto else None,
                 )
-                print(f"COBROS RESULT: {result}")
                 return json.dumps(result, ensure_ascii=False)
 
             if tool_name == "registrar_pago":
