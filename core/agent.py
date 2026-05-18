@@ -167,7 +167,6 @@ class AgentEngine:
         self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
-        logger.info(f"AGENT COBROS SET (local init): {id(self.cobros)}")
 
         logger.info(
             f"🟢 CalificacionModule created: {self.calificacion is not None} "
@@ -197,12 +196,6 @@ class AgentEngine:
         """Inject Redis client for pending amount state."""
         if self.cobros:
             self.cobros.redis = redis_client
-
-    def set_cobros_module(self, cobros_module: Any) -> None:
-        """Replace entire cobros module with injected instance."""
-        old_id = id(self.cobros) if self.cobros else None
-        self.cobros = cobros_module
-        logger.info(f"AGENT COBROS REPLACED: {old_id} -> {id(self.cobros)}")
 
     def _get_available_tools(self) -> list[dict[str, Any]]:
         """
@@ -944,8 +937,6 @@ class AgentEngine:
             if tool_name == "enviar_datos_bancarios":
                 if not self.cobros:
                     return json.dumps({"error": "Módulo de cobros no disponible"})
-                logger.info(f"COBROS MODULE TYPE: {type(self.cobros)}")
-                logger.info(f"COBROS MODULE ID: {id(self.cobros)}")
                 monto = arguments.get("monto_esperado")
                 result = await self.cobros.enviar_datos_bancarios(
                     client_id=client_id,
