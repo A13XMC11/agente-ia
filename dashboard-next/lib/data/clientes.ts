@@ -111,15 +111,20 @@ export async function activateModulos(
   modulos: Record<string, boolean>
 ): Promise<CreateModulosResult> {
   try {
-    const modulosActivos = Object.entries(modulos)
-      .filter(([, active]) => active)
-      .map(([nombre]) => ({
-        cliente_id,
-        nombre,
-      }))
-
-    if (modulosActivos.length === 0) {
-      return { success: true }
+    const modulosActivos = {
+      cliente_id,
+      ventas: modulos.ventas ?? false,
+      agendamiento: modulos.agendamiento ?? false,
+      cobros: modulos.cobros ?? false,
+      links_pago: modulos.links_pago ?? false,
+      calificacion: modulos.calificacion ?? false,
+      campanas: modulos.campanas ?? false,
+      analytics: modulos.analytics ?? false,
+      alertas: modulos.alertas ?? false,
+      seguimientos: modulos.seguimientos ?? false,
+      documentos: modulos.documentos ?? false,
+      multiidioma: modulos.multiidioma ?? false,
+      multi_agente: modulos.multi_agente ?? false,
     }
 
     const { error } = await supabase.from('modulos_activos').insert(modulosActivos)
