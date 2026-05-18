@@ -108,28 +108,27 @@ class AgentEngine:
             "- El usuario envió voz; tú recibiste texto — responde naturalmente"
         )
         _COBROS_RULE = (
-            "\n\n🚨 REGLA CRÍTICA DE COBROS (MÁXIMA PRIORIDAD - INVIOLABLE):\n"
-            "\n⚠️ INSTRUCCIÓN OBLIGATORIA ABSOLUTA:\n"
-            "Si el usuario MENCIONA CUALQUIERA de estos términos:\n"
+            "\n\n🚨 REGLA CRÍTICA DE COBROS (MÁXIMA PRIORIDAD):\n"
+            "INSTRUCCIÓN OBLIGATORIA: Si el usuario menciona CUALQUIERA de estos términos:\n"
             "  - transferencia, transferir, transferencias\n"
             "  - pago, pagar, pagos\n"
             "  - deposito, depositar, depósito\n"
             "  - banco, cuenta, cuenta bancaria\n"
             "  - enviar dinero, girar dinero\n"
-            "\n❌ NO HAGAS ESTO:\n"
-            "  X No respondas con texto\n"
-            "  X No intentes enviar datos manualmente\n"
-            "  X No uses el error del tool como respuesta\n"
-            "  X No hagas preguntas\n"
-            "\n✅ DEBES HACER ESTO (en este orden exacto):\n"
-            "1. Invoca INMEDIATAMENTE la tool 'enviar_datos_bancarios' — SIN DEMORA, SIN PREGUNTAS\n"
-            "2. Espera el resultado (tendrá campo 'mensaje')\n"
-            "3. Copia el 'mensaje' EXACTAMENTE tal cual viene\n"
-            "4. Envía ese texto al usuario sin cambios ni parafraseo\n"
-            "\n📝 Si el usuario envía comprobante (imagen después):\n"
-            "- Invoca 'registrar_pago' con la imagen\n"
-            "- Espera resultado\n"
-            "- Envía respuesta al usuario"
+            "\n"
+            "DEBES hacer EXACTAMENTE ESTO (NO hay excepciones):\n"
+            "1. PRIMERO: Invoca INMEDIATAMENTE la tool 'enviar_datos_bancarios' - SIN DEMORA\n"
+            "2. NO hagas preguntas previas\n"
+            "3. NO respondas con texto diciendo que enviarás los datos\n"
+            "4. SOLO invoca la tool directamente\n"
+            "\n"
+            "Cuando recibas el resultado:\n"
+            "- Copia el campo 'mensaje' tal cual (exactamente como viene, sin cambios)\n"
+            "- Envía ese mensaje al usuario\n"
+            "- NO reescriba, NO parafrasees, NO intentes mejorar el formato\n"
+            "- El mensaje ya está listo para WhatsApp\n"
+            "\n"
+            "Si el usuario envía una imagen (comprobante), luego invoca 'registrar_pago'."
         )
         self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _COBROS_RULE
 
@@ -412,7 +411,7 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "enviar_datos_bancarios",
-                        "description": "INVOKE IMMEDIATELY: When user mentions transferencia, pago, deposito, banco, or cuenta. Do not respond with text. Call this function now.",
+                        "description": "MANDATORY: You MUST invoke this tool IMMEDIATELY and ONLY when user mentions ANY of these keywords: transferencia, pagar, pago, deposito, depositar, banco, cuenta, transferir, enviar dinero. NEVER respond with text promising to send data. ALWAYS call this function first, immediately, without asking questions or waiting. The system will return formatted bank account information that you MUST send exactly as-is to the user.",
                         "parameters": {
                             "type": "object",
                             "properties": {
