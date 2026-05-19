@@ -57,7 +57,7 @@ export async function PATCH(request: Request) {
       })
       .eq('id', id)
       .eq('cliente_id', session.cliente_id)
-      .select('id, monto, numero_transaccion, conversacion_id')
+      .select('id, monto, numero_transaccion, conversacion_id, sender_telefono')
       .single()
 
     if (updateError) {
@@ -78,14 +78,19 @@ export async function PATCH(request: Request) {
         .single()
     }
 
-    // Notify user via WhatsApp
-    if (pago?.conversacion_id) {
+    // Notify user via WhatsApp — resolve phone from conversacion or sender_telefono directly
+    let customerPhone: string | null = pago?.sender_telefono ?? null
+
+    if (!customerPhone && pago?.conversacion_id) {
       const { data: conv } = await supabase
         .from('conversaciones')
         .select('usuario_telefono')
         .eq('id', pago.conversacion_id)
         .single()
+      customerPhone = conv?.usuario_telefono ?? null
+    }
 
+    if (customerPhone) {
       const { data: canal } = await supabase
         .from('canales_config')
         .select('phone_number_id, token')
@@ -93,7 +98,7 @@ export async function PATCH(request: Request) {
         .eq('canal', 'whatsapp')
         .single()
 
-      if (conv?.usuario_telefono && canal?.phone_number_id && canal?.token) {
+      if (canal?.phone_number_id && canal?.token) {
         const mensaje =
           accion === 'aprobar'
             ? '✅ ¡Tu pago ha sido confirmado! Gracias por tu preferencia 🎉'
@@ -107,7 +112,7 @@ export async function PATCH(request: Request) {
           },
           body: JSON.stringify({
             messaging_product: 'whatsapp',
-            to: conv.usuario_telefono,
+            to: customerPhone,
             type: 'text',
             text: { body: mensaje },
           }),

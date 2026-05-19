@@ -958,7 +958,7 @@ class AgentEngine:
                 result = await self.cobros.registrar_pago(
                     client_id=client_id,
                     sender_id=sender_id,
-                    conversacion_id=self._current_conversation_id or "",
+                    conversacion_id=self._current_conversation_id or None,
                     media_id=self._current_media_url,
                     phone_number_id=self._current_phone_number_id or "",
                 )
