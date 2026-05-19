@@ -1,6 +1,67 @@
 import { createCliente, createAgent, activateModulos, configureWhatsApp, saveDatosBancarios } from '@/lib/data/clientes'
 import { randomBytes } from 'crypto'
 
+const DASHBOARD_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dashboard.lanlabsec.com'
+const EMAIL_API_URL = 'https://api.lanlabsec.com/internal/send-email'
+
+async function sendWelcomeEmail({
+  nombre,
+  email,
+  password,
+}: {
+  nombre: string
+  email: string
+  password: string
+}) {
+  const body = `
+Hola ${nombre},
+
+¡Bienvenido a LanLabs! Tu agente IA ya está configurado y listo para activar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+ACCESO AL DASHBOARD
+━━━━━━━━━━━━━━━━━━━━━━━━
+URL:        ${DASHBOARD_URL}
+Email:      ${email}
+Contraseña: ${password}
+
+Te recomendamos cambiar tu contraseña en el primer inicio de sesión.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+SIGUIENTE PASO: CONECTAR WHATSAPP
+━━━━━━━━━━━━━━━━━━━━━━━━
+Para activar tu agente en WhatsApp sigue esta guía completa:
+${DASHBOARD_URL}/onboarding/guia
+
+Dentro del dashboard ve a:
+Configuración → WhatsApp → Verificar y conectar
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+¿NECESITAS AYUDA?
+━━━━━━━━━━━━━━━━━━━━━━━━
+Responde este correo o escríbenos a soporte@lanlabsec.com
+
+¡Estamos aquí para ayudarte!
+
+— El equipo de LanLabs
+`.trim()
+
+  const res = await fetch(EMAIL_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to: email,
+      subject: 'Bienvenido a LanLabs — Activa tu agente IA',
+      body,
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Email API ${res.status}: ${text}`)
+  }
+}
+
 interface CreateClienteRequest {
   nombre: string
   email: string
@@ -120,6 +181,13 @@ export async function POST(request: Request): Promise<Response> {
 
     // Generate a temporary password for the client
     const tempPassword = randomBytes(6).toString('hex')
+
+    // Send welcome email (fire-and-forget — don't fail the request if email fails)
+    sendWelcomeEmail({
+      nombre: body.nombre,
+      email: body.email,
+      password: tempPassword,
+    }).catch((err) => console.error('Welcome email failed:', err))
 
     return Response.json({
       success: true,
