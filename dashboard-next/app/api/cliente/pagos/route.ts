@@ -57,7 +57,7 @@ export async function PATCH(request: Request) {
       })
       .eq('id', id)
       .eq('cliente_id', session.cliente_id)
-      .select('id, monto, numero_transaccion')
+      .select('id, monto, numero_transaccion, conversacion_id')
       .single()
 
     if (updateError) {
@@ -76,6 +76,43 @@ export async function PATCH(request: Request) {
           fecha_procesado: new Date().toISOString(),
         })
         .single()
+    }
+
+    // Notify user via WhatsApp
+    if (pago?.conversacion_id) {
+      const { data: conv } = await supabase
+        .from('conversaciones')
+        .select('usuario_telefono')
+        .eq('id', pago.conversacion_id)
+        .single()
+
+      const { data: canal } = await supabase
+        .from('canales_config')
+        .select('phone_number_id, token')
+        .eq('cliente_id', session.cliente_id)
+        .eq('canal', 'whatsapp')
+        .single()
+
+      if (conv?.usuario_telefono && canal?.phone_number_id && canal?.token) {
+        const mensaje =
+          accion === 'aprobar'
+            ? '✅ ¡Tu pago ha sido confirmado! Gracias por tu preferencia 🎉'
+            : '❌ No pudimos verificar tu pago. Por favor intenta de nuevo o contáctanos.'
+
+        await fetch(`https://graph.facebook.com/v21.0/${canal.phone_number_id}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${canal.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: conv.usuario_telefono,
+            type: 'text',
+            text: { body: mensaje },
+          }),
+        })
+      }
     }
 
     return NextResponse.json({ success: true, data: pago })
