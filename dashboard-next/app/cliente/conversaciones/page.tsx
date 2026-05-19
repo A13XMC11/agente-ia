@@ -1,10 +1,8 @@
 'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { MessageSquare, X, ArrowLeft } from 'lucide-react'
-import { useState, useEffect } from 'react'
-import { formatFecha, formatHora } from '@/lib/date-format'
+import { MessageSquare, ArrowLeft, Search } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 
 interface Conversacion {
   id: string
@@ -31,6 +29,33 @@ interface ConversacionDetalle {
   messages: Mensaje[]
 }
 
+const CANAL_STYLES: Record<string, string> = {
+  whatsapp: 'bg-success/10 text-success border-success/20',
+  instagram: 'bg-accent-indigo/10 text-accent-indigo border-accent-indigo/20',
+  facebook: 'bg-info/10 text-info border-info/20',
+  email: 'bg-warning/10 text-warning border-warning/20',
+}
+
+const ESTADO_STYLES: Record<string, string> = {
+  activa: 'bg-success/10 text-success',
+  esperando: 'bg-warning/10 text-warning',
+  cerrada: 'bg-surface text-text-muted',
+}
+
+function formatDate(dateString: string) {
+  const date = new Date(dateString)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+  if (isToday) {
+    return date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+  }
+  return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })
+}
+
+function formatTime(dateString: string) {
+  return new Date(dateString).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+}
+
 export default function ConversacionesPage() {
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([])
   const [filtradas, setFiltradas] = useState<Conversacion[]>([])
@@ -39,20 +64,24 @@ export default function ConversacionesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [chatData, setChatData] = useState<ConversacionDetalle | null>(null)
   const [chatLoading, setChatLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadConversaciones()
   }, [])
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatData?.messages])
+
   async function loadConversaciones() {
     try {
-      const response = await fetch('/api/cliente/conversaciones')
-      if (!response.ok) throw new Error('Failed to load')
-      const data = await response.json()
+      const res = await fetch('/api/cliente/conversaciones')
+      if (!res.ok) throw new Error('Failed')
+      const data = await res.json()
       setConversaciones(data.data || [])
       setFiltradas(data.data || [])
-    } catch (error) {
-      console.error('Error loading conversaciones:', error)
+    } catch {
     } finally {
       setLoading(false)
     }
@@ -61,189 +90,175 @@ export default function ConversacionesPage() {
   async function loadChatData(convId: string) {
     setChatLoading(true)
     try {
-      const response = await fetch(`/api/cliente/conversaciones/${convId}`)
-      if (!response.ok) throw new Error('Failed to load chat')
-      const data = await response.json()
+      const res = await fetch(`/api/cliente/conversaciones/${convId}`)
+      if (!res.ok) throw new Error('Failed')
+      const data = await res.json()
       setChatData(data.data)
-    } catch (error) {
-      console.error('Error loading chat:', error)
+    } catch {
     } finally {
       setChatLoading(false)
     }
   }
 
-  const handleSelectConversacion = (convId: string) => {
-    setSelectedId(convId)
-    loadChatData(convId)
-  }
-
   useEffect(() => {
-    if (!search.trim()) {
-      setFiltradas(conversaciones)
-      return
-    }
-
-    const query = search.toLowerCase()
+    if (!search.trim()) { setFiltradas(conversaciones); return }
+    const q = search.toLowerCase()
     setFiltradas(
-      conversaciones.filter(c =>
-        c.usuario_id.toLowerCase().includes(query) ||
-        c.usuario_nombre?.toLowerCase().includes(query) ||
-        c.ultimo_mensaje.toLowerCase().includes(query)
-      )
+      conversaciones.filter((c) =>
+        c.usuario_id.toLowerCase().includes(q) ||
+        c.usuario_nombre?.toLowerCase().includes(q) ||
+        c.ultimo_mensaje.toLowerCase().includes(q),
+      ),
     )
   }, [search, conversaciones])
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const day = date.getDate()
-    const month = date.getMonth()
-    const year = date.getFullYear()
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-    return `${day} ${meses[month]} ${year} ${hours}:${minutes}`
-  }
-
-  const formatMessageTime = (dateString: string) => {
-    const date = new Date(dateString)
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${hours}:${minutes}`
-  }
-
-  const getEstadoBg = (estado: string) => {
-    switch (estado) {
-      case 'activa':
-        return 'bg-success/10 text-success'
-      case 'esperando':
-        return 'bg-warning/10 text-warning'
-      default:
-        return 'bg-text-muted/10 text-text-muted'
-    }
-  }
-
+  /* ── Chat view ────────────────────────────────── */
   if (selectedId && chatData) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col h-[calc(100vh-4rem)] -mt-8 -mx-4 md:-mx-8 pt-8 px-4 md:px-8">
+        {/* Chat header */}
+        <div className="flex items-center gap-3 pb-4 border-b border-border">
           <button
-            onClick={() => {
-              setSelectedId(null)
-              setChatData(null)
-            }}
-            className="p-2 hover:bg-surface rounded-lg transition-colors shrink-0"
+            onClick={() => { setSelectedId(null); setChatData(null) }}
+            className="h-9 w-9 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface transition-all duration-150 active:scale-[0.97] cursor-pointer shrink-0"
           >
-            <ArrowLeft className="h-5 w-5 text-text-secondary" />
+            <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="min-w-0">
-            <h1 className="text-xl md:text-2xl font-bold text-text-primary truncate">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-text-primary truncate">
               {chatData.conversation.usuario_nombre || chatData.conversation.usuario_id}
-            </h1>
-            <p className="text-sm text-text-secondary truncate">
-              {chatData.conversation.canal.toUpperCase()} • {chatData.conversation.usuario_telefono}
+            </p>
+            <p className="text-xs text-text-muted truncate">
+              {chatData.conversation.canal.toUpperCase()} · {chatData.conversation.usuario_telefono}
             </p>
           </div>
+          <span className={['px-2 py-0.5 rounded-md text-xs font-medium border', CANAL_STYLES[chatData.conversation.canal] ?? ''].join(' ')}>
+            {chatData.conversation.canal}
+          </span>
         </div>
 
-        <Card className="min-h-[60vh] max-h-[60vh] md:min-h-96 md:max-h-[600px] overflow-hidden flex flex-col">
-          <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
-            {chatLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-text-secondary">Cargando mensajes...</p>
-              </div>
-            ) : chatData.messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full">
-                <MessageSquare className="h-12 w-12 text-text-muted mb-4" />
-                <p className="text-text-secondary">Sin mensajes</p>
-              </div>
-            ) : (
-              chatData.messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.sender_type === 'user' ? 'justify-start' : 'justify-end'}`}
-                >
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto py-6 space-y-3 min-h-0">
+          {chatLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <span className="h-6 w-6 rounded-full border-2 border-border border-t-accent animate-spin" />
+            </div>
+          ) : chatData.messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+              <MessageSquare className="h-10 w-10 text-text-muted" />
+              <p className="text-text-secondary text-sm">Sin mensajes en esta conversación</p>
+            </div>
+          ) : (
+            chatData.messages.map((msg) => {
+              const isUser = msg.sender_type === 'user'
+              return (
+                <div key={msg.id} className={['flex', isUser ? 'justify-start' : 'justify-end'].join(' ')}>
                   <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      msg.sender_type === 'user'
-                        ? 'bg-surface text-text-primary rounded-bl-none'
-                        : 'bg-accent text-accent-light rounded-br-none'
-                    }`}
+                    className={[
+                      'max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl',
+                      isUser
+                        ? 'bg-surface text-text-primary rounded-bl-sm'
+                        : 'bg-accent text-background rounded-br-sm',
+                    ].join(' ')}
                   >
-                    <p className="break-words text-sm">{msg.contenido}</p>
-                    <p className={`text-xs mt-1 text-text-muted`}>
-                      {formatMessageTime(msg.created_at)}
+                    <p className="text-sm leading-relaxed wrap-break-word">{msg.contenido}</p>
+                    <p className={['text-xs mt-1.5 select-none', isUser ? 'text-text-muted' : 'text-background/60'].join(' ')}>
+                      {formatTime(msg.created_at)}
                     </p>
                   </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+              )
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
     )
   }
 
+  /* ── List view ────────────────────────────────── */
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Conversaciones</h1>
-        <p className="text-text-secondary mt-1 text-sm md:text-base">Monitorea todas las conversaciones con tus clientes</p>
+    <div className="space-y-5">
+      <div className="stagger-1">
+        <h1 className="text-3xl font-bold text-text-primary tracking-tight">Conversaciones</h1>
+        <p className="text-text-secondary mt-1.5 text-sm">
+          Monitorea todas las conversaciones con tus clientes
+        </p>
       </div>
 
-      <div className="flex gap-2">
+      {/* Search */}
+      <div className="stagger-2 relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
         <Input
           placeholder="Buscar por usuario o mensaje..."
-          className="flex-1"
+          className="pl-9"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Conversaciones</CardTitle>
-          <CardDescription>{filtradas.length} conversaciones</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-12">
-              <p className="text-text-secondary">Cargando...</p>
-            </div>
-          ) : filtradas.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <MessageSquare className="h-12 w-12 text-text-muted mb-4" />
-              <p className="text-text-secondary">No hay conversaciones</p>
-              <p className="text-sm text-text-muted mt-2">Las conversaciones aparecerán aquí cuando los usuarios contacten</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filtradas.map((conv) => (
+      {/* List */}
+      <div className="stagger-3 rounded-xl border border-border bg-card-bg overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+          <p className="text-sm font-medium text-text-primary">Conversaciones</p>
+          <p className="text-xs text-text-muted">{filtradas.length} resultados</p>
+        </div>
+
+        {loading ? (
+          <div className="divide-y divide-border">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="px-5 py-4 flex gap-4 animate-pulse">
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 w-32 rounded bg-surface" />
+                  <div className="h-3 w-48 rounded bg-surface" />
+                </div>
+                <div className="h-5 w-16 rounded bg-surface" />
+              </div>
+            ))}
+          </div>
+        ) : filtradas.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <MessageSquare className="h-10 w-10 text-text-muted mb-3" />
+            <p className="text-text-secondary text-sm font-medium">No hay conversaciones</p>
+            <p className="text-text-muted text-xs mt-1">
+              Aparecerán aquí cuando los usuarios contacten a tu agente
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtradas.map((conv) => (
+              <li key={conv.id}>
                 <button
-                  key={conv.id}
-                  onClick={() => handleSelectConversacion(conv.id)}
-                  className="w-full text-left p-4 border rounded-lg hover:bg-surface transition-colors"
+                  onClick={() => { setSelectedId(conv.id); loadChatData(conv.id) }}
+                  className="w-full text-left px-5 py-4 hover:bg-surface/40 transition-colors duration-150 cursor-pointer group"
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <p className="font-medium text-text-primary">{conv.usuario_nombre || conv.usuario_id}</p>
-                      <p className="text-sm text-text-secondary mt-1 truncate">{conv.ultimo_mensaje}</p>
-                      <div className="flex gap-2 items-center mt-2">
-                        <span className="text-xs text-text-muted capitalize">{conv.canal}</span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${getEstadoBg(conv.estado)}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-text-primary text-sm group-hover:text-accent transition-colors duration-150">
+                        {conv.usuario_nombre || conv.usuario_id}
+                      </p>
+                      <p className="text-xs text-text-muted mt-0.5 truncate max-w-xs">
+                        {conv.ultimo_mensaje}
+                      </p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className={['px-2 py-0.5 rounded-md text-xs font-medium border', CANAL_STYLES[conv.canal] ?? 'bg-surface text-text-muted border-border'].join(' ')}>
+                          {conv.canal}
+                        </span>
+                        <span className={['px-2 py-0.5 rounded-md text-xs font-medium', ESTADO_STYLES[conv.estado] ?? ''].join(' ')}>
                           {conv.estado}
                         </span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-text-muted">{formatDate(conv.fecha_ultimo_mensaje)}</p>
-                    </div>
+                    <time className="text-xs text-text-muted shrink-0 mt-0.5">
+                      {formatDate(conv.fecha_ultimo_mensaje)}
+                    </time>
                   </div>
                 </button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }

@@ -3,7 +3,6 @@
 import { Avatar } from '@/components/ui/avatar'
 import { usePathname } from 'next/navigation'
 import { Menu } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 
 interface HeaderProps {
   title: string
@@ -12,47 +11,54 @@ interface HeaderProps {
   onMenuClick?: () => void
 }
 
+const PATH_LABELS: Record<string, string> = {
+  '/admin': 'Dashboard',
+  '/admin/clientes': 'Clientes',
+  '/admin/clientes/nuevo': 'Nuevo Cliente',
+  '/cliente': 'Dashboard',
+  '/cliente/conversaciones': 'Conversaciones',
+  '/cliente/leads': 'Leads',
+  '/cliente/citas': 'Citas',
+  '/cliente/pagos': 'Pagos',
+  '/cliente/configuracion': 'Configuración',
+}
+
 export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: HeaderProps) => {
   const pathname = usePathname()
-
-  const getTitleFromPath = () => {
-    if (pathname === '/admin') return 'Dashboard'
-    if (pathname === '/admin/clientes') return 'Clientes'
-    if (pathname === '/admin/clientes/nuevo') return 'Nuevo Cliente'
-    if (pathname === '/cliente') return 'Dashboard'
-    if (pathname === '/cliente/conversaciones') return 'Conversaciones'
-    if (pathname === '/cliente/leads') return 'Leads'
-    if (pathname === '/cliente/citas') return 'Citas'
-    if (pathname === '/cliente/pagos') return 'Pagos'
-    if (pathname === '/cliente/configuracion') return 'Configuración'
-    return title
-  }
+  const pageTitle = PATH_LABELS[pathname] ?? title
 
   return (
-    <header className="fixed left-0 right-0 top-0 z-30 h-16 border-b border-border bg-background flex items-center justify-between px-4 md:pl-64 md:pr-6">
+    <header
+      className={[
+        'fixed left-0 right-0 top-0 z-30 h-16',
+        'border-b border-border glass',
+        'flex items-center justify-between px-4 md:pl-64 md:pr-6',
+      ].join(' ')}
+    >
       <div className="flex items-center gap-3">
-        {/* Hamburger — visible only on mobile */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden shrink-0"
+        <button
+          className={[
+            'md:hidden shrink-0 h-9 w-9 flex items-center justify-center rounded-lg',
+            'text-text-secondary hover:text-text-primary hover:bg-surface',
+            'transition-all duration-150 active:scale-[0.97] cursor-pointer',
+          ].join(' ')}
           onClick={onMenuClick}
           aria-label="Abrir menú"
         >
           <Menu className="h-5 w-5" />
-        </Button>
+        </button>
 
-        <h1 className="text-lg md:text-xl font-semibold text-text-primary truncate">
-          {getTitleFromPath()}
+        <h1 className="text-base md:text-lg font-semibold text-text-primary tracking-tight">
+          {pageTitle}
         </h1>
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="hidden sm:block text-right text-sm">
-          <p className="text-text-primary font-medium leading-tight">{userName}</p>
-          {userEmail && <p className="text-text-secondary text-xs">{userEmail}</p>}
+        <div className="hidden sm:block text-right">
+          <p className="text-sm text-text-primary font-medium leading-none">{userName}</p>
+          {userEmail && <p className="text-xs text-text-muted mt-0.5">{userEmail}</p>}
         </div>
-        <Avatar name={userName} className="bg-surface text-text-primary" />
+        <Avatar name={userName} className="ring-1 ring-border-light" />
       </div>
     </header>
   )

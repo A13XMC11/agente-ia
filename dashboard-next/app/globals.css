@@ -1,24 +1,42 @@
 @import "tailwindcss";
 
+/* ─── Design Tokens ─────────────────────────────── */
 :root {
-  --background: #06141B;
-  --foreground: #CCD0CF;
-  --card-bg: #11212D;
-  --surface: #253745;
-  --border: #253745;
-  --border-light: #253745;
-  --accent: #CCD0CF;
-  --accent-hover: #b8bcbb;
-  --accent-light: #06141B;
-  --text-primary: #CCD0CF;
-  --text-secondary: #9BA8AB;
-  --text-muted: #4A5C6A;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --info: #3b82f6;
+  /* Backgrounds – OLED deep dark */
+  --background: #060D13;
+  --card-bg: #091521;
+  --surface: #0F1E2D;
+
+  /* Borders */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-light: rgba(255, 255, 255, 0.13);
+
+  /* Accent – electric sky blue */
+  --accent: #38BDF8;
+  --accent-hover: #7DD3FC;
+  --accent-light: #060D13;
+  --accent-glow: rgba(56, 189, 248, 0.12);
+  --accent-indigo: #818CF8;
+
+  /* Text */
+  --foreground: #E8EEF4;
+  --text-primary: #E8EEF4;
+  --text-secondary: #7A8FA0;
+  --text-muted: #3D5166;
+
+  /* Status */
+  --success: #22D3A0;
+  --warning: #FBBF24;
+  --error: #F87171;
+  --info: #60A5FA;
+
+  /* Custom easing (Emil Kowalski) */
+  --ease-out-expo: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+/* ─── Tailwind Theme Registration ───────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -30,6 +48,8 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-light: var(--accent-light);
+  --color-accent-glow: var(--accent-glow);
+  --color-accent-indigo: var(--accent-indigo);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
@@ -41,6 +61,7 @@
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }
 
+/* ─── Base ───────────────────────────────────────── */
 html {
   color-scheme: dark;
 }
@@ -51,8 +72,103 @@ body {
   font-family: var(--font-sans);
   font-weight: 300;
   letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   @apply border-border;
+}
+
+/* ─── Scrollbar ──────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ─── Glass Utility ──────────────────────────────── */
+.glass {
+  background: rgba(9, 21, 33, 0.65);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--border-light);
+}
+
+.glass-subtle {
+  background: rgba(9, 21, 33, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+}
+
+/* ─── Animations ─────────────────────────────────── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50%       { box-shadow: 0 0 20px 4px var(--accent-glow); }
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Stagger Helpers ────────────────────────────── */
+.stagger-1 { animation: fadeInUp 320ms var(--ease-out-expo) both; }
+.stagger-2 { animation: fadeInUp 320ms var(--ease-out-expo) 60ms both; }
+.stagger-3 { animation: fadeInUp 320ms var(--ease-out-expo) 120ms both; }
+.stagger-4 { animation: fadeInUp 320ms var(--ease-out-expo) 180ms both; }
+.stagger-5 { animation: fadeInUp 320ms var(--ease-out-expo) 240ms both; }
+
+/* ─── Glow Text ──────────────────────────────────── */
+.glow-text {
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+}
+
+/* ─── Gradient Text ──────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-indigo) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Reduced Motion ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .stagger-1, .stagger-2, .stagger-3, .stagger-4, .stagger-5 {
+    animation: fadeIn 200ms ease both;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

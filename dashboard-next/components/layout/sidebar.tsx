@@ -12,8 +12,8 @@ import {
   Settings,
   LogOut,
   CreditCard,
+  Bot,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 
 interface SidebarProps {
   role: 'super_admin' | 'admin' | 'operador'
@@ -46,54 +46,84 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
     <>
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen w-60 border-r border-border bg-background transition-transform duration-300',
+          'fixed left-0 top-0 z-40 h-screen w-60 transition-transform duration-300',
+          'border-r border-border glass',
           'md:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="border-b border-border px-6 py-4 h-16 flex items-center">
-            <h1 className="text-base font-semibold tracking-widest uppercase text-text-primary">
-              {isAdmin ? 'Agente IA' : clienteName || 'Dashboard'}
-            </h1>
+          <div className="px-5 py-4 h-16 flex items-center gap-3 border-b border-border">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 ring-1 ring-accent/20">
+              <Bot className="h-4 w-4 text-accent" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-text-primary leading-none truncate">
+                {isAdmin ? 'Agente IA' : (clienteName || 'Dashboard')}
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                {isAdmin ? 'Super Admin' : 'Panel de control'}
+              </p>
+            </div>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-0.5 p-3 overflow-y-auto">
-            {links.map(({ href, label, icon: Icon }) => (
-              <Link key={href} href={href} onClick={onClose}>
-                <button
-                  className={cn(
-                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors cursor-pointer',
-                    pathname === href
-                      ? 'bg-surface text-text-primary font-medium'
-                      : 'text-text-secondary hover:bg-card-bg hover:text-text-primary',
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{label}</span>
-                </button>
-              </Link>
-            ))}
+          <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+            {links.map(({ href, label, icon: Icon }) => {
+              const isActive = pathname === href
+              return (
+                <Link key={href} href={href} onClick={onClose}>
+                  <span
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer',
+                      'transition-all duration-150 relative group',
+                      isActive
+                        ? 'bg-accent/10 text-accent font-medium'
+                        : 'text-text-secondary hover:bg-surface/60 hover:text-text-primary',
+                    )}
+                  >
+                    {/* Active left border */}
+                    {isActive && (
+                      <span className="absolute left-0 inset-y-1 w-0.5 rounded-r-full bg-accent" />
+                    )}
+                    <Icon
+                      className={cn(
+                        'h-4 w-4 shrink-0 transition-colors duration-150',
+                        isActive ? 'text-accent' : 'text-text-muted group-hover:text-text-secondary',
+                      )}
+                    />
+                    <span>{label}</span>
+                  </span>
+                </Link>
+              )
+            })}
           </nav>
 
           {/* Logout */}
           <div className="border-t border-border p-3">
             <form action="/api/auth/logout" method="POST">
-              <Button variant="ghost" className="w-full justify-start gap-3 text-text-muted hover:text-text-secondary">
+              <button
+                type="submit"
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer',
+                  'text-text-muted hover:text-error hover:bg-error/8',
+                  'transition-all duration-150',
+                  'active:scale-[0.97]',
+                )}
+              >
                 <LogOut className="h-4 w-4 shrink-0" />
-                <span>Logout</span>
-              </Button>
+                <span>Cerrar sesión</span>
+              </button>
             </form>
           </div>
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
+      {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={onClose}
         />
       )}
