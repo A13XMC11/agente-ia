@@ -241,6 +241,7 @@ class CobrosModule:
   "confianza": 0.95,
   "notas": "..."
 }
+Si no puedes determinar claramente la fecha, responde con fecha: null y es_valido: true.
 Responde SOLO con el JSON, sin comentarios adicionales.""",
                             },
                         ],
@@ -346,19 +347,20 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                         "message": "Este comprobante ya fue procesado. Si tienes dudas, contacta al negocio.",
                     }
 
-            # 3. Check date is recent (max 24h)
-            fecha_str = analysis.get("fecha", "")
-            if fecha_str:
+            # 3. Check date is recent (max 72h)
+            fecha_str = analysis.get("fecha") or ""
+            logger.info(f"Fecha extraída del comprobante: {fecha_str!r}")
+            if fecha_str and fecha_str.lower() != "null":
                 try:
                     fecha_pago = datetime.fromisoformat(fecha_str)
-                    if datetime.utcnow() - fecha_pago > timedelta(hours=24):
+                    if datetime.utcnow() - fecha_pago > timedelta(hours=72):
                         return {
                             "success": False,
                             "outcome": "expired",
-                            "message": "El comprobante tiene más de 24 horas. Por favor realiza una nueva transferencia.",
+                            "message": "El comprobante tiene más de 72 horas. Por favor realiza una nueva transferencia.",
                         }
                 except ValueError:
-                    pass  # If date can't be parsed, proceed
+                    pass  # If date can't be parsed, proceed (assume valid)
 
             # 4. Check amount matches pending (from Redis)
             monto_esperado = None
@@ -402,7 +404,14 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
 
             # 8. Notify owner
             await self._notify_owner(
-                client_id, phone_number_id, pago_id, outcome, monto_recibido, sender_id
+                client_id=client_id,
+                phone_number_id=phone_number_id,
+                pago_id=pago_id,
+                outcome=outcome,
+                monto=monto_recibido,
+                sender_id=sender_id,
+                banco_origen=analysis.get("banco_origen") or "",
+                numero_transaccion=numero_transaccion or "",
             )
 
             # 9. Return message for user
@@ -425,26 +434,19 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
         outcome: str,
         monto: float,
         sender_id: str,
+        banco_origen: str = "",
+        numero_transaccion: str = "",
     ) -> None:
         """
         Send owner notification via WhatsApp with approval instructions.
 
         Only notifies for valid comprobantes (requires approval before confirming to user).
         Invalid/duplicate payments are rejected without notifying owner.
-
-        Args:
-            client_id: Client ID
-            phone_number_id: WhatsApp phone number ID
-            pago_id: Payment ID
-            outcome: valid | invalid
-            monto: Payment amount
-            sender_id: Customer sender ID
         """
         if not self.whatsapp or outcome != "valid":
             return
 
         try:
-            # Get owner phone from clientes table
             resp = (
                 self.supabase.table("clientes")
                 .select("whatsapp_dueño, nombre_negocio")
@@ -460,16 +462,20 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                 return
 
             msg = (
-                f"📋 *Nuevo comprobante para revisar*\n\n"
-                f"Monto: ${monto:.2f}\n"
-                f"De: {sender_id}\n"
-                f"ID: {pago_id}\n\n"
-                f"Responde:\n"
-                f"*aprobar {pago_id}* — Confirmar el pago\n"
-                f"*rechazar {pago_id}* — Rechazar el pago"
+                f"💰 *Nuevo pago pendiente de revisión*\n\n"
+                f"Cliente: {sender_id}\n"
+                f"Monto detectado: ${monto:.2f}\n"
+            )
+            if banco_origen:
+                msg += f"Banco origen: {banco_origen}\n"
+            if numero_transaccion:
+                msg += f"Número transacción: {numero_transaccion}\n"
+            msg += (
+                f"\nResponde:\n"
+                f"✅ APROBAR {pago_id}\n"
+                f"❌ RECHAZAR {pago_id}"
             )
 
-            # Send via WhatsApp handler
             await self.whatsapp.send_message(
                 phone_number_id=phone_number_id,
                 recipient_phone=owner_phone,
@@ -578,6 +584,21 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                             )
                 except Exception as e:
                     logger.error(f"Failed to notify customer: {e}")
+
+            # Confirm action back to owner
+            if self.whatsapp:
+                try:
+                    owner_confirm = (
+                        "Pago aprobado ✅" if nuevo_estado == "verificado" else "Pago rechazado ❌"
+                    )
+                    await self.whatsapp.send_message(
+                        phone_number_id=phone_number_id,
+                        recipient_phone=owner_phone,
+                        text=owner_confirm,
+                        client_id=client_id,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to confirm action to owner: {e}")
 
             return True
 
