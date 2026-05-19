@@ -7,13 +7,16 @@ interface ApiResponse {
 }
 
 export async function GET(): Promise<Response> {
+  console.log('[ADMIN CLIENTES] fetching...')
   try {
     const clientes = await getClientes()
+    console.log('[ADMIN CLIENTES] result:', clientes)
     return Response.json({
       success: true,
       data: clientes,
     } as ApiResponse)
   } catch (error) {
+    console.log('[ADMIN CLIENTES] error:', error)
     const message = error instanceof Error ? error.message : 'Error fetching clientes'
     return Response.json(
       {
