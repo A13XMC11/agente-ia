@@ -157,30 +157,30 @@ export default function LeadsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text-primary">Leads</h1>
-        <p className="text-text-secondary mt-2">Calificación automática de leads con inteligencia artificial</p>
+        <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Leads</h1>
+        <p className="text-text-secondary mt-1 text-sm md:text-base">Calificación automática de leads con inteligencia artificial</p>
       </div>
 
       <div className="flex gap-2 flex-wrap">
         <Input
           placeholder="Buscar por nombre, email o teléfono..."
-          className="flex-1 min-w-64"
+          className="flex-1 min-w-0"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <select
           value={filterState}
           onChange={(e) => setFilterState(e.target.value as LeadState | 'todos')}
-          className="px-3 py-2 border rounded-lg bg-background text-text-primary"
+          className="px-3 py-2 border rounded-lg bg-background text-text-primary text-sm"
         >
-          <option value="todos">Todos los estados</option>
-          <option value="urgente">🔥🔥 URGENTE (9-10)</option>
-          <option value="caliente">🔥 CALIENTE (7-8)</option>
-          <option value="interesado">INTERESADO (5-6)</option>
-          <option value="prospecto">PROSPECTO (3-4)</option>
-          <option value="curioso">CURIOSO (0-2)</option>
+          <option value="todos">Todos</option>
+          <option value="urgente">🔥🔥 URGENTE</option>
+          <option value="caliente">🔥 CALIENTE</option>
+          <option value="interesado">INTERESADO</option>
+          <option value="prospecto">PROSPECTO</option>
+          <option value="curioso">CURIOSO</option>
         </select>
       </div>
 
@@ -201,65 +201,113 @@ export default function LeadsPage() {
               <p className="text-sm text-text-muted mt-2">Los leads se mostrarán aquí conforme tu agente califique contactos</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b">
-                  <tr>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Nombre</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Email</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Teléfono</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Score</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Estado</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtrados.map((lead) => {
-                    const state = lead.state || lead.estado
-                    const stateBadge = getStateBadge(state)
-                    const leadName = lead.name || lead.nombre || 'Sin nombre'
-                    const leadPhone = lead.phone || lead.telefono || '-'
-                    const scoreBar = getScoreBar(lead.score)
-                    return (
-                      <tr key={lead.id} className="border-b hover:bg-surface">
-                        <td className="py-3 px-4 text-text-primary font-medium">{leadName}</td>
-                        <td className="py-3 px-4 text-text-secondary">{lead.email}</td>
-                        <td className="py-3 px-4 text-text-secondary">{leadPhone}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                              <div className="relative h-2 bg-surface rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full ${scoreBar.barColor} transition-all`}
-                                  style={{ width: `${scoreBar.percentage}%` }}
-                                />
-                              </div>
-                            </div>
-                            <span className="text-xs font-medium min-w-10">{lead.score}/10</span>
+            <>
+              {/* Mobile: card list */}
+              <div className="md:hidden space-y-3">
+                {filtrados.map((lead) => {
+                  const state = lead.state || lead.estado
+                  const stateBadge = getStateBadge(state)
+                  const leadName = lead.name || lead.nombre || 'Sin nombre'
+                  const leadPhone = lead.phone || lead.telefono || '-'
+                  const scoreBar = getScoreBar(lead.score)
+                  return (
+                    <div key={lead.id} className="p-4 border rounded-lg space-y-3">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-text-primary truncate">{leadName}</p>
+                          <p className="text-xs text-text-secondary truncate">{lead.email}</p>
+                          <p className="text-xs text-text-muted">{leadPhone}</p>
+                        </div>
+                        <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${stateBadge.class}`}>
+                          {stateBadge.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <div className="relative h-2 bg-surface rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${scoreBar.barColor} transition-all`}
+                              style={{ width: `${scoreBar.percentage}%` }}
+                            />
                           </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${stateBadge.class}`}>
-                            {stateBadge.label}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleViewSignals(lead.id)}
-                            className="text-xs"
-                          >
-                            <Zap className="h-3 w-3 mr-1" />
-                            Ver señales
-                          </Button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        </div>
+                        <span className="text-xs font-medium">{lead.score}/10</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewSignals(lead.id)}
+                        className="text-xs w-full"
+                      >
+                        <Zap className="h-3 w-3 mr-1" />
+                        Ver señales
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Desktop: table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b">
+                    <tr>
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Nombre</th>
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Email</th>
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Teléfono</th>
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Score</th>
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Estado</th>
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtrados.map((lead) => {
+                      const state = lead.state || lead.estado
+                      const stateBadge = getStateBadge(state)
+                      const leadName = lead.name || lead.nombre || 'Sin nombre'
+                      const leadPhone = lead.phone || lead.telefono || '-'
+                      const scoreBar = getScoreBar(lead.score)
+                      return (
+                        <tr key={lead.id} className="border-b hover:bg-surface">
+                          <td className="py-3 px-4 text-text-primary font-medium">{leadName}</td>
+                          <td className="py-3 px-4 text-text-secondary">{lead.email}</td>
+                          <td className="py-3 px-4 text-text-secondary">{leadPhone}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1">
+                                <div className="relative h-2 bg-surface rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full ${scoreBar.barColor} transition-all`}
+                                    style={{ width: `${scoreBar.percentage}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-medium min-w-10">{lead.score}/10</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${stateBadge.class}`}>
+                              {stateBadge.label}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleViewSignals(lead.id)}
+                              className="text-xs"
+                            >
+                              <Zap className="h-3 w-3 mr-1" />
+                              Ver señales
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

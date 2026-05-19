@@ -76,32 +76,26 @@ export default function CitasPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text-primary">Citas</h1>
-        <p className="text-text-secondary mt-2">Calendario integrado con Google Calendar</p>
+        <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Citas</h1>
+        <p className="text-text-secondary mt-1 text-sm md:text-base">Calendario integrado con Google Calendar</p>
       </div>
 
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={prevMonth}>
-          ← Anterior
-        </Button>
-        <Button variant="outline" onClick={goToday}>
-          Hoy
-        </Button>
-        <Button variant="outline" onClick={nextMonth}>
-          Siguiente →
-        </Button>
-        <span className="px-4 py-2 text-text-primary font-medium">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={prevMonth}>← Anterior</Button>
+        <Button variant="outline" size="sm" onClick={goToday}>Hoy</Button>
+        <Button variant="outline" size="sm" onClick={nextMonth}>Siguiente →</Button>
+        <span className="text-text-primary font-medium text-sm md:text-base capitalize">
           {(() => {
             const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
                           'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-            return `${meses[currentMonth.getMonth()]} de ${currentMonth.getFullYear()}`
+            return `${meses[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`
           })()}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
@@ -120,16 +114,16 @@ export default function CitasPage() {
               ) : (
                 <div className="space-y-2">
                   {citas.map((cita) => (
-                    <div key={cita.id} className="p-4 border rounded-lg hover:bg-surface">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <p className="font-medium text-text-primary">{cita.usuario_nombre}</p>
-                          <p className="text-sm text-text-secondary">{cita.descripcion}</p>
+                    <div key={cita.id} className="p-3 md:p-4 border rounded-lg hover:bg-surface">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-text-primary truncate">{cita.usuario_nombre}</p>
+                          <p className="text-sm text-text-secondary truncate">{cita.descripcion}</p>
                           <p className="text-xs text-text-muted mt-1">
-                            {formatFecha(cita.fecha)} a las {cita.hora} ({cita.duracion_minutos} min)
+                            {formatFecha(cita.fecha)} · {cita.hora} · {cita.duracion_minutos} min
                           </p>
                         </div>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${getEstadoBg(cita.estado)} capitalize`}>
+                        <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${getEstadoBg(cita.estado)} capitalize`}>
                           {cita.estado}
                         </span>
                       </div>

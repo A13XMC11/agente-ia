@@ -85,14 +85,14 @@ export default function ClientesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-start">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-text-primary">Clientes</h1>
-          <p className="text-text-secondary mt-2">Gestiona todos los clientes de la plataforma</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Clientes</h1>
+          <p className="text-text-secondary mt-1 text-sm md:text-base">Gestiona todos los clientes de la plataforma</p>
         </div>
-        <Link href="/admin/clientes/nuevo">
-          <Button>Nuevo Cliente</Button>
+        <Link href="/admin/clientes/nuevo" className="shrink-0">
+          <Button size="sm">Nuevo Cliente</Button>
         </Link>
       </div>
 

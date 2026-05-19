@@ -131,21 +131,21 @@ export default function ConversacionesPage() {
               setSelectedId(null)
               setChatData(null)
             }}
-            className="p-2 hover:bg-surface rounded-lg transition-colors"
+            className="p-2 hover:bg-surface rounded-lg transition-colors shrink-0"
           >
             <ArrowLeft className="h-5 w-5 text-text-secondary" />
           </button>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-bold text-text-primary truncate">
               {chatData.conversation.usuario_nombre || chatData.conversation.usuario_id}
             </h1>
-            <p className="text-sm text-text-secondary">
+            <p className="text-sm text-text-secondary truncate">
               {chatData.conversation.canal.toUpperCase()} • {chatData.conversation.usuario_telefono}
             </p>
           </div>
         </div>
 
-        <Card className="min-h-96 max-h-96 md:max-h-[600px] overflow-hidden flex flex-col">
+        <Card className="min-h-[60vh] max-h-[60vh] md:min-h-96 md:max-h-[600px] overflow-hidden flex flex-col">
           <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
             {chatLoading ? (
               <div className="flex items-center justify-center h-full">
@@ -184,10 +184,10 @@ export default function ConversacionesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text-primary">Conversaciones</h1>
-        <p className="text-text-secondary mt-2">Monitorea todas las conversaciones con tus clientes</p>
+        <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Conversaciones</h1>
+        <p className="text-text-secondary mt-1 text-sm md:text-base">Monitorea todas las conversaciones con tus clientes</p>
       </div>
 
       <div className="flex gap-2">

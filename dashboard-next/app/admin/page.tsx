@@ -25,15 +25,13 @@ export default async function AdminDashboard() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-4xl font-bold text-text-primary">Dashboard</h1>
-          <p className="text-text-secondary mt-2">Bienvenido al panel de administración</p>
-        </div>
+      <div>
+        <h1 className="text-2xl md:text-4xl font-bold text-text-primary">Dashboard</h1>
+        <p className="text-text-secondary mt-1 text-sm md:text-base">Bienvenido al panel de administración</p>
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Clientes</CardTitle>
@@ -70,10 +68,10 @@ export default async function AdminDashboard() {
 
       {/* Recent Clients */}
       <div>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-text-primary">Clientes Recientes</h2>
+        <div className="flex justify-between items-center mb-4 gap-3">
+          <h2 className="text-xl md:text-2xl font-bold text-text-primary">Clientes Recientes</h2>
           <Link href="/admin/clientes/nuevo">
-            <Button>Nuevo Cliente</Button>
+            <Button size="sm">Nuevo Cliente</Button>
           </Link>
         </div>
 

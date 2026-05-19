@@ -141,11 +141,11 @@ export default async function ClienteDashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-4xl font-bold text-text-primary">Dashboard</h1>
-        <p className="text-text-secondary mt-2">Resumen de tu negocio y agente IA</p>
+        <h1 className="text-2xl md:text-4xl font-bold text-text-primary">Dashboard</h1>
+        <p className="text-text-secondary mt-1 text-sm md:text-base">Resumen de tu negocio y agente IA</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Chats Hoy</CardTitle>

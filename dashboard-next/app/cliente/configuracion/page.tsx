@@ -235,10 +235,10 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text-primary">Configuración</h1>
-        <p className="text-text-secondary mt-2">Personaliza tu agente IA y los módulos activos</p>
+        <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Configuración</h1>
+        <p className="text-text-secondary mt-1 text-sm md:text-base">Personaliza tu agente IA y los módulos activos</p>
       </div>
 
       {agente && (
@@ -247,7 +247,7 @@ export default function ConfiguracionPage() {
             <CardTitle>Configuración del Agente</CardTitle>
             <CardDescription>Personaliza el comportamiento de tu agente IA</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4 md:space-y-6">
             <div className="space-y-2">
               <Label htmlFor="agent-name">Nombre del Agente</Label>
               <Input
@@ -257,7 +257,7 @@ export default function ConfiguracionPage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="tone">Tono</Label>
                 <select
@@ -453,8 +453,8 @@ export default function ConfiguracionPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {pagos.map((pago) => (
-              <div key={pago.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex-1">
+              <div key={pago.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border rounded-lg">
+                <div className="flex-1 min-w-0">
                   <p className="font-medium">${pago.monto.toFixed(2)} {pago.moneda}</p>
                   <p className="text-sm text-text-secondary">
                     {pago.banco_origen ? `De: ${pago.banco_origen}` : 'Transferencia bancaria'}
@@ -466,10 +466,11 @@ export default function ConfiguracionPage() {
                     <p className="text-xs text-text-secondary">Ref: {pago.numero_transaccion}</p>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <Button
                     size="sm"
                     onClick={() => handlePagoAction(pago.id, 'aprobar')}
+                    className="flex-1 sm:flex-none"
                   >
                     Aprobar
                   </Button>
@@ -477,6 +478,7 @@ export default function ConfiguracionPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => handlePagoAction(pago.id, 'rechazar')}
+                    className="flex-1 sm:flex-none"
                   >
                     Rechazar
                   </Button>
