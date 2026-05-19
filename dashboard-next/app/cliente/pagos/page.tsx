@@ -18,14 +18,25 @@ interface Pago {
   created_at: string
 }
 
+interface Toast {
+  message: string
+  type: 'success' | 'error'
+}
+
 export default function PagosPage() {
   const [pagos, setPagos] = useState<Pago[]>([])
   const [loading, setLoading] = useState(true)
   const [procesando, setProcesando] = useState<string | null>(null)
+  const [toast, setToast] = useState<Toast | null>(null)
 
   useEffect(() => {
     loadPagos()
   }, [])
+
+  function showToast(message: string, type: Toast['type']) {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3500)
+  }
 
   async function loadPagos() {
     try {
@@ -49,9 +60,17 @@ export default function PagosPage() {
         body: JSON.stringify({ id, accion }),
       })
       if (!response.ok) throw new Error('Failed to update')
-      setPagos((prev) => prev.filter((p) => p.id !== id))
+      const nuevoEstado = accion === 'aprobar' ? 'verificado' : 'rechazado'
+      setPagos((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, estado: nuevoEstado } : p))
+      )
+      showToast(
+        accion === 'aprobar' ? 'Pago aprobado exitosamente ✅' : 'Pago rechazado ❌',
+        accion === 'aprobar' ? 'success' : 'error'
+      )
     } catch (error) {
       console.error('Error updating pago:', error)
+      showToast('Error al procesar el pago. Intenta de nuevo.', 'error')
     } finally {
       setProcesando(null)
     }
@@ -60,8 +79,22 @@ export default function PagosPage() {
   const formatMonto = (monto: number, moneda: string) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda || 'MXN' }).format(monto)
 
+  const pendientes = pagos.filter((p) => p.estado === 'pendiente').length
+
   return (
     <div className="space-y-4 md:space-y-6">
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg transition-all ${
+            toast.type === 'success'
+              ? 'bg-success text-white'
+              : 'bg-error text-white'
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Pagos Pendientes</h1>
         <p className="text-text-secondary mt-1 text-sm md:text-base">
@@ -72,14 +105,14 @@ export default function PagosPage() {
       <Card>
         <CardHeader>
           <CardTitle>Comprobantes por Revisar</CardTitle>
-          <CardDescription>{pagos.length} pago{pagos.length !== 1 ? 's' : ''} pendiente{pagos.length !== 1 ? 's' : ''}</CardDescription>
+          <CardDescription>{pendientes} pago{pendientes !== 1 ? 's' : ''} pendiente{pendientes !== 1 ? 's' : ''}</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="text-center py-12">
               <p className="text-text-secondary">Cargando pagos...</p>
             </div>
-          ) : pagos.length === 0 ? (
+          ) : pendientes === 0 && pagos.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
               <CreditCard className="h-12 w-12 text-text-muted mb-4" />
               <p className="text-text-secondary">Sin pagos pendientes</p>
@@ -110,27 +143,44 @@ export default function PagosPage() {
                         {pago.banco_origen} → {pago.banco_destino}
                       </p>
                     )}
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="flex-1 bg-success hover:bg-success/90 text-white text-xs"
-                        onClick={() => handleAccion(pago.id, 'aprobar')}
-                        disabled={procesando === pago.id}
+                    {pago.estado === 'pendiente' ? (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="flex-1 bg-success hover:bg-success/90 text-white text-xs"
+                          onClick={() => handleAccion(pago.id, 'aprobar')}
+                          disabled={procesando === pago.id}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Aprobar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 border-error text-error hover:bg-error/10 text-xs"
+                          onClick={() => handleAccion(pago.id, 'rechazar')}
+                          disabled={procesando === pago.id}
+                        >
+                          <XCircle className="h-3 w-3 mr-1" />
+                          Rechazar
+                        </Button>
+                      </div>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${
+                          pago.estado === 'verificado'
+                            ? 'bg-success/10 text-success'
+                            : 'bg-error/10 text-error'
+                        }`}
                       >
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Aprobar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 border-error text-error hover:bg-error/10 text-xs"
-                        onClick={() => handleAccion(pago.id, 'rechazar')}
-                        disabled={procesando === pago.id}
-                      >
-                        <XCircle className="h-3 w-3 mr-1" />
-                        Rechazar
-                      </Button>
-                    </div>
+                        {pago.estado === 'verificado' ? (
+                          <CheckCircle className="h-3 w-3" />
+                        ) : (
+                          <XCircle className="h-3 w-3" />
+                        )}
+                        {pago.estado === 'verificado' ? 'Aprobado' : 'Rechazado'}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -167,27 +217,44 @@ export default function PagosPage() {
                           {formatTimestamp(pago.created_at)}
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              className="bg-success hover:bg-success/90 text-white text-xs"
-                              onClick={() => handleAccion(pago.id, 'aprobar')}
-                              disabled={procesando === pago.id}
+                          {pago.estado === 'pendiente' ? (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                className="bg-success hover:bg-success/90 text-white text-xs"
+                                onClick={() => handleAccion(pago.id, 'aprobar')}
+                                disabled={procesando === pago.id}
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Aprobar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-error text-error hover:bg-error/10 text-xs"
+                                onClick={() => handleAccion(pago.id, 'rechazar')}
+                                disabled={procesando === pago.id}
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Rechazar
+                              </Button>
+                            </div>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${
+                                pago.estado === 'verificado'
+                                  ? 'bg-success/10 text-success'
+                                  : 'bg-error/10 text-error'
+                              }`}
                             >
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Aprobar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-error text-error hover:bg-error/10 text-xs"
-                              onClick={() => handleAccion(pago.id, 'rechazar')}
-                              disabled={procesando === pago.id}
-                            >
-                              <XCircle className="h-3 w-3 mr-1" />
-                              Rechazar
-                            </Button>
-                          </div>
+                              {pago.estado === 'verificado' ? (
+                                <CheckCircle className="h-3 w-3" />
+                              ) : (
+                                <XCircle className="h-3 w-3" />
+                              )}
+                              {pago.estado === 'verificado' ? 'Aprobado' : 'Rechazado'}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}
