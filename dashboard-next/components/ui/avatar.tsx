@@ -19,24 +19,24 @@ export const Avatar = ({ name, src, className }: AvatarProps) => {
     .toUpperCase()
     .slice(0, 2)
 
-  const colors = [
-    'bg-purple-600',
-    'bg-blue-600',
-    'bg-pink-600',
-    'bg-green-600',
-    'bg-yellow-600',
-    'bg-red-600',
-    'bg-indigo-600',
-    'bg-cyan-600',
+  const shades = [
+    'bg-[#253745]',
+    'bg-[#1a3040]',
+    'bg-[#2a4050]',
+    'bg-[#1e2d38]',
+    'bg-[#203545]',
+    'bg-[#162838]',
+    'bg-[#2d4355]',
+    'bg-[#1c3040]',
   ]
 
-  const colorIndex = name.charCodeAt(0) % colors.length
-  const bgColor = colors[colorIndex]
+  const colorIndex = name.charCodeAt(0) % shades.length
+  const bgColor = className?.includes('bg-') ? '' : shades[colorIndex]
 
   return (
     <div
       className={cn(
-        'flex h-10 w-10 items-center justify-center rounded-full font-semibold text-white',
+        'flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-text-primary shrink-0',
         bgColor,
         className,
       )}

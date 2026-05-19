@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #f4f4f5;
-  --card-bg: #111111;
-  --border: #1f1f1f;
-  --border-light: #27272a;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
-  --accent-light: #ede9fe;
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --background: #06141B;
+  --foreground: #CCD0CF;
+  --card-bg: #11212D;
+  --surface: #253745;
+  --border: #253745;
+  --border-light: #253745;
+  --accent: #CCD0CF;
+  --accent-hover: #b8bcbb;
+  --accent-light: #06141B;
+  --text-primary: #CCD0CF;
+  --text-secondary: #9BA8AB;
+  --text-muted: #4A5C6A;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
@@ -22,8 +23,16 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card-bg);
+  --color-card-bg: var(--card-bg);
+  --color-surface: var(--surface);
   --color-border: var(--border);
+  --color-border-light: var(--border-light);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-light: var(--accent-light);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);
@@ -40,6 +49,8 @@ body {
   background: var(--background);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  font-weight: 300;
+  letter-spacing: 0.01em;
 }
 
 * {

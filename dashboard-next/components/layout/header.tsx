@@ -29,7 +29,7 @@ export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: 
   }
 
   return (
-    <header className="fixed left-0 right-0 top-0 z-30 h-16 border-b border-border bg-card-bg flex items-center justify-between px-4 md:pl-64 md:pr-6">
+    <header className="fixed left-0 right-0 top-0 z-30 h-16 border-b border-border bg-background flex items-center justify-between px-4 md:pl-64 md:pr-6">
       <div className="flex items-center gap-3">
         {/* Hamburger — visible only on mobile */}
         <Button
@@ -52,7 +52,7 @@ export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: 
           <p className="text-text-primary font-medium leading-tight">{userName}</p>
           {userEmail && <p className="text-text-secondary text-xs">{userEmail}</p>}
         </div>
-        <Avatar name={userName} />
+        <Avatar name={userName} className="bg-surface text-text-primary" />
       </div>
     </header>
   )

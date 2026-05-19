@@ -149,7 +149,7 @@ export default async function ClienteDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Chats Hoy</CardTitle>
-            <MessageSquare className="h-4 w-4 text-accent" />
+            <MessageSquare className="h-4 w-4 text-text-secondary" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{metrics.conversacionesHoy}</div>
@@ -160,7 +160,7 @@ export default async function ClienteDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Leads</CardTitle>
-            <TrendingUp className="h-4 w-4 text-warning" />
+            <TrendingUp className="h-4 w-4 text-text-secondary" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{metrics.leadsNuevos}</div>
@@ -171,7 +171,7 @@ export default async function ClienteDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Citas</CardTitle>
-            <Calendar className="h-4 w-4 text-info" />
+            <Calendar className="h-4 w-4 text-text-secondary" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{metrics.citasProgramadas}</div>
@@ -182,7 +182,7 @@ export default async function ClienteDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Score Promedio</CardTitle>
-            <AlertCircle className="h-4 w-4 text-error" />
+            <AlertCircle className="h-4 w-4 text-text-secondary" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{metrics.scorePromedio}</div>

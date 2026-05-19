@@ -166,11 +166,11 @@ export default function ConversacionesPage() {
                     className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                       msg.sender_type === 'user'
                         ? 'bg-surface text-text-primary rounded-bl-none'
-                        : 'bg-accent text-white rounded-br-none'
+                        : 'bg-accent text-accent-light rounded-br-none'
                     }`}
                   >
                     <p className="break-words text-sm">{msg.contenido}</p>
-                    <p className={`text-xs mt-1 ${msg.sender_type === 'user' ? 'text-text-muted' : 'text-white/70'}`}>
+                    <p className={`text-xs mt-1 text-text-muted`}>
                       {formatMessageTime(msg.created_at)}
                     </p>
                   </div>

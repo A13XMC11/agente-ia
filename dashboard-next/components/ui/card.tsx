@@ -2,21 +2,21 @@ import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
 export const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('rounded-lg border border-border bg-card-bg shadow-sm', className)} {...props} />
+  <div className={cn('rounded-lg border border-border bg-card-bg', className)} {...props} />
 )
 
 export const CardHeader = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 border-b border-border p-6', className)} {...props} />
+  <div className={cn('flex flex-col space-y-1.5 p-6 pb-4', className)} {...props} />
 )
 
 export const CardTitle = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>) => (
-  <h2 className={cn('text-2xl font-bold leading-none tracking-tight', className)} {...props} />
+  <h2 className={cn('text-base font-semibold leading-none tracking-tight text-text-primary', className)} {...props} />
 )
 
 export const CardDescription = ({
