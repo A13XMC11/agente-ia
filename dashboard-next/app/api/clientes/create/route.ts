@@ -5,7 +5,7 @@ interface CreateClienteRequest {
   nombre: string
   email: string
   telefono: string
-  whatsapp_dueno?: string
+  whatsapp_dueño?: string
   industria?: string
   website?: string
   plan: 'basico' | 'profesional' | 'empresarial'
@@ -61,7 +61,7 @@ export async function POST(request: Request): Promise<Response> {
       telefono: body.telefono,
       plan,
       industria: body.industria,
-      whatsapp_dueno: body.whatsapp_dueno,
+      whatsapp_dueño: body.whatsapp_dueño,
       website: body.website,
     })
 

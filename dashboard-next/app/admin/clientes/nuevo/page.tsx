@@ -84,7 +84,7 @@ interface FormData {
   nombre: string
   email: string
   telefono: string
-  whatsapp_dueno: string
+  whatsapp_dueño: string
   industria: string
   website: string
   plan: PlanId
@@ -134,7 +134,7 @@ export default function NuevoClientePage() {
     nombre: '',
     email: '',
     telefono: '',
-    whatsapp_dueno: '',
+    whatsapp_dueño: '',
     industria: '',
     website: '',
     plan: 'basico',
@@ -181,7 +181,7 @@ export default function NuevoClientePage() {
     if (!formData.nombre.trim()) return 'El nombre del negocio es requerido'
     if (!formData.email.trim() || !formData.email.includes('@')) return 'Email inválido'
     if (!formData.telefono.trim()) return 'El teléfono es requerido'
-    if (!formData.whatsapp_dueno.trim()) return 'El WhatsApp del dueño es requerido'
+    if (!formData.whatsapp_dueño.trim()) return 'El WhatsApp del dueño es requerido'
     if (!formData.industria) return 'Selecciona la industria'
     if (!formData.nombreAgente.trim()) return 'El nombre del agente es requerido'
     if (!formData.systemPrompt.trim()) return 'El system prompt es requerido'
@@ -222,7 +222,7 @@ export default function NuevoClientePage() {
           nombre: formData.nombre,
           email: formData.email,
           telefono: formData.telefono,
-          whatsapp_dueno: formData.whatsapp_dueno,
+          whatsapp_dueño: formData.whatsapp_dueño,
           industria: formData.industria,
           website: formData.website,
           plan: formData.plan,
@@ -349,12 +349,12 @@ export default function NuevoClientePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="whatsapp_dueno">WhatsApp del Dueño *</Label>
+                  <Label htmlFor="whatsapp_dueño">WhatsApp del Dueño *</Label>
                   <Input
-                    id="whatsapp_dueno"
+                    id="whatsapp_dueño"
                     placeholder="+593XXXXXXXXX"
-                    value={formData.whatsapp_dueno}
-                    onChange={(e) => set('whatsapp_dueno', e.target.value)}
+                    value={formData.whatsapp_dueño}
+                    onChange={(e) => set('whatsapp_dueño', e.target.value)}
                   />
                   <p className="text-xs text-text-muted">Para recibir alertas importantes del agente</p>
                 </div>
@@ -704,7 +704,7 @@ export default function NuevoClientePage() {
                   <span className="text-text-muted">Nombre:</span><span className="text-text-primary font-medium">{formData.nombre}</span>
                   <span className="text-text-muted">Email:</span><span className="text-text-primary">{formData.email}</span>
                   <span className="text-text-muted">Teléfono:</span><span className="text-text-primary">{formData.telefono}</span>
-                  <span className="text-text-muted">WhatsApp dueño:</span><span className="text-text-primary">{formData.whatsapp_dueno}</span>
+                  <span className="text-text-muted">WhatsApp dueño:</span><span className="text-text-primary">{formData.whatsapp_dueño}</span>
                   <span className="text-text-muted">Industria:</span><span className="text-text-primary capitalize">{formData.industria || '-'}</span>
                   <span className="text-text-muted">Website:</span><span className="text-text-primary">{formData.website || '-'}</span>
                 </div>

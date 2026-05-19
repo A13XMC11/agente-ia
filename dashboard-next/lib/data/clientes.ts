@@ -9,7 +9,7 @@ export interface Cliente {
   created_at: string
   telefono?: string
   industria?: string
-  whatsapp_dueno?: string
+  whatsapp_dueño?: string
   website?: string
 }
 
@@ -20,7 +20,7 @@ interface CreateClienteData {
   plan: string
   estado?: string
   industria?: string
-  whatsapp_dueno?: string
+  whatsapp_dueño?: string
   website?: string
 }
 
@@ -42,7 +42,7 @@ export async function createCliente(data: CreateClienteData): Promise<CreateClie
           plan: data.plan,
           estado: data.estado || 'activo',
           industria: data.industria || null,
-          whatsapp_dueño: data.whatsapp_dueno || null,
+          whatsapp_dueño: data.whatsapp_dueño || null,
           website: data.website || null,
         },
       ])

@@ -9,11 +9,11 @@ export interface Cliente {
   created_at: string
   telefono?: string
   industria?: string
-  whatsapp_dueno?: string
+  whatsapp_dueño?: string
   website?: string
 }
 
-const CLIENTES_SELECT = 'id, nombre, email, plan, estado, created_at, telefono, industria, whatsapp_dueno, website'
+const CLIENTES_SELECT = 'id, nombre, email, plan, estado, created_at, telefono, industria, whatsapp_dueño, website'
 
 export async function getClientes(): Promise<Cliente[]> {
   const { data, error } = await supabase
