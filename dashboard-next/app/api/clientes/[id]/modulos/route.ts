@@ -8,7 +8,7 @@ export async function GET(
 ) {
   try {
     const role = await getUserRole()
-    if (role !== 'admin') {
+    if (role !== 'super_admin' && role !== 'admin') {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -34,7 +34,7 @@ export async function PUT(
 ) {
   try {
     const role = await getUserRole()
-    if (role !== 'admin') {
+    if (role !== 'super_admin' && role !== 'admin') {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
     }
 
