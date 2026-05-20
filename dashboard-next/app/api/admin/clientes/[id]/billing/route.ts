@@ -87,9 +87,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     })
 
     if (!apiRes.ok) {
-      const errBody = await apiRes.json().catch(() => ({}))
-      console.error('[ADMIN BILLING POST] backend error:', errBody)
-      return NextResponse.json({ success: false, error: errBody.detail || 'Error al crear suscripción en Stripe' }, { status: 502 })
+      const rawText = await apiRes.text().catch(() => '')
+      let errBody: Record<string, unknown> = {}
+      try { errBody = JSON.parse(rawText) } catch { /* non-JSON response */ }
+      console.error('[ADMIN BILLING POST] backend error:', apiRes.status, rawText)
+      const detail = typeof errBody.detail === 'string' ? errBody.detail : `Error backend ${apiRes.status}`
+      return NextResponse.json({ success: false, error: detail }, { status: 502 })
     }
 
     const result = await apiRes.json()
