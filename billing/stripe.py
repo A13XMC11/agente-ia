@@ -128,7 +128,7 @@ class StripeBilling:
             price = price_response.json()
             price_id = price["id"]
 
-            # Create subscription
+            # Create subscription — invoice-based so no payment method required upfront
             sub_response = await self.http_client.post(
                 f"{self.stripe_api_url}/subscriptions",
                 auth=(self.stripe_secret_key, ""),
@@ -136,6 +136,8 @@ class StripeBilling:
                     "customer": customer_id,
                     "items[0][price]": price_id,
                     "metadata[client_id]": client_id,
+                    "collection_method": "send_invoice",
+                    "days_until_due": "30",
                 },
             )
 
