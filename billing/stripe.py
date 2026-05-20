@@ -147,23 +147,20 @@ class StripeBilling:
 
             subscription = sub_response.json()
 
-            # Save to Supabase
+            now = datetime.utcnow()
+            period_start = subscription.get("current_period_start")
+            period_end = subscription.get("current_period_end")
+
             self.supabase.table("subscription").insert({
                 "cliente_id": client_id,
                 "stripe_subscription_id": subscription["id"],
                 "stripe_customer_id": customer_id,
                 "monthly_amount": monthly_amount,
-                "status": "active",
-                "current_period_start": datetime.fromtimestamp(
-                    subscription["current_period_start"]
-                ).isoformat(),
-                "current_period_end": datetime.fromtimestamp(
-                    subscription["current_period_end"]
-                ).isoformat(),
-                "next_billing_date": datetime.fromtimestamp(
-                    subscription["current_period_end"]
-                ).isoformat(),
-                "created_at": datetime.utcnow().isoformat(),
+                "status": subscription.get("status", "active"),
+                "current_period_start": datetime.fromtimestamp(period_start).isoformat() if period_start else now.isoformat(),
+                "current_period_end": datetime.fromtimestamp(period_end).isoformat() if period_end else None,
+                "next_billing_date": datetime.fromtimestamp(period_end).isoformat() if period_end else None,
+                "created_at": now.isoformat(),
             }).execute()
 
             logger.info(f"Subscription created for {client_id}")
