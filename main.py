@@ -29,6 +29,7 @@ from seguridad.auth import AuthManager
 from seguridad.rate_limiter import RateLimiter
 from seguridad.validator import WebhookValidator
 from config.modelos import UserLogin, TokenResponse
+from billing.stripe import StripeBilling
 
 
 # Configure structured logging
@@ -77,6 +78,9 @@ email_handler: EmailHandler | None = None
 alertas_module: Any | None = None
 seguimiento_module: Any | None = None
 scheduler: AsyncIOScheduler | None = None
+
+# Billing
+stripe_billing: StripeBilling | None = None
 
 
 async def _verificar_todos_los_seguimientos(
@@ -157,7 +161,7 @@ async def lifespan(app: FastAPI):
     global message_router, auth_manager, rate_limiter, supabase_client
     global normalizer, buffer, memory, validator
     global whatsapp_handler, instagram_handler, facebook_handler, email_handler
-    global alertas_module, seguimiento_module, scheduler
+    global alertas_module, seguimiento_module, scheduler, stripe_billing
 
     startup_ok = False
 
@@ -421,6 +425,24 @@ async def lifespan(app: FastAPI):
             alertas_module = None
             scheduler = None
 
+        # 8. Initialize Stripe billing
+        try:
+            stripe_secret_key = os.getenv("STRIPE_SECRET_KEY", "")
+            stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+            if stripe_secret_key and stripe_webhook_secret:
+                stripe_billing = StripeBilling(
+                    stripe_secret_key=stripe_secret_key,
+                    stripe_webhook_secret=stripe_webhook_secret,
+                    supabase_client=supabase_service_client,
+                    stripe_product_id=os.getenv("STRIPE_PRODUCT_ID") or None,
+                )
+                logger.info("stripe_billing_initialized")
+            else:
+                logger.warning("stripe_billing_skipped", reason="STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET not set")
+        except Exception as e:
+            logger.error("stripe_billing_init_error", error=str(e))
+            stripe_billing = None
+
         startup_ok = True
         logger.info("application_startup_complete")
 
@@ -439,6 +461,13 @@ async def lifespan(app: FastAPI):
                 logger.info("scheduler_shutdown")
             except Exception as e:
                 logger.error("scheduler_shutdown_error", error=str(e))
+
+        if stripe_billing:
+            try:
+                await stripe_billing.close()
+                logger.info("stripe_billing_closed")
+            except Exception as e:
+                logger.error("stripe_billing_close_error", error=str(e))
 
         if seguimiento_module:
             try:
@@ -755,6 +784,34 @@ async def email_webhook(request: Request):
     return response
 
 
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    """
+    Stripe webhook endpoint.
+
+    Handles: invoice.payment_succeeded, invoice.payment_failed,
+    customer.subscription.deleted.
+    """
+    if not stripe_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    raw_body = await request.body()
+    signature = request.headers.get("Stripe-Signature", "")
+
+    if not stripe_billing.verify_webhook_signature(raw_body, signature):
+        logger.warning("stripe_webhook_invalid_signature")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    try:
+        event = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    result = await stripe_billing.handle_webhook(event)
+    logger.info("stripe_webhook_processed", event_type=event.get("type"))
+    return result
+
+
 @app.get("/webhooks/whatsapp/verify")
 async def whatsapp_verify(
     mode: str | None = Query(default=None, alias="hub.mode"),
@@ -910,6 +967,66 @@ async def get_leads(client_id: str, request: Request):
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Failed to fetch leads")
+
+
+# ============================================================================
+# BILLING ENDPOINTS
+# ============================================================================
+
+@app.post("/api/billing/create-subscription")
+async def create_subscription(request: Request):
+    """
+    Create a Stripe subscription for a client.
+
+    Body: { client_id, monthly_amount, customer_email }
+    """
+    if not stripe_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    body = await request.json()
+    client_id = body.get("client_id")
+    monthly_amount = body.get("monthly_amount")
+    customer_email = body.get("customer_email")
+
+    if not client_id or not monthly_amount or not customer_email:
+        raise HTTPException(status_code=400, detail="client_id, monthly_amount and customer_email are required")
+
+    result = await stripe_billing.create_subscription(
+        client_id=client_id,
+        monthly_amount=float(monthly_amount),
+        customer_email=customer_email,
+    )
+
+    if not result:
+        raise HTTPException(status_code=502, detail="Failed to create subscription in Stripe")
+
+    logger.info("subscription_created", client_id=client_id)
+    return {"status": "ok", "subscription_id": result.get("id")}
+
+
+@app.post("/api/billing/cancel-subscription")
+async def cancel_subscription(request: Request):
+    """
+    Cancel a client's Stripe subscription.
+
+    Body: { client_id }
+    """
+    if not stripe_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    body = await request.json()
+    client_id = body.get("client_id")
+
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+
+    success = await stripe_billing.cancel_subscription(client_id)
+
+    if not success:
+        raise HTTPException(status_code=502, detail="Failed to cancel subscription")
+
+    logger.info("subscription_cancelled", client_id=client_id)
+    return {"status": "ok"}
 
 
 # ============================================================================

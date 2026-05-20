@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
+import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
 
 interface Cliente {
   id: string
@@ -19,6 +20,14 @@ interface Cliente {
   estado: 'activo' | 'pausado' | 'cancelado'
   precio_mensual: number
   created_at: string
+}
+
+interface Subscription {
+  status: 'active' | 'past_due' | 'cancelled' | 'trialing'
+  monthly_amount: number
+  next_billing_date: string | null
+  current_period_end: string | null
+  payment_failed_count: number
 }
 
 interface Agente {
@@ -55,8 +64,11 @@ export default function ClienteDetalle() {
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [agente, setAgente] = useState<Agente | null>(null)
   const [modulos, setModulos] = useState<Modulo[]>([])
+  const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [billingAmount, setBillingAmount] = useState('')
+  const [billingLoading, setBillingLoading] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -64,10 +76,11 @@ export default function ClienteDetalle() {
 
   async function loadData() {
     try {
-      const [clienteRes, agenteRes, modulosRes] = await Promise.all([
+      const [clienteRes, agenteRes, modulosRes, billingRes] = await Promise.all([
         fetch(`/api/clientes/${clienteId}`),
         fetch(`/api/clientes/${clienteId}/agente`),
-        fetch(`/api/clientes/${clienteId}/modulos`)
+        fetch(`/api/clientes/${clienteId}/modulos`),
+        fetch(`/api/admin/clientes/${clienteId}/billing`),
       ])
 
       if (clienteRes.ok) {
@@ -83,6 +96,11 @@ export default function ClienteDetalle() {
       if (modulosRes.ok) {
         const modulosData = await modulosRes.json()
         setModulos(modulosData.data || [])
+      }
+
+      if (billingRes.ok) {
+        const billingData = await billingRes.json()
+        setSubscription(billingData.data ?? null)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -154,6 +172,51 @@ export default function ClienteDetalle() {
       }
     } catch (error) {
       console.error('Error toggling modulo:', error)
+    }
+  }
+
+  async function handleCreateSubscription() {
+    const amount = parseFloat(billingAmount)
+    if (!amount || amount <= 0) return alert('Ingresa un monto válido')
+    setBillingLoading(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monthly_amount: amount }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert('Suscripción creada exitosamente')
+        const refreshed = await fetch(`/api/admin/clientes/${clienteId}/billing`)
+        if (refreshed.ok) setSubscription((await refreshed.json()).data)
+        setBillingAmount('')
+      } else {
+        alert(data.error || 'Error al crear suscripción')
+      }
+    } catch {
+      alert('Error de red')
+    } finally {
+      setBillingLoading(false)
+    }
+  }
+
+  async function handleCancelSubscription() {
+    if (!confirm('¿Cancelar suscripción? El cliente quedará pausado.')) return
+    setBillingLoading(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, { method: 'DELETE' })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert('Suscripción cancelada')
+        setSubscription(null)
+      } else {
+        alert(data.error || 'Error al cancelar')
+      }
+    } catch {
+      alert('Error de red')
+    } finally {
+      setBillingLoading(false)
     }
   }
 
@@ -343,6 +406,72 @@ export default function ClienteDetalle() {
           </CardContent>
         </Card>
       )}
+
+      <Separator />
+
+      {/* ── Billing ─────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Facturación</CardTitle>
+          <CardDescription>Suscripción Stripe de este cliente</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {subscription ? (
+            <>
+              <div className="flex items-center gap-3">
+                {subscription.status === 'active' && <CheckCircle className="h-5 w-5 text-success" />}
+                {subscription.status === 'past_due' && <AlertTriangle className="h-5 w-5 text-warning" />}
+                {subscription.status === 'cancelled' && <XCircle className="h-5 w-5 text-error" />}
+                <div>
+                  <p className="font-semibold text-text-primary capitalize">{subscription.status.replace('_', ' ')}</p>
+                  <p className="text-sm text-text-secondary">
+                    ${subscription.monthly_amount}/mes
+                    {subscription.next_billing_date && (
+                      <> · Próximo cobro: {new Date(subscription.next_billing_date).toLocaleDateString('es')}</>
+                    )}
+                    {subscription.payment_failed_count > 0 && (
+                      <> · {subscription.payment_failed_count} pago(s) fallido(s)</>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={handleCancelSubscription}
+                disabled={billingLoading}
+                className="w-full sm:w-auto"
+              >
+                {billingLoading ? 'Cancelando...' : 'Cancelar suscripción'}
+              </Button>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-text-secondary">Sin suscripción activa. Crea una para habilitar el cobro mensual.</p>
+              <div className="flex items-center gap-3">
+                <div className="space-y-1">
+                  <Label>Monto mensual (USD)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="149.00"
+                    value={billingAmount}
+                    onChange={(e) => setBillingAmount(e.target.value)}
+                    className="w-40"
+                  />
+                </div>
+                <Button
+                  onClick={handleCreateSubscription}
+                  disabled={billingLoading || !billingAmount}
+                  className="self-end"
+                >
+                  {billingLoading ? 'Creando...' : 'Crear suscripción'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Separator />
 

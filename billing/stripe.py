@@ -23,18 +23,12 @@ class StripeBilling:
         stripe_secret_key: str,
         stripe_webhook_secret: str,
         supabase_client: Any,
+        stripe_product_id: Optional[str] = None,
     ):
-        """
-        Initialize Stripe billing.
-
-        Args:
-            stripe_secret_key: Stripe secret API key
-            stripe_webhook_secret: Stripe webhook signing secret
-            supabase_client: Supabase client
-        """
         self.stripe_secret_key = stripe_secret_key
         self.stripe_webhook_secret = stripe_webhook_secret
         self.supabase = supabase_client
+        self.stripe_product_id = stripe_product_id
         self.stripe_api_url = "https://api.stripe.com/v1"
         self.http_client = httpx.AsyncClient(timeout=30.0)
 
@@ -110,16 +104,21 @@ class StripeBilling:
             customer = customer_response.json()
             customer_id = customer["id"]
 
-            # Create price
+            # Create price — reuse existing product if configured
+            price_data: dict[str, Any] = {
+                "currency": "usd",
+                "unit_amount": int(monthly_amount * 100),
+                "recurring[interval]": "month",
+            }
+            if self.stripe_product_id:
+                price_data["product"] = self.stripe_product_id
+            else:
+                price_data["product_data[name]"] = f"Agente IA - {client_id}"
+
             price_response = await self.http_client.post(
                 f"{self.stripe_api_url}/prices",
                 auth=(self.stripe_secret_key, ""),
-                data={
-                    "currency": "usd",
-                    "unit_amount": int(monthly_amount * 100),
-                    "recurring": {"interval": "month"},
-                    "product_data": {"name": f"Agente IA - {client_id}"},
-                },
+                data=price_data,
             )
 
             if price_response.status_code != 200:
