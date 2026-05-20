@@ -320,7 +320,7 @@ class SeguimientoModule:
             hace_23h = now - timedelta(hours=23)
 
             response = self.supabase.table("pagos").select(
-                "id, nombre_cliente, telefono_cliente, created_at"
+                "id, sender_telefono, created_at"
             ).eq(
                 "cliente_id", cliente_id
             ).eq("estado", "confirmado").limit(200).execute()
@@ -342,9 +342,8 @@ class SeguimientoModule:
                 # Send follow-up 24h after payment
                 if hace_25h <= created_at <= hace_23h:
                     if not await self._ya_enviado(cliente_id, "seguimiento_post_venta", pago_id, ventana_horas=48):
-                        # Get customer name/phone from payment metadata
-                        nombre = pago.get("nombre_cliente", "Amigo/a")
-                        telefono = pago.get("telefono_cliente")
+                        nombre = "Amigo/a"
+                        telefono = pago.get("sender_telefono")
 
                         if telefono:
                             mensaje = (
