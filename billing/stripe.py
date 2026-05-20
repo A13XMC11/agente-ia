@@ -163,6 +163,19 @@ class StripeBilling:
                 "created_at": now.isoformat(),
             }).execute()
 
+            # Finalize and send the invoice so the client receives it by email
+            invoice_id = subscription.get("latest_invoice")
+            if invoice_id:
+                await self.http_client.post(
+                    f"{self.stripe_api_url}/invoices/{invoice_id}/finalize",
+                    auth=(self.stripe_secret_key, ""),
+                )
+                await self.http_client.post(
+                    f"{self.stripe_api_url}/invoices/{invoice_id}/send",
+                    auth=(self.stripe_secret_key, ""),
+                )
+                logger.info(f"Invoice {invoice_id} finalized and sent for {client_id}")
+
             logger.info(f"Subscription created for {client_id}")
 
             return subscription
