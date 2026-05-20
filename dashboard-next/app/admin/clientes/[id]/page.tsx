@@ -416,12 +416,11 @@ export default function ClienteDetalle() {
           <CardDescription>Suscripción Stripe de este cliente</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {subscription ? (
+          {subscription && subscription.status !== 'cancelled' ? (
             <>
               <div className="flex items-center gap-3">
                 {subscription.status === 'active' && <CheckCircle className="h-5 w-5 text-success" />}
                 {subscription.status === 'past_due' && <AlertTriangle className="h-5 w-5 text-warning" />}
-                {subscription.status === 'cancelled' && <XCircle className="h-5 w-5 text-error" />}
                 <div>
                   <p className="font-semibold text-text-primary capitalize">{subscription.status.replace('_', ' ')}</p>
                   <p className="text-sm text-text-secondary">
@@ -446,7 +445,15 @@ export default function ClienteDetalle() {
             </>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-text-secondary">Sin suscripción activa. Crea una para habilitar el cobro mensual.</p>
+              {subscription?.status === 'cancelled' && (
+                <p className="text-sm text-text-secondary flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-error" />
+                  Suscripción cancelada. Puedes crear una nueva.
+                </p>
+              )}
+              {!subscription && (
+                <p className="text-sm text-text-secondary">Sin suscripción activa. Crea una para habilitar el cobro mensual.</p>
+              )}
               <div className="flex items-center gap-3">
                 <div className="space-y-1">
                   <Label>Monto mensual (USD)</Label>
