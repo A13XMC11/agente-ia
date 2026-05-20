@@ -93,7 +93,7 @@ class StripeBilling:
                 auth=(self.stripe_secret_key, ""),
                 data={
                     "email": customer_email,
-                    "metadata": {"client_id": client_id},
+                    "metadata[client_id]": client_id,
                 },
             )
 
@@ -134,8 +134,8 @@ class StripeBilling:
                 auth=(self.stripe_secret_key, ""),
                 data={
                     "customer": customer_id,
-                    "items": [{"price": price_id}],
-                    "metadata": {"client_id": client_id},
+                    "items[0][price]": price_id,
+                    "metadata[client_id]": client_id,
                 },
             )
 
