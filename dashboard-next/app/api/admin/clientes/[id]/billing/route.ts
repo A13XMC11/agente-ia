@@ -48,15 +48,16 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ success: false, error: 'monthly_amount requerido y debe ser positivo' }, { status: 400 })
     }
 
-    // Check if subscription already exists
+    // Block only if there's an active/past_due subscription
     const { data: existing } = await supabase
       .from('subscription')
-      .select('id')
+      .select('id, status')
       .eq('cliente_id', clienteId)
+      .not('status', 'eq', 'cancelled')
       .maybeSingle()
 
     if (existing) {
-      return NextResponse.json({ success: false, error: 'El cliente ya tiene una suscripción. Cancela la existente primero.' }, { status: 409 })
+      return NextResponse.json({ success: false, error: 'El cliente ya tiene una suscripción activa. Cancela la existente primero.' }, { status: 409 })
     }
 
     // Fetch client email

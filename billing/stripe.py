@@ -378,6 +378,10 @@ class StripeBilling:
             )
 
             if response.status_code == 200:
+                self.supabase.table("subscription").update({
+                    "status": "cancelled",
+                    "cancelled_date": datetime.utcnow().isoformat(),
+                }).eq("cliente_id", client_id).execute()
                 logger.info(f"Subscription cancelled for {client_id}")
                 return True
             else:
