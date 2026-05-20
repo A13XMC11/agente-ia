@@ -402,3 +402,116 @@ All tables have RLS policies: `auth.uid()` and `current_client_id()` functions e
 - Meta Cloud API: https://developers.facebook.com/docs/whatsapp/cloud-api/
 - Redis: https://redis.io/documentation
 - Stripe: https://stripe.com/docs
+
+---
+
+# LanLabs - Agente IA SaaS WhatsApp
+
+## Estado del Proyecto
+Plataforma SaaS multi-tenant de agentes IA conversacionales para WhatsApp.
+
+## Infraestructura
+- API: https://api.lanlabsec.com (FastAPI + Python, VPS Hostinger Easypanel)
+- Dashboard: https://dashboard.lanlabsec.com (Next.js 16, Vercel)
+- DB: Supabase (PostgreSQL) - proyecto SaasAIWhatsApp
+- Cache: Redis Cloud
+- VPS: 147.79.75.41
+- GitHub: A13XMC11/agente-ia (rama main)
+
+## Stack
+- Backend: Python 3.11, FastAPI, OpenAI GPT-4o, Supabase, Redis
+- Frontend: Next.js 16, TypeScript, Tailwind CSS
+- IA: GPT-4o (function calling), Whisper (audio), GPT-4o Vision (comprobantes)
+- Integraciones: Meta Cloud API, Google Calendar (Service Account)
+
+## Cliente de Prueba
+- ID: d21c2725-7e2d-442b-8207-958fd4bcb038
+- Email: alexander777800@gmail.com
+- WhatsApp número real: +593 99 267 2980
+- Phone Number ID: 1108311609031850
+- WABA ID: 1474171134171462
+- Google Calendar ID: alexander777800@gmail.com
+
+## Agente Configurado
+- Nombre: Sofía
+- Empresa: LanLabs
+- Servicios: Plan Básico $149/mes, Profesional $249/mes, Empresarial $399/mes
+- Zona horaria: America/Guayaquil
+
+## Paleta de Colores Dashboard
+- Fondo: #06141B
+- Surface: #11212D
+- Surface-2: #253745
+- Texto muted: #4A5C6A
+- Texto soft: #9BA8AB
+- Texto principal: #CCD0CF
+- Accent: #CCD0CF
+- Accent text: #06141B
+
+## Funcionalidades Completadas ✅
+- Agente WhatsApp con GPT-4o y número real
+- Agendamiento con Google Calendar (Service Account)
+- Transferencias bancarias con GPT-4o Vision
+- Procesamiento de audios con Whisper
+- Alertas al dueño por WhatsApp en tiempo real
+- Calificación de leads acumulativa (score 0-10)
+- Seguimientos automáticos (APScheduler cada 30min)
+- Dashboard Next.js completo con datos reales
+- Login JWT con roles (super_admin, admin, operador)
+- Onboarding de clientes (wizard 4 pasos)
+- Aprobación de pagos desde dashboard
+- Página de configuración WhatsApp self-service
+- Guía de onboarding descargable
+
+## Funcionalidades Pendientes ❌
+- Rediseño visual dashboard (paleta premium arriba)
+- Instagram y Facebook
+- Links de pago
+- Campañas masivas
+- Billing / Stripe
+- Analytics en dashboard
+- Email de bienvenida al cliente (SendGrid)
+
+## Tablas Supabase (RLS deshabilitado)
+leads, canales_config, clientes, conversaciones,
+mensajes, agentes, modulos_activos, datos_bancarios,
+alertas, citas, pagos, comprobantes_procesados
+
+## Variables de Entorno Backend (Easypanel)
+META_VERIFY_TOKEN=agente-ia
+META_ACCESS_TOKEN=...
+META_PHONE_NUMBER_ID=1108311609031850
+GOOGLE_CALENDAR_CREDENTIALS_JSON=...
+GOOGLE_CALENDAR_ID=alexander777800@gmail.com
+GOOGLE_CALENDAR_TIMEZONE=America/Guayaquil
+SUPABASE_URL=...
+SUPABASE_KEY=... (anon)
+SUPABASE_SERVICE_KEY=...
+OPENAI_API_KEY=...
+REDIS_URL=...
+
+## Variables de Entorno Dashboard (Vercel)
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+JWT_SECRET=...
+NEXT_PUBLIC_API_URL=https://api.lanlabsec.com
+
+## Estructura del Proyecto Backend
+/core: agent.py, buffer.py, memory.py, router.py
+/modulos: ventas.py, agendamiento.py, cobros.py,
+          calificacion.py, alertas.py, seguimiento.py
+/canales: whatsapp.py
+/dashboard-next: Next.js dashboard completo
+main.py, Dockerfile, requirements.txt
+
+## Notas Importantes
+- El campo whatsapp_dueño tiene ñ — usar select('*')
+  en queries de Supabase para evitar errores de parsing
+- RLS deshabilitado en todas las tablas principales
+- El agente usa supabase_service_client para todas
+  las operaciones (no el cliente anon)
+- Los logs de debug con print() aparecen en Easypanel
+  Los logger.info() NO aparecen en Easypanel
+- El token de Meta es permanente (no expira)
+- Google Calendar usa Service Account (no OAuth2)
