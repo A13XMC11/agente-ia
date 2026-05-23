@@ -1,4 +1,5 @@
 import { createCliente, createAgent, activateModulos, configureWhatsApp, saveDatosBancarios } from '@/lib/data/clientes'
+import { getUserRole } from '@/lib/auth'
 import { randomBytes } from 'crypto'
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dashboard.lanlabsec.com'
@@ -95,6 +96,11 @@ interface ApiResponse {
 const VALID_PLANS = ['basico', 'profesional', 'empresarial'] as const
 
 export async function POST(request: Request): Promise<Response> {
+  const role = await getUserRole()
+  if (role !== 'super_admin') {
+    return Response.json({ success: false, error: 'Unauthorized' } as ApiResponse, { status: 403 })
+  }
+
   try {
     const body: CreateClienteRequest = await request.json()
 

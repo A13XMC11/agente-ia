@@ -11,6 +11,7 @@ Manages:
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Any
+from uuid import uuid4
 import structlog
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -60,7 +61,10 @@ class AuthManager:
             jwt_expiration_hours: Token expiration in hours
             rate_limiter: Optional RateLimiter for failed login tracking
         """
-        self.jwt_secret = jwt_secret or os.getenv("JWT_SECRET_KEY", "")
+        resolved_secret = jwt_secret or os.getenv("JWT_SECRET_KEY", "")
+        if not resolved_secret:
+            raise ValueError("JWT_SECRET_KEY environment variable must be set")
+        self.jwt_secret = resolved_secret
         self.jwt_algorithm = jwt_algorithm
         self.jwt_expiration_hours = jwt_expiration_hours
         self.rate_limiter = rate_limiter
@@ -206,6 +210,7 @@ class AuthManager:
 
         claims = {
             "sub": user_id,
+            "jti": str(uuid4()),
             "user_id": user_id,
             "client_id": client_id,
             "role": role,

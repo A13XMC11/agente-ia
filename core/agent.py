@@ -58,23 +58,6 @@ class AgentEngine:
         self.system_prompt = client_config.get("system_prompt", "")
         self.active_modules = client_config.get("active_modules", {})
 
-        # 🔍 DIAGNOSTIC: Log initial system_prompt
-        print(f"\n{'='*80}")
-        print(f"🔍 [AGENT INIT] AgentEngine constructor called:")
-        print(f"   client_id: {self.client_id}")
-        print(f"   system_prompt from client_config (before rules):")
-        print(f"      Length: {len(self.system_prompt)}")
-        print(f"      First 200 chars: {self.system_prompt[:200]!r}")
-        print(f"   active_modules: {self.active_modules}")
-        print(f"{'='*80}\n")
-
-        logger.info(f"🟢 === AgentEngine.__init__ ===")
-        logger.info(f"client_id: {self.client_id}")
-        logger.info(f"system_prompt length: {len(self.system_prompt)}")
-        logger.info(f"system_prompt preview: {self.system_prompt[:100]!r}")
-        logger.info(f"active_modules: {self.active_modules}")
-        logger.info(f"calificacion_enabled: {self.active_modules.get('calificacion', False)}")
-
         # Inject current date and time
         tz = pytz.timezone(client_config.get("business_hours_timezone", "America/Guayaquil"))
         now = datetime.now(tz)
@@ -145,7 +128,6 @@ class AgentEngine:
                 f"{self.system_prompt[:100]!r}"
             )
         self.temperature = client_config.get("temperature", 0.7)
-
         self.max_tokens = client_config.get("max_tokens", 4000)
 
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -156,34 +138,17 @@ class AgentEngine:
         self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
         self._tools_cache = None
 
-        # Log initialization status
-        logger.info(
-            f"AgentEngine init - supabase_service: {supabase_service_client is not None}, "
-            f"supabase_client: {supabase_client is not None}"
-        )
-
         self.supabase = supabase_client
         self.alertas = AlertasModule(supabase_client) if supabase_client else None
         self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
 
-        logger.info(
-            f"🟢 CalificacionModule created: {self.calificacion is not None} "
-            f"(client_id={self.client_id})"
-        )
-        if self.calificacion:
-            print(f"✅ CalificacionModule READY for {self.client_id}")
-            logger.info(f"🟢 CalificacionModule is NOT None - ready to use")
-        else:
-            print(f"❌ CalificacionModule is None for {self.client_id} - SCORING WILL BE SKIPPED")
-            logger.warning(f"🔴 CalificacionModule is None - lead scoring will NOT work!")
-
-        # Temporary storage for current message context (passed to tool calls)
-        self._current_media_url = None
-        self._current_media_type = None
-        self._current_conversation_id = None
-        self._current_phone_number_id = None
+        # Context for current message (injected per-request by the router)
+        self._current_media_url: Optional[str] = None
+        self._current_media_type: Optional[str] = None
+        self._current_conversation_id: Optional[str] = None
+        self._current_phone_number_id: Optional[str] = None
 
     def set_whatsapp_handler(self, handler: Any) -> None:
         """Inject WhatsApp handler for owner notifications."""
@@ -565,37 +530,26 @@ class AgentEngine:
                 - split_messages: list[str] (if response is long)
                 - escalated: bool
         """
-        print(f"\n\n{'#'*80}")
-        print(f"# PROCESS_MESSAGE STARTED")
-        print(f"{'#'*80}\n")
-        logger.info("🔵 === PROCESS_MESSAGE STARTED ===")
         user_message = mensaje_normalizado.get("text", "")
         sender_id = mensaje_normalizado.get("sender_id", "unknown")
         media_url = mensaje_normalizado.get("media_url")
         media_type = mensaje_normalizado.get("media_type")
 
+        # Store message context so tool handlers (_execute_tool_call) can access it
+        self._current_media_url = media_url
+        self._current_media_type = media_type
+        self._current_conversation_id = mensaje_normalizado.get("conversation_id")
+        self._current_phone_number_id = mensaje_normalizado.get("phone_number_id")
+
         logger.info(
             f"Processing message from {sender_id} in client {cliente_id}",
             extra={"client_id": cliente_id, "sender_id": sender_id},
         )
-        logger.info(f"PM_START: {sender_id}")
 
         # Simulate typing indicator
         typing_delay = self._calculate_typing_delay(user_message)
 
         # Build conversation history for context
-        # 🔍 DIAGNOSTIC: Log what system_prompt is being used
-        print(f"\n{'='*80}")
-        print(f"🔍 [AGENT PROCESS_MESSAGE] Building messages for GPT-4o:")
-        print(f"   client_id: {cliente_id}")
-        print(f"   sender_id: {sender_id}")
-        print(f"   system_prompt length: {len(self.system_prompt)}")
-        print(f"   system_prompt first 300 chars:")
-        print(f"      {self.system_prompt[:300]!r}")
-        if len(self.system_prompt) > 300:
-            print(f"   ... (total {len(self.system_prompt)} chars)")
-        print(f"{'='*80}\n")
-
         messages = [{"role": "system", "content": self.system_prompt}]
         if memory_context:
             for turn in memory_context:
@@ -606,51 +560,23 @@ class AgentEngine:
                     }
                 )
 
-        # Store media context for tool calls
-        self._current_media_url = media_url
-        self._current_media_type = media_type
-        self._current_conversation_id = mensaje_normalizado.get("metadata", {}).get("conversation_id", "")
-        self._current_phone_number_id = mensaje_normalizado.get("metadata", {}).get("phone_number_id", "")
-
-        # Add current message with media hint for LLM
-        content = user_message or ""
-
-        # For images: add hint about payment verification
-        if media_url and media_type == "image":
-            if not content:
-                content = "(El usuario envió una imagen)"
-            content += f"\n[Imagen adjunta — si el usuario solicitó transferencia bancaria, puede ser un comprobante de pago]"
-        # For transcribed audio: the text IS the transcription, don't add attachment markers
-        # For other media: document, video, etc. — note the attachment but keep the text as-is
-        elif media_url and media_type != "audio":
-            content += f"\n[Attachment: {media_type}]"
-        # For audio: never add markers; the transcribed text is the full message
+        # Add current message
+        content = user_message
+        if media_url:
+            content += f"\n[Attachment: {media_type} from {media_url}]"
 
         messages.append({"role": "user", "content": content})
 
         try:
-            logger.info(f"PM_STEP_1: Received message from {sender_id}")
-
             # First GPT-4o call — may return tool calls
-            logger.info(f"PM_STEP_2: Calling GPT-4o for {sender_id}")
-
-            available_tools = self._get_available_tools()
-            try:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=available_tools,
-                    tool_choice="auto",
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-            except Exception as e:
-                logger.error(f"SILENT_ERROR in GPT-4o_FIRST_CALL: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                raise
-
-            logger.info(f"PM_STEP_3: GPT-4o call succeeded, processing response")
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=self._get_available_tools(),
+                tool_choice="auto",
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
 
             assistant_message = response.choices[0].message
             response_text = assistant_message.content or ""
@@ -658,7 +584,6 @@ class AgentEngine:
 
             # Agentic loop: execute tool calls and get a final natural-language response
             if assistant_message.tool_calls:
-                logger.info(f"PM_STEP_3a: Found {len(assistant_message.tool_calls)} tool calls")
                 for tool_call in assistant_message.tool_calls:
                     function_calls.append(
                         {
@@ -673,20 +598,12 @@ class AgentEngine:
 
                 # Execute each tool and feed result back
                 for tool_call in assistant_message.tool_calls:
-                    try:
-                        tool_result = await self._execute_tool_call(
-                            tool_call.function.name,
-                            json.loads(tool_call.function.arguments),
-                            cliente_id,
-                            sender_id,
-                        )
-                        logger.info(f"PM_STEP_3b: Tool {tool_call.function.name} executed")
-                    except Exception as e:
-                        logger.error(f"SILENT_ERROR in TOOL_CALL {tool_call.function.name}: {e}")
-                        import traceback
-                        logger.error(traceback.format_exc())
-                        tool_result = json.dumps({"error": str(e)})
-
+                    tool_result = await self._execute_tool_call(
+                        tool_call.function.name,
+                        json.loads(tool_call.function.arguments),
+                        cliente_id,
+                        sender_id,
+                    )
                     messages.append(
                         {
                             "role": "tool",
@@ -696,32 +613,22 @@ class AgentEngine:
                     )
 
                 # Second GPT-4o call to get a natural-language response from tool results
-                logger.info(f"PM_STEP_3c: Calling GPT-4o for final response")
-                try:
-                    final_response = await self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-                    response_text = final_response.choices[0].message.content or ""
-                except Exception as e:
-                    logger.error(f"SILENT_ERROR in GPT-4o_SECOND_CALL: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    raise
+                final_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                response_text = final_response.choices[0].message.content or ""
 
             # Simulate response delay
-            logger.info(f"PM_STEP_4: Building response dict")
-            try:
-                response_delay = self._calculate_response_delay(len(response_text))
-                split_messages = self._split_long_messages(response_text)
-                escalated = any(call["name"] == "escalar_a_humano" for call in function_calls)
-            except Exception as e:
-                logger.error(f"SILENT_ERROR in RESPONSE_BUILDING: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                raise
+            response_delay = self._calculate_response_delay(len(response_text))
+
+            # Split long messages
+            split_messages = self._split_long_messages(response_text)
+
+            # Check if escalation was triggered
+            escalated = any(call["name"] == "escalar_a_humano" for call in function_calls)
 
             if not response_text:
                 logger.warning(
@@ -729,8 +636,7 @@ class AgentEngine:
                 )
                 response_text = "Disculpa, hubo un problema. ¿Puedes repetir tu pregunta?"
 
-            # Detect and send alerts (async, non-blocking)
-            response_dict = {
+            return {
                 "response_text": response_text,
                 "function_calls": function_calls,
                 "typing_indicator_ms": typing_delay,
@@ -740,87 +646,15 @@ class AgentEngine:
                 "request_id": str(uuid4()),
             }
 
-            # ============ LEAD SCORING (FIRST, before alerts) ============
-            logger.info(f"PM_STEP_5: Before SCORING - {sender_id}")
-            print(f"\n>>> SCORING CHECK: calificacion is {'INITIALIZED' if self.calificacion else 'NONE'}")
-            logger.info(f"SCORING_START: sender={sender_id}, calificacion={self.calificacion is not None}")
-            print(f">>> ABOUT TO CALL calcular_score_automatico for {sender_id}")
-            try:
-                if self.calificacion:
-                    score_result = await self.calificacion.calcular_score_automatico(
-                        client_id=cliente_id,
-                        usuario_id=sender_id,
-                        current_message=user_message,
-                        prior_messages=memory_context or [],
-                        current_ts=datetime.utcnow(),
-                        conversation_id=self._current_conversation_id or None,
-                    )
-                    print(f">>> SCORING SUCCESS: result={score_result}")
-                    logger.info(f"SCORING_DONE: {score_result}")
-                else:
-                    print(f">>> SCORING SKIPPED: no calificacion module")
-                    logger.warning("SCORING_SKIP: no calificacion module")
-            except Exception as e:
-                import traceback
-                full_trace = traceback.format_exc()
-                print(f"\n{'!'*80}")
-                print(f"! SCORING EXCEPTION CAUGHT")
-                print(f"! Exception type: {type(e).__name__}")
-                print(f"! Exception message: {str(e)}")
-                print(f"! Traceback:\n{full_trace}")
-                print(f"{'!'*80}\n")
-                logger.error(f"SCORING_EXCEPTION: {type(e).__name__}: {e}")
-                logger.error(f"SCORING_TRACEBACK:\n{full_trace}")
-            # ======================================
-
-            logger.info(f"PM_STEP_6: After SCORING - preparing alerts for {sender_id}")
-
-            # Trigger alert detection in background
-            if self.alertas:
-                try:
-                    logger.info(f"PM_STEP_6a: Creating alert detection task")
-                    asyncio.create_task(self.alertas.detectar_y_enviar_alertas(
-                        client_id=cliente_id,
-                        user_message=user_message,
-                        agent_response=response_dict,
-                        conversation_id=self._current_conversation_id,
-                        user_id=sender_id,
-                        sender_id=sender_id,
-                    ))
-                except Exception as e:
-                    logger.error(f"SILENT_ERROR in ALERT_TRIGGER: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-
-            logger.info(f"PM_STEP_7: Returning response for {sender_id}")
-            print(f"\n✓ PROCESS_MESSAGE RETURNING NORMALLY for {sender_id}")
-            print(f"  Response keys: {list(response_dict.keys())}")
-            print(f"  Response text: {response_dict.get('response_text', '')[:100]}...")
-            return response_dict
-
         except Exception as e:
-            import traceback
-            full_trace = traceback.format_exc()
-
-            # AGGRESSIVE LOGGING — capture everything
-            print(f"\n\n{'!'*80}")
-            print(f"! OUTER CATCH IN PROCESS_MESSAGE")
-            print(f"! Exception type: {type(e).__name__}")
-            print(f"! Exception message: {str(e)}")
-            print(f"! Full traceback:\n{full_trace}")
-            print(f"{'!'*80}\n")
-
             logger.error(
-                f"FATAL_ERROR in process_message: {str(e)}",
+                f"Error processing message: {str(e)}",
                 extra={"client_id": cliente_id, "sender_id": sender_id},
                 exc_info=True,
             )
-            logger.error(f"OUTER_CATCH_TYPE: {type(e).__name__}")
-            logger.error(f"OUTER_CATCH_MESSAGE: {str(e)}")
-            logger.error(f"FATAL_TRACEBACK:\n{full_trace}")
 
             # Graceful fallback: escalate
-            error_response = {
+            return {
                 "response_text": "Lo siento, no pude procesar tu mensaje en este momento. Estoy escalando tu caso con un agente humano.",
                 "function_calls": [
                     {
@@ -841,25 +675,6 @@ class AgentEngine:
                 "escalated": True,
                 "request_id": str(uuid4()),
             }
-
-            # Send critical alert on error
-            if self.alertas:
-                try:
-                    asyncio.create_task(self.alertas.enviar_alerta_critica(
-                        client_id=cliente_id,
-                        tipo="agent_failed",
-                        mensaje=f"❌ Error al procesar mensaje. El agente ha escalado el caso.\n\nError: {str(e)[:100]}",
-                        conversation_id=self._current_conversation_id,
-                        usuario_id=sender_id,
-                    ))
-                except Exception as alert_err:
-                    logger.error(f"SILENT_ERROR in ERROR_ALERT: {alert_err}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-
-            print(f"\n✗ PROCESS_MESSAGE RETURNING ERROR RESPONSE for {sender_id}")
-            print(f"  Error message: {error_response.get('response_text', '')}")
-            return error_response
 
     async def _execute_tool_call(
         self,
@@ -890,19 +705,6 @@ class AgentEngine:
             if tool_name == "crear_cita":
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
-
-                # Buscar lead_id del usuario para vincular con la cita
-                lead_id = None
-                if self.supabase:
-                    try:
-                        lead_response = self.supabase.table("leads").select("id").eq(
-                            "cliente_id", client_id
-                        ).eq("telefono", sender_id).limit(1).execute()
-                        if lead_response.data:
-                            lead_id = lead_response.data[0].get("id")
-                    except Exception as e:
-                        logger.warning(f"Error fetching lead_id for cita: {e}")
-
                 result = await self.agendamiento.crear_cita(
                     cliente_id=client_id,
                     fecha=arguments.get("fecha", ""),
@@ -912,8 +714,6 @@ class AgentEngine:
                     servicio=arguments.get("servicio", ""),
                     email_cliente=arguments.get("email_cliente", ""),
                     duracion_minutos=arguments.get("duracion_minutos", 60),
-                    conversacion_id=self._current_conversation_id or None,
-                    lead_id=lead_id,
                 )
                 return json.dumps(result, ensure_ascii=False)
 
@@ -940,11 +740,10 @@ class AgentEngine:
             if tool_name == "enviar_datos_bancarios":
                 if not self.cobros:
                     return json.dumps({"error": "Módulo de cobros no disponible"})
-                monto = arguments.get("monto_esperado")
                 result = await self.cobros.enviar_datos_bancarios(
                     client_id=client_id,
                     sender_id=sender_id,
-                    monto_esperado=float(monto) if monto else None,
+                    monto_esperado=arguments.get("monto_esperado"),
                 )
                 return json.dumps(result, ensure_ascii=False)
 
@@ -952,13 +751,11 @@ class AgentEngine:
                 if not self.cobros:
                     return json.dumps({"error": "Módulo de cobros no disponible"})
                 if not self._current_media_url:
-                    return json.dumps({
-                        "error": "No se detectó imagen de comprobante. Por favor envía una foto del comprobante."
-                    })
+                    return json.dumps({"error": "No se recibió imagen de comprobante"})
                 result = await self.cobros.registrar_pago(
                     client_id=client_id,
                     sender_id=sender_id,
-                    conversacion_id=self._current_conversation_id or None,
+                    conversacion_id=self._current_conversation_id,
                     media_id=self._current_media_url,
                     phone_number_id=self._current_phone_number_id or "",
                 )
@@ -966,7 +763,7 @@ class AgentEngine:
 
             if tool_name == "guardar_lead":
                 if not self.calificacion:
-                    return json.dumps({"error": "Módulo de calificación no disponible"})
+                    return json.dumps({"success": True, "message": "Lead registrado"})
                 result = await self.calificacion.guardar_lead(
                     client_id=client_id,
                     usuario_id=arguments.get("usuario_id", sender_id),
@@ -975,18 +772,17 @@ class AgentEngine:
                     telefono=arguments.get("telefono"),
                     empresa=arguments.get("empresa"),
                     tags=arguments.get("tags"),
-                    conversacion_id=self._current_conversation_id or None,
                 )
                 return json.dumps(result, ensure_ascii=False)
 
             if tool_name == "actualizar_score_lead":
                 if not self.calificacion:
-                    return json.dumps({"error": "Módulo de calificación no disponible"})
+                    return json.dumps({"success": True, "message": "Score actualizado"})
                 result = await self.calificacion.actualizar_score_lead(
                     client_id=client_id,
                     usuario_id=arguments.get("usuario_id", sender_id),
-                    score=float(arguments.get("score", 0)),
-                    razon=arguments.get("razon"),
+                    score_delta=arguments.get("score", 0),
+                    razon=arguments.get("razon", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)
 

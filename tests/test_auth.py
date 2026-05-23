@@ -16,8 +16,10 @@ class TestAuthManager:
 
     @pytest.fixture
     def auth_manager(self):
-        """Create auth manager instance."""
+        """Create auth manager instance with a mock Supabase client."""
+        from unittest.mock import MagicMock
         return AuthManager(
+            supabase_client=MagicMock(),
             jwt_secret="test-secret-key-very-long",
             jwt_algorithm="HS256",
             jwt_expiration_hours=24,
@@ -100,7 +102,9 @@ class TestAuthManager:
         )
 
         # Create new manager with different secret
+        from unittest.mock import MagicMock
         wrong_auth = AuthManager(
+            supabase_client=MagicMock(),
             jwt_secret="different-secret-key-very-long",
             jwt_algorithm="HS256",
         )

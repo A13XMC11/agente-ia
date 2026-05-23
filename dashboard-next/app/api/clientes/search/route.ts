@@ -1,4 +1,5 @@
 import { searchClientes } from '@/lib/data/clientes-server'
+import { getUserRole } from '@/lib/auth'
 
 interface ApiResponse {
   success: boolean
@@ -7,6 +8,11 @@ interface ApiResponse {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  const role = await getUserRole()
+  if (role !== 'super_admin') {
+    return Response.json({ success: false, error: 'Unauthorized' } as ApiResponse, { status: 403 })
+  }
+
   try {
     const url = new URL(request.url)
     const query = url.searchParams.get('q')

@@ -170,16 +170,21 @@ async def lifespan(app: FastAPI):
         supabase_url = os.getenv("SUPABASE_URL", "").strip()
         supabase_key = os.getenv("SUPABASE_KEY", "").strip()
         supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+        jwt_secret_key = os.getenv("JWT_SECRET_KEY", "").strip()
 
-        if not supabase_url or not supabase_key:
-            logger.error("startup_error", error="SUPABASE_URL or SUPABASE_KEY not set")
-            raise ValueError("Missing required Supabase credentials")
+        missing = [k for k, v in {
+            "SUPABASE_URL": supabase_url,
+            "SUPABASE_KEY": supabase_key,
+            "SUPABASE_SERVICE_KEY": supabase_service_key,
+            "JWT_SECRET_KEY": jwt_secret_key,
+        }.items() if not v]
+        if missing:
+            logger.error("startup_error", error=f"Missing required env vars: {missing}")
+            raise ValueError(f"Missing required environment variables: {missing}")
 
         supabase_client = create_client(supabase_url, supabase_key)
-        # Service client bypasses RLS — used only for internal server-side reads
-        supabase_service_client = create_client(
-            supabase_url, supabase_service_key or supabase_key
-        )
+        # Service client bypasses RLS — used only for internal server-side writes
+        supabase_service_client = create_client(supabase_url, supabase_service_key)
         logger.info("supabase_initialized")
 
         # 2. Initialize core services

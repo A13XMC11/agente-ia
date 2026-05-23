@@ -4,9 +4,11 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import type { User } from '@/types'
 
-const secretKey = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'your-secret-key-change-this-in-production',
-)
+const jwtSecret = process.env.JWT_SECRET
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET environment variable is not set')
+}
+const secretKey = new TextEncoder().encode(jwtSecret)
 
 function createServiceClient() {
   return createClient(

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const secretKey = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'your-secret-key-change-this-in-production',
-)
+const jwtSecret = process.env.JWT_SECRET
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET environment variable is not set')
+}
+const secretKey = new TextEncoder().encode(jwtSecret)
 
 async function verifyJWT(token: string) {
   try {
@@ -14,7 +16,7 @@ async function verifyJWT(token: string) {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Allow login and public routes without token verification
@@ -26,7 +28,6 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get('auth-token')?.value
 
   if (!token) {
-    // No token, redirect to login
     if (pathname !== '/login') {
       return NextResponse.redirect(new URL('/login', request.url))
     }
@@ -37,7 +38,6 @@ export async function middleware(request: NextRequest) {
   const user = await verifyJWT(token)
 
   if (!user) {
-    // Invalid token, redirect to login
     if (pathname !== '/login') {
       return NextResponse.redirect(new URL('/login', request.url))
     }
@@ -45,7 +45,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Role-based access control
-  const userRole = (user as any).role
+  const userRole = (user as { role?: string }).role
 
   // Admin routes - only super_admin
   if (pathname.startsWith('/admin')) {
@@ -59,7 +59,6 @@ export async function middleware(request: NextRequest) {
     if (userRole === 'super_admin') {
       return NextResponse.redirect(new URL('/admin', request.url))
     }
-    // Verify role is valid for cliente area
     if (userRole !== 'admin' && userRole !== 'operador' && userRole !== 'cliente') {
       return NextResponse.redirect(new URL('/login', request.url))
     }

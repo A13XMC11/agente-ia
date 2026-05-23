@@ -181,7 +181,9 @@ class TestLeadScoringEngine:
     def test_state_mapping_interesado(self):
         """Test state mapping for INTERESADO (5-6)."""
         engine = LeadScoringEngine()
-        result = engine.score_message("¿Cuánto cuesta? Necesito esto")  # budget + urgency
+        # "¿Cuánto cuesta?" triggers budget(+3) + specific_questions(+2) = 5 → interesado
+        # Avoids urgency keywords to stay in the 5-6 range
+        result = engine.score_message("¿Cuánto cuesta el servicio?")
         assert 5 <= result.score <= 6
         assert result.state == "interesado"
 
@@ -256,14 +258,16 @@ class TestCalificacionModuleIntegration:
     @pytest.mark.integration
     async def test_calcular_score_automatico_creates_history(self, mock_supabase):
         """Test that calcular_score_automatico creates a history row."""
+        from unittest.mock import MagicMock
         from modulos.calificacion import CalificacionModule
 
         module = CalificacionModule(mock_supabase)
 
-        # Mock the lead fetch to return no lead (create scenario)
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.side_effect = Exception(
-            "No lead"
-        )
+        # The actual query chain is: .table().select().eq().eq().limit(1).execute()
+        # Return empty data so code takes the "no existing lead" path
+        empty_response = MagicMock()
+        empty_response.data = None
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = empty_response
 
         result = await module.calcular_score_automatico(
             client_id="client123",
