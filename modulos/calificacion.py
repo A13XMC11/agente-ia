@@ -973,6 +973,28 @@ class CalificacionModule:
                     logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}")
                     raise
 
+            # Persistir señales detectadas en leads_signals
+            if result.signals and lead_id:
+                try:
+                    signal_rows = [
+                        {
+                            "id": str(uuid4()),
+                            "lead_id": lead_id,
+                            "score_before": old_score,
+                            "score_after": int(new_score),
+                            "delta": delta,
+                            "signal_type": sig.name,
+                            "signal_keywords": list(sig.matched_keywords),
+                            "message_excerpt": sig.excerpt[:500],
+                            "created_at": current_ts.isoformat(),
+                        }
+                        for sig in result.signals
+                    ]
+                    self.supabase.table("leads_signals").insert(signal_rows).execute()
+                    logger.info(f"Señales guardadas: {len(signal_rows)} para lead {lead_id}")
+                except Exception as sig_err:
+                    logger.warning(f"No se pudieron guardar señales en leads_signals: {sig_err}")
+
             # Trigger hot lead notification if state changed to caliente
             if new_state == "caliente" and old_state != "caliente" and lead_id:
                 logger.info(f"Lead pasó a estado CALIENTE, enviando notificación...")
