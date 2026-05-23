@@ -1,5 +1,6 @@
 import { createCliente, createAgent, activateModulos, configureWhatsApp, saveDatosBancarios } from '@/lib/data/clientes'
 import { getUserRole } from '@/lib/auth'
+import { supabase } from '@/lib/supabase/server'
 import { randomBytes } from 'crypto'
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dashboard.lanlabsec.com'
@@ -61,6 +62,30 @@ Responde este correo o escríbenos a soporte@lanlabsec.com
     const text = await res.text().catch(() => '')
     throw new Error(`Email API ${res.status}: ${text}`)
   }
+}
+
+async function createAuthUser(email: string, password: string, clienteId: string, nombre: string): Promise<void> {
+  // Create Supabase Auth user
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  })
+
+  if (error) throw new Error(`Auth user creation failed: ${error.message}`)
+
+  // Create record in usuarios table so JWT gets rol + cliente_id
+  const { error: usuarioError } = await supabase.from('usuarios').insert({
+    id: data.user.id,
+    cliente_id: clienteId,
+    email,
+    password_hash: 'managed_by_supabase_auth',
+    rol: 'admin',
+    nombre_completo: nombre,
+    activo: true,
+  })
+
+  if (usuarioError) throw new Error(`Usuario record creation failed: ${usuarioError.message}`)
 }
 
 interface CreateClienteRequest {
@@ -187,6 +212,9 @@ export async function POST(request: Request): Promise<Response> {
 
     // Generate a temporary password for the client
     const tempPassword = randomBytes(6).toString('hex')
+
+    // Create Supabase Auth user + usuarios record so the client can log in
+    await createAuthUser(body.email, tempPassword, clienteId, body.nombre)
 
     // Send welcome email (fire-and-forget — don't fail the request if email fails)
     sendWelcomeEmail({

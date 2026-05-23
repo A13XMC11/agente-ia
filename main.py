@@ -9,6 +9,8 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request, HTTPException, Query, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -1059,6 +1061,52 @@ async def cancel_subscription(request: Request):
         raise HTTPException(status_code=502, detail="Failed to cancel subscription")
 
     logger.info("subscription_cancelled", client_id=client_id)
+    return {"status": "ok"}
+
+
+# ============================================================================
+# INTERNAL ENDPOINTS
+# ============================================================================
+
+@app.post("/internal/send-email")
+async def internal_send_email(request: Request):
+    """
+    Internal endpoint for sending transactional emails via SendGrid.
+    Called by the Next.js dashboard (e.g. welcome email on client creation).
+    """
+    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+    if not sendgrid_api_key:
+        raise HTTPException(status_code=503, detail="SendGrid not configured")
+
+    body = await request.json()
+    to = body.get("to")
+    subject = body.get("subject")
+    text_body = body.get("body")
+
+    if not to or not subject or not text_body:
+        raise HTTPException(status_code=400, detail="Missing required fields: to, subject, body")
+
+    payload = {
+        "personalizations": [{"to": [{"email": to}], "subject": subject}],
+        "from": {"email": "noreply@lanlabsec.com", "name": "LanLabs"},
+        "content": [{"type": "text/plain", "value": text_body}],
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {sendgrid_api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    if response.status_code not in (200, 201, 202):
+        print(f"[send-email] SendGrid error {response.status_code}: {response.text}")
+        raise HTTPException(status_code=502, detail="Failed to send email")
+
+    print(f"[send-email] Email sent to {to}: {subject}")
     return {"status": "ok"}
 
 
