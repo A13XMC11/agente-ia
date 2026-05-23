@@ -983,18 +983,33 @@ async def create_subscription(request: Request):
     """
     Create a Stripe subscription for a client.
 
-    Body: { client_id, monthly_amount, customer_email }
+    Body: { monthly_amount, customer_email }
+    SUPER_ADMIN may also pass client_id to manage any client.
     """
-    if not stripe_billing:
+    if not stripe_billing or not auth_manager:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    try:
+        user = await auth_manager.verify_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     body = await request.json()
-    client_id = body.get("client_id")
     monthly_amount = body.get("monthly_amount")
     customer_email = body.get("customer_email")
 
+    user_role = user.get("role")
+    if user_role == "super_admin":
+        client_id = body.get("client_id") or user.get("client_id")
+    else:
+        client_id = user.get("client_id")
+
     if not client_id or not monthly_amount or not customer_email:
-        raise HTTPException(status_code=400, detail="client_id, monthly_amount and customer_email are required")
+        raise HTTPException(status_code=400, detail="monthly_amount and customer_email are required")
 
     result = await stripe_billing.create_subscription(
         client_id=client_id,
@@ -1014,16 +1029,29 @@ async def cancel_subscription(request: Request):
     """
     Cancel a client's Stripe subscription.
 
-    Body: { client_id }
+    SUPER_ADMIN may pass client_id in body to cancel any client's subscription.
     """
-    if not stripe_billing:
+    if not stripe_billing or not auth_manager:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
-    body = await request.json()
-    client_id = body.get("client_id")
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    try:
+        user = await auth_manager.verify_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user_role = user.get("role")
+    if user_role == "super_admin":
+        body = await request.json()
+        client_id = body.get("client_id") or user.get("client_id")
+    else:
+        client_id = user.get("client_id")
 
     if not client_id:
-        raise HTTPException(status_code=400, detail="client_id is required")
+        raise HTTPException(status_code=400, detail="client_id could not be determined")
 
     success = await stripe_billing.cancel_subscription(client_id)
 

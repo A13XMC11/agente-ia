@@ -274,6 +274,60 @@ class AgendamientoModule:
                 "ocupados": [],
             }
 
+    def _build_calendar_event(
+        self,
+        nombre_cliente: str,
+        servicio: str,
+        email_cliente: str,
+        metadata: dict[str, Any],
+    ) -> tuple[str, str]:
+        """
+        Build calendar event summary and description from flexible metadata.
+        Works for any business type (restaurant, clinic, salon, etc.).
+        """
+        # Summary: service + key metadata fields + client name
+        summary_parts = [servicio]
+        for key in ("pax", "zona", "motivo", "estilista", "especialidad"):
+            val = metadata.get(key)
+            if val:
+                summary_parts.append(str(val))
+        summary = f"{' | '.join(summary_parts)} — {nombre_cliente}"
+
+        # Description: all metadata as key: value lines
+        desc_lines = [f"Cliente: {nombre_cliente}"]
+        if email_cliente:
+            desc_lines.append(f"Email: {email_cliente}")
+        for key, val in metadata.items():
+            if val is not None:
+                desc_lines.append(f"{key.replace('_', ' ').capitalize()}: {val}")
+
+        return summary, "\n".join(desc_lines)
+
+    def _build_alert_message(
+        self,
+        nombre_cliente: str,
+        telefono_cliente: str,
+        servicio: str,
+        fecha: str,
+        hora: str,
+        metadata: dict[str, Any],
+    ) -> str:
+        """Build owner alert message including business-specific metadata."""
+        lines = [
+            "Nueva cita agendada:\n",
+            f"👤 Cliente: {nombre_cliente}",
+            f"📅 Fecha: {fecha}",
+            f"🕐 Hora: {hora}",
+            f"📋 Servicio: {servicio}",
+            f"📱 Teléfono: {telefono_cliente}",
+        ]
+        emoji_map = {"pax": "👥", "zona": "📍", "motivo": "🩺", "estilista": "✂️"}
+        for key, val in metadata.items():
+            if val is not None:
+                emoji = emoji_map.get(key, "•")
+                lines.append(f"{emoji} {key.replace('_', ' ').capitalize()}: {val}")
+        return "\n".join(lines)
+
     async def crear_cita(
         self,
         cliente_id: str,
@@ -286,10 +340,17 @@ class AgendamientoModule:
         duracion_minutos: int = 60,
         conversacion_id: Optional[str] = None,
         lead_id: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
+        """
+        Create an appointment. The `metadata` dict accepts any business-specific
+        fields the agent collects (pax, zona, motivo, estilista, etc.).
+        These are stored in `notas` and used to build the calendar event.
+        """
+        extra = metadata or {}
         logger.info(
             f"Creating appointment: cliente_id={cliente_id}, "
-            f"fecha={fecha}, hora={hora}, cliente={nombre_cliente}"
+            f"fecha={fecha}, hora={hora}, cliente={nombre_cliente}, metadata={extra}"
         )
 
         try:
@@ -309,7 +370,9 @@ class AgendamientoModule:
             )
             end_time = end_dt.strftime("%H:%M")
 
-            summary = f"{servicio} - {nombre_cliente}"
+            summary, description = self._build_calendar_event(
+                nombre_cliente, servicio, email_cliente, extra
+            )
 
             google_event_id = None
             if self.google.is_available():
@@ -318,7 +381,7 @@ class AgendamientoModule:
                     start_time=hora,
                     end_time=end_time,
                     summary=summary,
-                    description=f"Cliente: {nombre_cliente}\nEmail: {email_cliente or 'N/A'}",
+                    description=description,
                 )
 
             appointment = {
@@ -334,6 +397,7 @@ class AgendamientoModule:
                 "google_event_id": google_event_id,
                 "conversacion_id": conversacion_id,
                 "lead_id": lead_id,
+                "notas": json.dumps(extra, ensure_ascii=False) if extra else None,
             }
 
             response = self.supabase.table("citas").insert(appointment).execute()
@@ -344,16 +408,10 @@ class AgendamientoModule:
                 f"cliente={nombre_cliente}"
             )
 
-            # Send important alert to owner about new appointment
             if self.alertas:
                 try:
-                    mensaje = (
-                        f"Nueva cita agendada:\n\n"
-                        f"👤 Cliente: {nombre_cliente}\n"
-                        f"📅 Fecha: {fecha}\n"
-                        f"🕐 Hora: {hora}\n"
-                        f"📋 Servicio: {servicio}\n"
-                        f"📱 Teléfono: {telefono_cliente}"
+                    mensaje = self._build_alert_message(
+                        nombre_cliente, telefono_cliente, servicio, fecha, hora, extra
                     )
                     await self.alertas.enviar_alerta_importante(
                         client_id=cliente_id,
@@ -395,7 +453,7 @@ class AgendamientoModule:
         try:
             response = self.supabase.table("citas").select(
                 "id,nombre_cliente,email_cliente,servicio,"
-                "duracion_minutos,google_event_id,fecha,hora"
+                "duracion_minutos,google_event_id,fecha,hora,notas"
             ).eq("cliente_id", cliente_id).eq("telefono_cliente", telefono_cliente).eq(
                 "estado", "confirmada"
             ).order("created_at", desc=True).limit(1).execute()
@@ -424,6 +482,14 @@ class AgendamientoModule:
             duracion = old_appointment.get("duracion_minutos", 30)
             servicio = old_appointment.get("servicio", "Cita general")
             nombre = old_appointment.get("nombre_cliente", "")
+            email = old_appointment.get("email_cliente", "")
+
+            # Preserve original metadata when rescheduling
+            notas_raw = old_appointment.get("notas") or "{}"
+            try:
+                extra = json.loads(notas_raw) if isinstance(notas_raw, str) else (notas_raw or {})
+            except (json.JSONDecodeError, TypeError):
+                extra = {}
 
             if old_google_event_id:
                 self.google.delete_event(old_google_event_id)
@@ -435,13 +501,13 @@ class AgendamientoModule:
                 )
                 end_time = end_dt.strftime("%H:%M")
 
-                summary = f"{servicio} - {nombre}"
+                summary, description = self._build_calendar_event(nombre, servicio, email, extra)
                 new_google_event_id = self.google.create_event(
                     date_str=nueva_fecha,
                     start_time=nueva_hora,
                     end_time=end_time,
                     summary=summary,
-                    description="",
+                    description=description,
                 )
 
             self.supabase.table("citas").update({

@@ -133,14 +133,14 @@ class AgentEngine:
                 f"{self.system_prompt[:100]!r}"
             )
         self.temperature = client_config.get("temperature", 0.7)
-        self.max_tokens = client_config.get("max_tokens", 4000)
+        self.max_tokens = client_config.get("max_tokens", 1000)
 
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
 
         self.client = AsyncOpenAI(api_key=api_key)
-        self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+        self.model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         self._tools_cache = None
 
         self.supabase = supabase_client
@@ -225,7 +225,7 @@ class AgentEngine:
                                 },
                                 "telefono_cliente": {
                                     "type": "string",
-                                    "description": "Customer phone number",
+                                    "description": "Customer phone number — auto-populated from WhatsApp session, do NOT ask the user for it",
                                 },
                                 "servicio": {
                                     "type": "string",
@@ -245,7 +245,6 @@ class AgentEngine:
                                 "fecha",
                                 "hora",
                                 "nombre_cliente",
-                                "telefono_cliente",
                                 "servicio",
                             ],
                         },
@@ -265,7 +264,7 @@ class AgentEngine:
                                 },
                                 "telefono_cliente": {
                                     "type": "string",
-                                    "description": "Customer phone number",
+                                    "description": "Customer phone number — auto-populated from WhatsApp session, do NOT ask the user for it",
                                 },
                                 "nueva_fecha": {
                                     "type": "string",
@@ -276,7 +275,7 @@ class AgentEngine:
                                     "description": "New time (HH:MM)",
                                 },
                             },
-                            "required": ["cliente_id", "telefono_cliente", "nueva_fecha", "nueva_hora"],
+                            "required": ["cliente_id", "nueva_fecha", "nueva_hora"],
                         },
                     },
                 },
@@ -294,10 +293,10 @@ class AgentEngine:
                                 },
                                 "telefono_cliente": {
                                     "type": "string",
-                                    "description": "Customer phone number",
+                                    "description": "Customer phone number — auto-populated from WhatsApp session, do NOT ask the user for it",
                                 },
                             },
-                            "required": ["cliente_id", "telefono_cliente"],
+                            "required": ["cliente_id"],
                         },
                     },
                 },
@@ -715,7 +714,7 @@ class AgentEngine:
                     fecha=arguments.get("fecha", ""),
                     hora=arguments.get("hora", ""),
                     nombre_cliente=arguments.get("nombre_cliente", ""),
-                    telefono_cliente=arguments.get("telefono_cliente", ""),
+                    telefono_cliente=arguments.get("telefono_cliente") or sender_id,
                     servicio=arguments.get("servicio", ""),
                     email_cliente=arguments.get("email_cliente", ""),
                     duracion_minutos=arguments.get("duracion_minutos", 60),
@@ -727,7 +726,7 @@ class AgentEngine:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.reagendar_cita(
                     cliente_id=client_id,
-                    telefono_cliente=arguments.get("telefono_cliente", ""),
+                    telefono_cliente=arguments.get("telefono_cliente") or sender_id,
                     nueva_fecha=arguments.get("nueva_fecha", ""),
                     nueva_hora=arguments.get("nueva_hora", ""),
                 )
@@ -738,7 +737,7 @@ class AgentEngine:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.cancelar_cita(
                     cliente_id=client_id,
-                    telefono_cliente=arguments.get("telefono_cliente", ""),
+                    telefono_cliente=arguments.get("telefono_cliente") or sender_id,
                 )
                 return json.dumps(result, ensure_ascii=False)
 
