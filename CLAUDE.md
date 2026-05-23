@@ -408,11 +408,11 @@ All tables have RLS policies: `auth.uid()` and `current_client_id()` functions e
 # LanLabs - Agente IA SaaS WhatsApp
 
 ## Estado del Proyecto
-Plataforma SaaS multi-tenant de agentes IA conversacionales para WhatsApp.
+Plataforma SaaS multi-tenant de agentes IA conversacionales. **En producción.**
 
 ## Infraestructura
 - API: https://api.lanlabsec.com (FastAPI + Python, VPS Hostinger Easypanel)
-- Dashboard: https://dashboard.lanlabsec.com (Next.js 16, Vercel)
+- Dashboard: https://dashboard.lanlabsec.com (Next.js, Vercel)
 - DB: Supabase (PostgreSQL) - proyecto SaasAIWhatsApp
 - Cache: Redis Cloud
 - VPS: 147.79.75.41
@@ -420,9 +420,9 @@ Plataforma SaaS multi-tenant de agentes IA conversacionales para WhatsApp.
 
 ## Stack
 - Backend: Python 3.11, FastAPI, OpenAI GPT-4o, Supabase, Redis
-- Frontend: Next.js 16, TypeScript, Tailwind CSS
+- Frontend: Next.js, TypeScript, Tailwind CSS v4
 - IA: GPT-4o (function calling), Whisper (audio), GPT-4o Vision (comprobantes)
-- Integraciones: Meta Cloud API, Google Calendar (Service Account)
+- Integraciones: Meta Cloud API, Google Calendar (Service Account), Stripe, SendGrid
 
 ## Cliente de Prueba
 - ID: d21c2725-7e2d-442b-8207-958fd4bcb038
@@ -438,44 +438,48 @@ Plataforma SaaS multi-tenant de agentes IA conversacionales para WhatsApp.
 - Servicios: Plan Básico $149/mes, Profesional $249/mes, Empresarial $399/mes
 - Zona horaria: America/Guayaquil
 
-## Paleta de Colores Dashboard
-- Fondo: #06141B
-- Surface: #11212D
-- Surface-2: #253745
-- Texto muted: #4A5C6A
-- Texto soft: #9BA8AB
-- Texto principal: #CCD0CF
-- Accent: #CCD0CF
-- Accent text: #06141B
+## Paleta de Colores Dashboard (globals.css)
+El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en este doc):
+- `--background`: #060D13
+- `--surface`: #0F1E2D
+- `--accent`: #38BDF8 (sky blue)
+- `--success`: #22D3A0
+- Fuente: Geist
 
 ## Funcionalidades Completadas ✅
 - Agente WhatsApp con GPT-4o y número real
+- Instagram y Facebook (canales/instagram.py, canales/facebook.py)
 - Agendamiento con Google Calendar (Service Account)
 - Transferencias bancarias con GPT-4o Vision
 - Procesamiento de audios con Whisper
 - Alertas al dueño por WhatsApp en tiempo real
 - Calificación de leads acumulativa (score 0-10)
 - Seguimientos automáticos (APScheduler cada 30min)
+- Links de pago (Stripe, MercadoPago, PayPal) — modulos/links_pago.py
+- Campañas masivas — modulos/campanas.py
 - Dashboard Next.js completo con datos reales
 - Login JWT con roles (super_admin, admin, operador)
+- Billing / Stripe — suscripciones, cancelación, reactivación
+- Analytics en dashboard — métricas, gráficos por día/canal/estado
 - Onboarding de clientes (wizard 4 pasos)
 - Aprobación de pagos desde dashboard
 - Página de configuración WhatsApp self-service
 - Guía de onboarding descargable
+- Email de bienvenida al cliente (SendGrid) via POST /internal/send-email
+- Creación de usuario en Supabase Auth al registrar cliente (login funcional)
 
-## Funcionalidades Pendientes ❌
-- Rediseño visual dashboard (paleta premium arriba)
-- Instagram y Facebook
-- Links de pago
-- Campañas masivas
-- Billing / Stripe
-- Analytics en dashboard
-- Email de bienvenida al cliente (SendGrid)
+## Pendiente / Roadmap
+- Campañas masivas: interfaz en dashboard (módulo Python existe, falta UI)
+- Instagram/Facebook: configuración self-service desde dashboard
+- Mejorar panel super_admin con MRR y churn
 
-## Tablas Supabase (RLS deshabilitado)
+## Tablas Supabase (RLS habilitado en todas)
 leads, canales_config, clientes, conversaciones,
 mensajes, agentes, modulos_activos, datos_bancarios,
 alertas, citas, pagos, comprobantes_procesados
+
+RLS re-habilitado en `leads` el 2026-05-22.
+El dashboard y backend usan service_role, que bypasea RLS.
 
 ## Variables de Entorno Backend (Easypanel)
 META_VERIFY_TOKEN=agente-ia
@@ -489,6 +493,8 @@ SUPABASE_KEY=... (anon)
 SUPABASE_SERVICE_KEY=...
 OPENAI_API_KEY=...
 REDIS_URL=...
+SENDGRID_API_KEY=SG....
+STRIPE_SECRET_KEY=sk_live_...
 
 ## Variables de Entorno Dashboard (Vercel)
 NEXT_PUBLIC_SUPABASE_URL=...
@@ -496,22 +502,31 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 JWT_SECRET=...
 NEXT_PUBLIC_API_URL=https://api.lanlabsec.com
+NEXT_PUBLIC_APP_URL=https://dashboard.lanlabsec.com
 
-## Estructura del Proyecto Backend
-/core: agent.py, buffer.py, memory.py, router.py
-/modulos: ventas.py, agendamiento.py, cobros.py,
-          calificacion.py, alertas.py, seguimiento.py
-/canales: whatsapp.py
-/dashboard-next: Next.js dashboard completo
+## Estructura del Proyecto
+/core: agent.py, buffer.py, memory.py, router.py, normalizer.py
+/modulos: ventas.py, agendamiento.py, cobros.py, links_pago.py,
+          calificacion.py, campanas.py, alertas.py, seguimiento.py, analytics.py
+/canales: whatsapp.py, instagram.py, facebook.py, email.py
+/billing: stripe.py, usage.py
+/dashboard-next: Next.js dashboard (app router)
+  /app/admin: gestión de clientes (super_admin)
+  /app/cliente: panel del cliente (conversaciones, leads, citas, pagos,
+                analytics, billing, configuración)
+  /app/api: API routes Next.js
 main.py, Dockerfile, requirements.txt
 
 ## Notas Importantes
 - El campo whatsapp_dueño tiene ñ — usar select('*')
   en queries de Supabase para evitar errores de parsing
-- RLS deshabilitado en todas las tablas principales
 - El agente usa supabase_service_client para todas
   las operaciones (no el cliente anon)
-- Los logs de debug con print() aparecen en Easypanel
-  Los logger.info() NO aparecen en Easypanel
+- Los logs de debug con print() aparecen en Easypanel.
+  Los logger.info() NO aparecen en Easypanel.
 - El token de Meta es permanente (no expira)
 - Google Calendar usa Service Account (no OAuth2)
+- Al crear cliente: createAuthUser crea el usuario en Supabase Auth
+  y el registro en tabla usuarios (necesario para login y JWT con rol/cliente_id)
+- El endpoint POST /internal/send-email del backend envía emails via SendGrid
+  (usado por el dashboard Next.js para el email de bienvenida)
