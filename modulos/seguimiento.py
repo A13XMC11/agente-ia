@@ -10,6 +10,7 @@ REQUIRED SQL MIGRATION before deployment:
 import logging
 from datetime import datetime, timedelta, time, timezone
 from typing import Any
+from uuid import uuid4
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -342,8 +343,8 @@ class SeguimientoModule:
                 # Send follow-up 24h after payment
                 if hace_25h <= created_at <= hace_23h:
                     if not await self._ya_enviado(cliente_id, "seguimiento_post_venta", pago_id, ventana_horas=48):
-                        nombre = "Amigo/a"
                         telefono = pago.get("sender_telefono")
+                        nombre = await self._obtener_nombre_usuario(cliente_id, telefono)
 
                         if telefono:
                             mensaje = (
@@ -522,6 +523,7 @@ class SeguimientoModule:
 
             if response.status_code in (200, 201):
                 logger.info(f"Seguimiento sent to {telefono}", extra={"cliente_id": cliente_id})
+                await self._guardar_mensaje_en_conversacion(cliente_id, telefono, mensaje)
                 return True
             else:
                 logger.error(
@@ -533,3 +535,61 @@ class SeguimientoModule:
         except Exception as e:
             logger.error(f"Error sending seguimiento to {telefono}: {e}", exc_info=True)
             return False
+
+    async def _obtener_nombre_usuario(self, cliente_id: str, telefono: str) -> str:
+        """Look up user name from leads or conversations table."""
+        try:
+            lead_resp = self.supabase.table("leads").select(
+                "nombre"
+            ).eq("cliente_id", cliente_id).eq("telefono", telefono).limit(1).execute()
+            if lead_resp.data and lead_resp.data[0].get("nombre"):
+                return lead_resp.data[0]["nombre"]
+
+            conv_resp = self.supabase.table("conversaciones").select(
+                "usuario_nombre"
+            ).eq("cliente_id", cliente_id).eq("usuario_id", telefono).order(
+                "fecha_inicio", desc=True
+            ).limit(1).execute()
+            if conv_resp.data and conv_resp.data[0].get("usuario_nombre"):
+                return conv_resp.data[0]["usuario_nombre"]
+        except Exception as e:
+            logger.error(f"Error fetching user name: {e}")
+        return "Amigo/a"
+
+    async def _guardar_mensaje_en_conversacion(
+        self,
+        cliente_id: str,
+        telefono: str,
+        mensaje: str,
+    ) -> None:
+        """Save the outgoing follow-up message to conversation history so the agent has context."""
+        try:
+            conv_response = self.supabase.table("conversaciones").select(
+                "id"
+            ).eq("cliente_id", cliente_id).eq("usuario_id", telefono).eq(
+                "canal", "whatsapp"
+            ).order("fecha_inicio", desc=True).limit(1).execute()
+
+            if not conv_response.data:
+                return
+
+            conversation_id = conv_response.data[0]["id"]
+            now = datetime.now(timezone.utc).isoformat()
+
+            self.supabase.table("mensajes").insert({
+                "id": str(uuid4()),
+                "conversacion_id": conversation_id,
+                "cliente_id": cliente_id,
+                "sender_id": "agent",
+                "sender_type": "agent",
+                "contenido": mensaje,
+                "tipo": "texto",
+                "tokens_utilizados": 0,
+            }).execute()
+
+            self.supabase.table("conversaciones").update(
+                {"fecha_ultimo_mensaje": now}
+            ).eq("id", conversation_id).execute()
+
+        except Exception as e:
+            logger.error(f"Error saving seguimiento message to conversation: {e}")

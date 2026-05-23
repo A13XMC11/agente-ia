@@ -558,13 +558,13 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                 try:
                     conv = (
                         self.supabase.table("conversaciones")
-                        .select("usuario_id, sender_id")
+                        .select("usuario_id")
                         .eq("id", pago["conversacion_id"])
                         .single()
                         .execute()
                     )
                     if conv.data:
-                        customer_phone = conv.data.get("sender_id")
+                        customer_phone = conv.data.get("usuario_id")
                         if customer_phone:
                             if nuevo_estado == "verificado":
                                 user_msg = (
@@ -582,6 +582,11 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                                 recipient_phone=customer_phone,
                                 text=user_msg,
                                 client_id=client_id,
+                            )
+                            await self._guardar_mensaje_conversacion(
+                                conversacion_id=pago["conversacion_id"],
+                                client_id=client_id,
+                                mensaje=user_msg,
                             )
                 except Exception as e:
                     logger.error(f"Failed to notify customer: {e}")
@@ -606,6 +611,31 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
         except Exception as e:
             logger.error(f"Error processing owner response: {e}")
             return False
+
+    async def _guardar_mensaje_conversacion(
+        self,
+        conversacion_id: str,
+        client_id: str,
+        mensaje: str,
+    ) -> None:
+        """Save an outgoing agent message to conversation history."""
+        try:
+            now = datetime.utcnow().isoformat()
+            self.supabase.table("mensajes").insert({
+                "id": str(uuid4()),
+                "conversacion_id": conversacion_id,
+                "cliente_id": client_id,
+                "sender_id": "agent",
+                "sender_type": "agent",
+                "contenido": mensaje,
+                "tipo": "texto",
+                "tokens_utilizados": 0,
+            }).execute()
+            self.supabase.table("conversaciones").update(
+                {"fecha_ultimo_mensaje": now}
+            ).eq("id", conversacion_id).execute()
+        except Exception as e:
+            logger.error(f"Error saving payment message to conversation: {e}")
 
     def _user_message_for_outcome(self, outcome: str) -> str:
         """Return user-friendly message based on payment outcome."""
