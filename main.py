@@ -4,6 +4,7 @@ FastAPI application entrypoint for Agente-IA multi-tenant conversational AI plat
 Handles routing, middleware setup, webhook validation, and API endpoints.
 """
 
+import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -437,11 +438,22 @@ async def lifespan(app: FastAPI):
             stripe_secret_key = os.getenv("STRIPE_SECRET_KEY", "")
             stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
             if stripe_secret_key and stripe_webhook_secret:
+                # Map amount_cents → Stripe Price ID for pre-defined plans
+                stripe_price_map: dict[int, str] = {}
+                for plan, cents in [
+                    ("BASICO", 14900),
+                    ("PROFESIONAL", 24900),
+                    ("EMPRESARIAL", 39900),
+                ]:
+                    pid = os.getenv(f"STRIPE_PRICE_{plan}")
+                    if pid:
+                        stripe_price_map[cents] = pid
                 stripe_billing = StripeBilling(
                     stripe_secret_key=stripe_secret_key,
                     stripe_webhook_secret=stripe_webhook_secret,
                     supabase_client=supabase_service_client,
                     stripe_product_id=os.getenv("STRIPE_PRODUCT_ID") or None,
+                    price_map=stripe_price_map or None,
                 )
                 logger.info("stripe_billing_initialized")
             else:
@@ -980,38 +992,56 @@ async def get_leads(client_id: str, request: Request):
 # BILLING ENDPOINTS
 # ============================================================================
 
+async def _resolve_caller(request: Request) -> dict[str, Any]:
+    """
+    Resolve caller identity from JWT or X-Internal-Secret header.
+
+    Returns a user dict with at least 'role' and 'client_id'.
+    Internal callers (dashboard server) are granted super_admin privileges.
+    """
+    internal_secret = os.getenv("INTERNAL_API_SECRET", "")
+    provided_secret = request.headers.get("X-Internal-Secret", "")
+
+    if internal_secret and provided_secret and hmac.compare_digest(provided_secret, internal_secret):
+        return {"role": "super_admin", "client_id": None, "_internal": True}
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization required")
+
+    if not auth_manager:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+
+    try:
+        return await auth_manager.verify_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 @app.post("/api/billing/create-subscription")
 async def create_subscription(request: Request):
     """
     Create a Stripe subscription for a client.
 
-    Body: { monthly_amount, customer_email }
-    SUPER_ADMIN may also pass client_id to manage any client.
+    Body: { client_id, monthly_amount, customer_email }
+    Accepts JWT (super_admin) or X-Internal-Secret (dashboard server).
     """
-    if not stripe_billing or not auth_manager:
+    if not stripe_billing:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-
-    try:
-        user = await auth_manager.verify_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
+    user = await _resolve_caller(request)
     body = await request.json()
+
     monthly_amount = body.get("monthly_amount")
     customer_email = body.get("customer_email")
 
-    user_role = user.get("role")
-    if user_role == "super_admin":
+    if user.get("role") == "super_admin":
         client_id = body.get("client_id") or user.get("client_id")
     else:
         client_id = user.get("client_id")
 
     if not client_id or not monthly_amount or not customer_email:
-        raise HTTPException(status_code=400, detail="monthly_amount and customer_email are required")
+        raise HTTPException(status_code=400, detail="client_id, monthly_amount and customer_email are required")
 
     result = await stripe_billing.create_subscription(
         client_id=client_id,
@@ -1031,22 +1061,15 @@ async def cancel_subscription(request: Request):
     """
     Cancel a client's Stripe subscription.
 
-    SUPER_ADMIN may pass client_id in body to cancel any client's subscription.
+    Accepts JWT (super_admin) or X-Internal-Secret (dashboard server).
+    Body (super_admin / internal): { client_id }
     """
-    if not stripe_billing or not auth_manager:
+    if not stripe_billing:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authorization header required")
+    user = await _resolve_caller(request)
 
-    try:
-        user = await auth_manager.verify_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    user_role = user.get("role")
-    if user_role == "super_admin":
+    if user.get("role") == "super_admin":
         body = await request.json()
         client_id = body.get("client_id") or user.get("client_id")
     else:
@@ -1059,6 +1082,45 @@ async def cancel_subscription(request: Request):
 
     if not success:
         raise HTTPException(status_code=502, detail="Failed to cancel subscription")
+
+    logger.info("subscription_cancelled", client_id=client_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/billing/customer-portal")
+async def customer_portal(request: Request):
+    """
+    Create a Stripe Billing Portal session for a client.
+
+    Body: { client_id, return_url }
+    Accepts JWT or X-Internal-Secret.
+    Returns: { portal_url }
+    """
+    if not stripe_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    user = await _resolve_caller(request)
+    body = await request.json()
+
+    if user.get("role") == "super_admin":
+        client_id = body.get("client_id") or user.get("client_id")
+    else:
+        client_id = user.get("client_id")
+
+    return_url = body.get("return_url", "")
+    if not client_id or not return_url:
+        raise HTTPException(status_code=400, detail="client_id and return_url are required")
+
+    portal_url = await stripe_billing.create_customer_portal_session(
+        client_id=client_id,
+        return_url=return_url,
+    )
+
+    if not portal_url:
+        raise HTTPException(status_code=502, detail="Failed to create portal session. Ensure Stripe Billing Portal is configured.")
+
+    logger.info("customer_portal_session_created", client_id=client_id)
+    return {"portal_url": portal_url}
 
     logger.info("subscription_cancelled", client_id=client_id)
     return {"status": "ok"}

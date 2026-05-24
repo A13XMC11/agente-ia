@@ -1,4 +1,4 @@
-import { CreditCard, CheckCircle, AlertTriangle, XCircle, Clock, HelpCircle } from 'lucide-react'
+import { CreditCard, CheckCircle, AlertTriangle, XCircle, Clock, HelpCircle, ExternalLink } from 'lucide-react'
 import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
@@ -209,8 +209,27 @@ export default async function BillingPage() {
             </div>
           </div>
 
+          {/* Customer Portal */}
+          {subscription.status !== 'cancelled' && (
+            <div className="stagger-4 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Gestionar método de pago</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Actualiza tu tarjeta, descarga facturas o cancela tu suscripción desde el portal de Stripe.
+                </p>
+              </div>
+              <a
+                href="/api/cliente/billing/portal"
+                className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-accent/10 text-accent border border-accent/20 px-4 py-2 text-sm font-medium hover:bg-accent/15 transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Abrir portal
+              </a>
+            </div>
+          )}
+
           {/* Support */}
-          <div className="stagger-4 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
+          <div className="stagger-5 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-text-primary">¿Problemas con tu facturación?</p>
               <p className="text-xs text-text-muted mt-0.5">Contacta a soporte y te ayudamos de inmediato.</p>

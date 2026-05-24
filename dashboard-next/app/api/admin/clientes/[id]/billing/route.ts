@@ -79,7 +79,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const apiRes = await fetch(`${apiUrl}/api/billing/create-subscription`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': process.env.INTERNAL_API_SECRET ?? '',
+      },
       body: JSON.stringify({
         client_id: clienteId,
         monthly_amount: Number(monthly_amount),
