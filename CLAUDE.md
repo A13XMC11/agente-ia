@@ -467,6 +467,7 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 - Guía de onboarding descargable
 - Email de bienvenida al cliente (SendGrid) via POST /internal/send-email
 - Creación de usuario en Supabase Auth al registrar cliente (login funcional)
+- Identificación de cliente por waba_id como fallback + auto-update de phone_number_id (2026-05-24)
 
 ## Pendiente / Roadmap
 - Campañas masivas: interfaz en dashboard (módulo Python existe, falta UI)
@@ -530,3 +531,9 @@ main.py, Dockerfile, requirements.txt
   y el registro en tabla usuarios (necesario para login y JWT con rol/cliente_id)
 - El endpoint POST /internal/send-email del backend envía emails via SendGrid
   (usado por el dashboard Next.js para el email de bienvenida)
+- Identificación WhatsApp (core/router.py → identify_client):
+  1. Busca por phone_number_id en canales_config (camino rápido)
+  2. Si no encuentra, usa waba_id del entry como fallback
+  3. Si encuentra por waba_id, actualiza phone_number_id en Supabase automáticamente
+  Esto resuelve el caso donde Meta asigna un phone_number_id diferente al número
+  real vs. el número de prueba. El fix se auto-corrige en el primer mensaje.
