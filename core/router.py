@@ -262,6 +262,7 @@ class MessageRouter:
         self,
         identifier: str,
         identifier_type: str = "id",
+        waba_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Identify client from webhook identifier.
@@ -303,17 +304,34 @@ class MessageRouter:
                     client_id = response.data["cliente_id"]
                     print(f"✅ [IDENTIFY] Resolved phone_number_id={identifier} → client_id={client_id!r}")
                     return client_id
-                else:
-                    print(f"❌ [IDENTIFY] NO MATCH in canales_config")
-                    print(f"   Checking all records in canales_config for debugging...")
-                    try:
-                        all_canales = self.supabase_service.table("canales_config").select("*").execute()
-                        print(f"   Total records in canales_config: {len(all_canales.data or [])}")
-                        for i, record in enumerate((all_canales.data or [])[:5]):
-                            print(f"      [{i}] canal={record.get('canal')}, phone_id={record.get('phone_number_id')}, cliente_id={record.get('cliente_id')}")
-                    except Exception as debug_e:
-                        print(f"   Could not fetch debug info: {debug_e}")
-                    return None
+
+                # Fallback: match by waba_id when phone_number_id is not yet registered
+                if waba_id:
+                    print(f"⚠️  [IDENTIFY] phone_number_id not found, trying waba_id fallback: {waba_id!r}")
+                    waba_resp = self.supabase_service.table("canales_config").select(
+                        "*"
+                    ).eq("canal", "whatsapp").eq("waba_id", waba_id).limit(1).execute()
+
+                    if waba_resp.data:
+                        record = waba_resp.data[0]
+                        client_id = record["cliente_id"]
+                        old_phone_number_id = record.get("phone_number_id")
+                        print(f"✅ [IDENTIFY] Found via waba_id → client_id={client_id!r}")
+                        print(f"   Updating phone_number_id: {old_phone_number_id!r} → {identifier!r}")
+                        try:
+                            self.supabase_service.table("canales_config").update(
+                                {"phone_number_id": identifier}
+                            ).eq("id", record["id"]).execute()
+                            logger.info(
+                                f"auto_updated_phone_number_id: {old_phone_number_id} → {identifier} "
+                                f"for client {client_id}"
+                            )
+                        except Exception as update_err:
+                            logger.error(f"Failed to auto-update phone_number_id: {update_err}")
+                        return client_id
+
+                print(f"❌ [IDENTIFY] NO MATCH for phone_number_id={identifier} waba_id={waba_id}")
+                return None
 
             elif identifier_type == "page_id":
                 # Map Instagram/Facebook page_id to client
