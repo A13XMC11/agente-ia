@@ -468,18 +468,20 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 - Email de bienvenida al cliente (SendGrid) via POST /internal/send-email
 - Creación de usuario en Supabase Auth al registrar cliente (login funcional)
 - Identificación de cliente por waba_id como fallback + auto-update de phone_number_id (2026-05-24)
+- UI de Campañas Masivas en dashboard — página /cliente/campanas con crear, lanzar y cancelar (2026-05-24)
 
 ## Pendiente / Roadmap
-- Campañas masivas: interfaz en dashboard (módulo Python existe, falta UI)
 - Instagram/Facebook: configuración self-service desde dashboard
 - Mejorar panel super_admin con MRR y churn
 
 ## Tablas Supabase (RLS habilitado en todas)
 leads, canales_config, clientes, conversaciones,
 mensajes, agentes, modulos_activos, datos_bancarios,
-alertas, citas, pagos, comprobantes_procesados
+alertas, citas, pagos, comprobantes_procesados,
+campanas, campaign_recipients
 
 RLS re-habilitado en `leads` el 2026-05-22.
+Tablas campanas y campaign_recipients creadas el 2026-05-24.
 El dashboard y backend usan service_role, que bypasea RLS.
 
 ## Variables de Entorno Backend (Easypanel)
@@ -511,11 +513,12 @@ NEXT_PUBLIC_APP_URL=https://dashboard.lanlabsec.com
           calificacion.py, campanas.py, alertas.py, seguimiento.py, analytics.py
 /canales: whatsapp.py, instagram.py, facebook.py, email.py
 /billing: stripe.py, usage.py
+/migrations: create_campanas.sql, add_follow_up_columns.sql, (re)enable_rls_leads.sql
 /dashboard-next: Next.js dashboard (app router)
   /app/admin: gestión de clientes (super_admin)
   /app/cliente: panel del cliente (conversaciones, leads, citas, pagos,
-                analytics, billing, configuración)
-  /app/api: API routes Next.js
+                analytics, billing, campanas, configuración)
+  /app/api/cliente: leads, citas, pagos, conversaciones, campanas, whatsapp, billing, etc.
 main.py, Dockerfile, requirements.txt
 
 ## Notas Importantes
