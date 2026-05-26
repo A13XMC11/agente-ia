@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { useState, useEffect } from 'react'
 import { formatFechaCompleta } from '@/lib/date-format'
 import Link from 'next/link'
-import { MessageCircle, ChevronRight } from 'lucide-react'
+import { MessageCircle, ChevronRight, Instagram, Facebook } from 'lucide-react'
 
 interface Agente {
   id: string
@@ -243,23 +243,62 @@ export default function ConfiguracionPage() {
         <p className="text-text-secondary mt-1 text-sm md:text-base">Personaliza tu agente IA y los módulos activos</p>
       </div>
 
-      {/* WhatsApp channel card */}
-      <Link href="/cliente/configuracion/whatsapp">
-        <Card className="cursor-pointer hover:border-accent/50 transition-colors">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#25D366]/10">
-                <MessageCircle className="h-5 w-5 text-[#25D366]" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-text-primary">WhatsApp Business</p>
-                <p className="text-sm text-text-secondary">Conecta tu número para activar el agente</p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-text-muted shrink-0" />
-            </div>
-          </CardContent>
-        </Card>
-      </Link>
+      {/* Channel cards */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-text-muted uppercase tracking-widest">Canales</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Link href="/cliente/configuracion/whatsapp">
+            <Card className="cursor-pointer hover:border-accent/50 transition-colors h-full">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#25D366]/10">
+                    <MessageCircle className="h-5 w-5 text-[#25D366]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-text-primary text-sm">WhatsApp Business</p>
+                    <p className="text-xs text-text-secondary">Conecta tu número</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/cliente/configuracion/instagram">
+            <Card className="cursor-pointer hover:border-accent/50 transition-colors h-full">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#E1306C]/10">
+                    <Instagram className="h-5 w-5 text-[#E1306C]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-text-primary text-sm">Instagram Business</p>
+                    <p className="text-xs text-text-secondary">Conecta tu cuenta</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/cliente/configuracion/facebook">
+            <Card className="cursor-pointer hover:border-accent/50 transition-colors h-full">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1877F2]/10">
+                    <Facebook className="h-5 w-5 text-[#1877F2]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-text-primary text-sm">Facebook Messenger</p>
+                    <p className="text-xs text-text-secondary">Conecta tu página</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      </div>
 
       {agente && (
         <Card>

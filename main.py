@@ -699,6 +699,21 @@ async def whatsapp_webhook(request: Request):
     return response
 
 
+@app.get("/webhooks/instagram/messages")
+async def instagram_verify_messages(
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    """Instagram webhook verification (GET on the same path Meta posts events to)."""
+    expected_token = os.getenv("META_VERIFY_TOKEN", "")
+    if mode == "subscribe" and token == expected_token:
+        logger.info("instagram_webhook_verified")
+        return PlainTextResponse(content=challenge)
+    logger.warning("instagram_webhook_verification_failed", token=token)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
 @app.post("/webhooks/instagram/messages")
 async def instagram_webhook(request: Request):
     """
@@ -739,6 +754,21 @@ async def instagram_verify(
     else:
         logger.warning("instagram_webhook_verification_failed", token=token)
         raise HTTPException(status_code=403, detail="Verification failed")
+
+
+@app.get("/webhooks/facebook/messages")
+async def facebook_verify_messages(
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    """Facebook webhook verification (GET on the same path Meta posts events to)."""
+    expected_token = os.getenv("META_VERIFY_TOKEN", "")
+    if mode == "subscribe" and token == expected_token:
+        logger.info("facebook_webhook_verified")
+        return PlainTextResponse(content=challenge)
+    logger.warning("facebook_webhook_verification_failed", token=token)
+    raise HTTPException(status_code=403, detail="Verification failed")
 
 
 @app.post("/webhooks/facebook/messages")
