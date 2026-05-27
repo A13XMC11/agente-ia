@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { useState, useEffect } from 'react'
 import { formatFechaCompleta } from '@/lib/date-format'
 import Link from 'next/link'
-import { MessageCircle, ChevronRight, Instagram, Facebook } from 'lucide-react'
+import { MessageCircle, ChevronRight, Camera, Share2 } from 'lucide-react'
 
 interface Agente {
   id: string
@@ -269,7 +269,7 @@ export default function ConfiguracionPage() {
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#E1306C]/10">
-                    <Instagram className="h-5 w-5 text-[#E1306C]" />
+                    <Camera className="h-5 w-5 text-[#E1306C]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-text-primary text-sm">Instagram Business</p>
@@ -286,7 +286,7 @@ export default function ConfiguracionPage() {
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1877F2]/10">
-                    <Facebook className="h-5 w-5 text-[#1877F2]" />
+                    <Share2 className="h-5 w-5 text-[#1877F2]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-text-primary text-sm">Facebook Messenger</p>
