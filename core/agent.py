@@ -835,36 +835,42 @@ class AgentEngine:
         Split long messages into multiple shorter ones.
 
         Mimics human-like message sending (multiple messages instead of one huge wall).
-        Tries to split at sentence boundaries.
+        Splits at double-newlines first (paragraphs), then at sentence boundaries.
         """
         if len(message) <= max_length:
             return [message]
 
-        parts = []
+        parts: list[str] = []
         current = ""
 
-        for sentence in message.split(". "):
-            sentence = sentence.strip()
-            if not sentence:
-                continue
+        # Split at paragraph boundaries (\n\n) first, then at ". "
+        paragraphs = [p.strip() for p in message.split("\n\n") if p.strip()]
+        sentences: list[str] = []
+        for para in paragraphs:
+            for sent in para.split(". "):
+                sent = sent.strip()
+                if sent:
+                    sentences.append(sent)
 
-            if len(current) + len(sentence) + 2 <= max_length:
-                current += (sentence + ". ") if current else (sentence + ". ")
+        for sentence in sentences:
+            candidate = (current + " " + sentence).strip() if current else sentence
+            if len(candidate) <= max_length:
+                current = candidate
             else:
                 if current:
-                    parts.append(current.rstrip(". "))
-                current = sentence + ". "
+                    parts.append(current)
+                # If a single sentence exceeds max_length, split it by chars
+                if len(sentence) > max_length:
+                    for i in range(0, len(sentence), max_length):
+                        parts.append(sentence[i : i + max_length])
+                    current = ""
+                else:
+                    current = sentence
 
         if current:
-            parts.append(current.rstrip(". "))
+            parts.append(current)
 
-        # Fallback: simple character split if sentence split doesn't work
-        if not parts or len(parts) == 1:
-            parts = [
-                message[i : i + max_length] for i in range(0, len(message), max_length)
-            ]
-
-        return parts
+        return parts if parts else [message]
 
     def is_business_hours(self) -> bool:
         """Check if current time is within business hours for this client."""
