@@ -100,11 +100,10 @@ class MessageRouter:
                 print(f"   → Falling back to DEFAULTS")
                 print(f"   → Default system_prompt: {defaults['system_prompt'][:50]}...\n")
                 logger.warning(
-                    f"No agentes config found for client_id={client_id}, using defaults with calificacion and cobros FORCED ENABLED",
+                    f"No agentes config found for client_id={client_id}, using defaults",
                     extra={"client_id": client_id}
                 )
-                defaults["active_modules"]["calificacion"] = True
-                defaults["active_modules"]["cobros"] = True
+                defaults["active_modules"] = await self._fetch_active_modules(client_id, defaults["active_modules"])
                 return defaults
 
             config = response.data[0]
@@ -147,19 +146,8 @@ class MessageRouter:
 
             merged = {**defaults, **config}
 
-            # Ensure active_modules exists and has calificacion enabled
-            if "active_modules" not in merged or not isinstance(merged["active_modules"], dict):
-                merged["active_modules"] = defaults["active_modules"].copy()
-            else:
-                # Merge with defaults to ensure all modules are present
-                merged["active_modules"] = {
-                    **defaults["active_modules"],
-                    **merged.get("active_modules", {})
-                }
-
-            # CRITICAL: Ensure calificacion and cobros are always enabled
-            merged["active_modules"]["calificacion"] = True
-            merged["active_modules"]["cobros"] = True
+            # Read actual module states from modulos_activos table (source of truth)
+            merged["active_modules"] = await self._fetch_active_modules(client_id, defaults["active_modules"])
 
             system_prompt = merged.get("system_prompt", "")
 
@@ -189,21 +177,47 @@ class MessageRouter:
             traceback.print_exc()
 
             logger.warning(
-                f"Could not fetch config for {client_id}: {e}, using defaults with calificacion and cobros FORCED ENABLED",
+                f"Could not fetch config for {client_id}: {e}, using defaults",
                 extra={"client_id": client_id}
             )
-            defaults["active_modules"]["calificacion"] = True
-            defaults["active_modules"]["cobros"] = True
+            active_modules = await self._fetch_active_modules(client_id, defaults["active_modules"])
             return {
                 "client_id": client_id,
                 "system_prompt": defaults.get("system_prompt", "You are a helpful business assistant."),
                 "temperature": defaults.get("temperature", 0.7),
                 "max_tokens": defaults.get("max_tokens", 4000),
-                "active_modules": defaults["active_modules"].copy(),
+                "active_modules": active_modules,
                 "business_hours_start": defaults.get("business_hours_start", "08:00"),
                 "business_hours_end": defaults.get("business_hours_end", "18:00"),
                 "business_hours_timezone": defaults.get("business_hours_timezone", "America/Guayaquil"),
             }
+
+    async def _fetch_active_modules(self, client_id: str, fallback: dict) -> dict:
+        """
+        Fetch module states from modulos_activos table (dashboard source of truth).
+
+        Falls back to provided defaults if the row doesn't exist.
+        """
+        module_columns = [
+            "ventas", "agendamiento", "cobros", "links_pago",
+            "calificacion", "campanas", "alertas", "seguimientos", "documentos",
+        ]
+        try:
+            resp = self.supabase_service.table("modulos_activos").select(
+                ", ".join(module_columns)
+            ).eq("cliente_id", client_id).limit(1).execute()
+
+            if resp.data:
+                row = resp.data[0]
+                active = {col: bool(row.get(col, fallback.get(col, False))) for col in module_columns}
+                print(f"✅ [MODULES] Loaded from modulos_activos for {client_id}: {active}")
+                return active
+
+            print(f"⚠️ [MODULES] No modulos_activos row for {client_id}, using defaults")
+            return fallback.copy()
+        except Exception as e:
+            logger.warning(f"Could not fetch modulos_activos for {client_id}: {e}")
+            return fallback.copy()
 
     async def _get_or_create_agent(self, client_id: str) -> AgentEngine:
         """
