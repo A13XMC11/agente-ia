@@ -13,10 +13,9 @@ from typing import Any
 import httpx
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Request, HTTPException, Query, status, Depends
+from fastapi import FastAPI, Request, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from fastapi.security import HTTPBearer
 import structlog
 from supabase import create_client
 
@@ -1176,9 +1175,6 @@ async def customer_portal(request: Request):
     logger.info("customer_portal_session_created", client_id=client_id)
     return {"portal_url": portal_url}
 
-    logger.info("subscription_cancelled", client_id=client_id)
-    return {"status": "ok"}
-
 
 # ============================================================================
 # INTERNAL ENDPOINTS
@@ -1240,7 +1236,6 @@ async def import_catalog(request: Request):
 
     Returns: { success, total_rows, created, updated, skipped }
     """
-    from fastapi import UploadFile
     import re as _re
 
     # Auth check
@@ -1341,6 +1336,29 @@ async def upsert_catalog_sync_config(request: Request):
     ).execute()
 
     return {"success": True, "config": row}
+
+
+@app.get("/api/calendar/service-account-email")
+async def get_calendar_service_account_email(request: Request):
+    """Return the Google service account email so clients know which email to share their calendar with."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    import base64, json as _json
+    raw = os.environ.get("GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
+    email = None
+    if raw:
+        try:
+            creds = _json.loads(raw)
+        except Exception:
+            try:
+                creds = _json.loads(base64.b64decode(raw))
+            except Exception:
+                creds = {}
+        email = creds.get("client_email")
+
+    return {"success": True, "email": email}
 
 
 # ============================================================================

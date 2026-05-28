@@ -26,9 +26,9 @@ class AppointmentError(Exception):
 
 
 class GoogleCalendarService:
-    def __init__(self, credentials_json: Optional[str] = None):
+    def __init__(self, credentials_json: Optional[str] = None, calendar_id: Optional[str] = None):
         self._service = None
-        self._calendar_id = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+        self._calendar_id = calendar_id or os.getenv("GOOGLE_CALENDAR_ID", "primary")
         self._timezone = os.getenv("GOOGLE_CALENDAR_TIMEZONE", "America/Guayaquil")
         self._is_available = False
 
@@ -156,10 +156,10 @@ class AgendamientoModule:
     SLOT_DURATION_MINUTES = 30
 
     def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None,
-                 alertas_module: Any = None):
+                 alertas_module: Any = None, calendar_id: Optional[str] = None):
         self.supabase = supabase_client
         self.alertas = alertas_module
-        self.google = GoogleCalendarService(google_credentials_json)
+        self.google = GoogleCalendarService(google_credentials_json, calendar_id=calendar_id)
         logger.info("Appointment module initialized")
 
     def _generate_slots(self, start_hour: int, end_hour: int) -> list[str]:

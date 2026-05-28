@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { useState, useEffect } from 'react'
 import { formatFechaCompleta } from '@/lib/date-format'
 import Link from 'next/link'
-import { MessageCircle, ChevronRight, Camera, Share2 } from 'lucide-react'
+import { MessageCircle, ChevronRight, Camera, Share2, Calendar } from 'lucide-react'
 
 interface Agente {
   id: string
@@ -246,7 +246,7 @@ export default function ConfiguracionPage() {
       {/* Channel cards */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-text-muted uppercase tracking-widest">Canales</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <Link href="/cliente/configuracion/whatsapp">
             <Card className="cursor-pointer hover:border-accent/50 transition-colors h-full">
               <CardContent className="pt-4 pb-4">
@@ -291,6 +291,23 @@ export default function ConfiguracionPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-text-primary text-sm">Facebook Messenger</p>
                     <p className="text-xs text-text-secondary">Conecta tu página</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/cliente/configuracion/calendar">
+            <Card className="cursor-pointer hover:border-accent/50 transition-colors h-full">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#4285F4]/10">
+                    <Calendar className="h-5 w-5 text-[#4285F4]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-text-primary text-sm">Google Calendar</p>
+                    <p className="text-xs text-text-secondary">Gestión de citas</p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />
                 </div>
