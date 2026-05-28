@@ -200,16 +200,6 @@ async def lifespan(app: FastAPI):
 
         # 2. Initialize core services
         try:
-            message_router = MessageRouter(
-                supabase_client=supabase_client,
-                supabase_service_client=supabase_service_client
-            )
-            logger.info("message_router_created")
-        except Exception as e:
-            logger.error("message_router_init_error", error=str(e))
-            message_router = None
-
-        try:
             rate_limiter = RateLimiter(
                 redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
                 supabase_client=supabase_client,
@@ -219,6 +209,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error("rate_limiter_init_error", error=str(e))
             rate_limiter = None
+
+        try:
+            message_router = MessageRouter(
+                supabase_client=supabase_client,
+                supabase_service_client=supabase_service_client,
+                rate_limiter=rate_limiter,
+            )
+            logger.info("message_router_created")
+        except Exception as e:
+            logger.error("message_router_init_error", error=str(e))
+            message_router = None
 
         try:
             auth_manager = AuthManager(

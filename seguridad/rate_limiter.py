@@ -294,6 +294,56 @@ class RateLimiter:
             logger.error("token_usage_error", error=str(e), exc_info=True)
             return {}
 
+    async def acquire_processing_slot(self, client_id: str) -> bool:
+        """
+        Acquire a concurrent processing slot for a client.
+
+        Prevents one heavy client from monopolizing all FastAPI workers.
+        Max concurrent GPT-4o calls per client = MAX_CONCURRENT_PER_CLIENT (default 5).
+
+        Returns True if slot acquired, False if client is at capacity.
+        """
+        if not self.redis:
+            return True
+
+        max_concurrent = int(os.getenv("MAX_CONCURRENT_PER_CLIENT", "5"))
+        key = f"concurrent:{client_id}"
+
+        try:
+            current = await self.redis.incr(key)
+            # Key expires after 60s as a safety net against leaked slots
+            if current == 1:
+                await self.redis.expire(key, 60)
+
+            if current > max_concurrent:
+                await self.redis.decr(key)
+                logger.warning(
+                    "concurrent_limit_exceeded",
+                    client_id=client_id,
+                    current=current - 1,
+                    limit=max_concurrent,
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error("acquire_processing_slot_error", error=str(e))
+            return True  # Allow on error
+
+    async def release_processing_slot(self, client_id: str) -> None:
+        """Release a previously acquired concurrent processing slot."""
+        if not self.redis:
+            return
+
+        key = f"concurrent:{client_id}"
+        try:
+            current = await self.redis.get(key)
+            if current and int(current) > 0:
+                await self.redis.decr(key)
+        except Exception as e:
+            logger.error("release_processing_slot_error", error=str(e))
+
     async def increment_token_count(
         self,
         client_id: str,

@@ -16,16 +16,18 @@ logger = logging.getLogger(__name__)
 class MessageRouter:
     """Routes messages to correct agent instance per client."""
 
-    def __init__(self, supabase_client: Any, supabase_service_client: Any = None):
+    def __init__(self, supabase_client: Any, supabase_service_client: Any = None, rate_limiter: Any = None):
         """
         Initialize message router.
 
         Args:
             supabase_client: Supabase client instance
             supabase_service_client: Service role Supabase client (for elevated permissions)
+            rate_limiter: RateLimiter instance for concurrent processing limits
         """
         self.supabase = supabase_client
         self.supabase_service = supabase_service_client or supabase_client
+        self.rate_limiter = rate_limiter
         self.agent_instances = {}  # Cache of AgentEngine instances by client_id
         self.agent_cache_timestamps = {}  # Track creation time for TTL invalidation
         self.AGENT_CACHE_TTL_SECONDS = 300  # 5 minutes
@@ -447,12 +449,24 @@ class MessageRouter:
             print(f"   Agent.system_prompt preview: {agent.system_prompt[:150]!r}")
             print(f"{'='*80}\n")
 
-            # Process message
+            # Process message (guarded by per-client concurrency slot)
+            if self.rate_limiter:
+                slot_acquired = await self.rate_limiter.acquire_processing_slot(client_id)
+                if not slot_acquired:
+                    return {
+                        "response_text": "Estoy procesando muchos mensajes en este momento. Intenta en unos segundos.",
+                        "escalated": False,
+                    }
+
             logger.info(f"🟡 === CALLING agent.process_message ===")
             logger.info(f"🟡 client_id={client_id}, sender_id={mensaje_normalizado.get('sender_id')}")
-            response = await agent.process_message(
-                mensaje_normalizado, client_id, memory_context
-            )
+            try:
+                response = await agent.process_message(
+                    mensaje_normalizado, client_id, memory_context
+                )
+            finally:
+                if self.rate_limiter:
+                    await self.rate_limiter.release_processing_slot(client_id)
             logger.info(f"🟡 === agent.process_message RETURNED ===")
             logger.info(f"🟡 response_text length={len(response.get('response_text', ''))}")
 

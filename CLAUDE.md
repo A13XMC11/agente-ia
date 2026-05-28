@@ -447,6 +447,7 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 - Fuente: Geist
 
 ## Funcionalidades Completadas ✅
+- Panel super_admin con métricas MRR y churn (2026-05-28)
 - Agente WhatsApp con GPT-4o y número real
 - Instagram y Facebook (canales/instagram.py, canales/facebook.py)
 - Agendamiento con Google Calendar (Service Account)
@@ -472,7 +473,6 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 
 ## Pendiente / Roadmap
 - Instagram/Facebook: configuración self-service desde dashboard
-- Mejorar panel super_admin con MRR y churn
 
 ## Tablas Supabase (RLS habilitado en todas)
 leads, canales_config, clientes, conversaciones,
