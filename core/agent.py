@@ -830,7 +830,7 @@ class AgentEngine:
                 result = await self.calificacion.actualizar_score_lead(
                     client_id=client_id,
                     usuario_id=arguments.get("usuario_id", sender_id),
-                    score_delta=arguments.get("score", 0),
+                    score=arguments.get("score", 0),
                     razon=arguments.get("razon", ""),
                 )
                 return json.dumps(result, ensure_ascii=False)

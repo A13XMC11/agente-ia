@@ -102,6 +102,7 @@ class GoogleCalendarService:
         end_time: str,
         summary: str,
         description: str = "",
+        attendee_email: str = "",
     ) -> Optional[str]:
         if not self._is_available:
             return None
@@ -120,9 +121,13 @@ class GoogleCalendarService:
                 },
             }
 
+            if attendee_email:
+                event["attendees"] = [{"email": attendee_email}]
+
             result = self._service.events().insert(
                 calendarId=self._calendar_id,
-                body=event
+                body=event,
+                sendUpdates="all" if attendee_email else "none",
             ).execute()
 
             event_id = result.get("id")
@@ -389,6 +394,7 @@ class AgendamientoModule:
                     end_time=end_time,
                     summary=summary,
                     description=description,
+                    attendee_email=email_cliente,
                 )
 
             appointment = {

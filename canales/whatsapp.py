@@ -316,6 +316,7 @@ class WhatsAppHandler:
                         client_id,
                         sender_id,
                         "whatsapp",
+                        usuario_telefono=sender_id,
                     )
                     conversation_id = conversation["id"]
 

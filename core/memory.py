@@ -43,6 +43,8 @@ class MemoryManager:
         client_id: str,
         user_id: str,
         channel: str,
+        usuario_nombre: str = "",
+        usuario_telefono: str = "",
     ) -> dict[str, Any]:
         """
         Get existing conversation or create new one.
@@ -75,6 +77,8 @@ class MemoryManager:
                 "id": str(uuid4()),
                 "cliente_id": client_id,
                 "usuario_id": user_id,
+                "usuario_telefono": usuario_telefono or user_id,
+                "usuario_nombre": usuario_nombre or "",
                 "canal": channel,
                 "estado": "activa",
                 "lead_state": "curioso",
