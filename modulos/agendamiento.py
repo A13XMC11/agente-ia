@@ -155,6 +155,13 @@ class AgendamientoModule:
     DEFAULT_END_HOUR = 18
     SLOT_DURATION_MINUTES = 30
 
+    # Keywords that identify a call appointment (vs demo/meeting)
+    CALL_KEYWORDS = {
+        "llamada", "llámame", "llamame", "llamar", "call",
+        "hablar por teléfono", "hablar por telefono", "comunicarse",
+        "contactar", "teléfono", "telefono", "marcar",
+    }
+
     def __init__(self, supabase_client: Any, google_credentials_json: Optional[str] = None,
                  alertas_module: Any = None, calendar_id: Optional[str] = None):
         self.supabase = supabase_client
@@ -413,12 +420,26 @@ class AgendamientoModule:
                     mensaje = self._build_alert_message(
                         nombre_cliente, telefono_cliente, servicio, fecha, hora, extra
                     )
-                    await self.alertas.enviar_alerta_importante(
-                        client_id=cliente_id,
-                        tipo="appointment_scheduled",
-                        mensaje=mensaje,
-                        datos_extras={"cita_id": cita_id, "cliente": nombre_cliente},
+                    is_call = any(
+                        kw in servicio.lower() for kw in self.CALL_KEYWORDS
                     )
+                    if is_call:
+                        await self.alertas.enviar_alerta_critica(
+                            client_id=cliente_id,
+                            tipo="llamada_urgente",
+                            mensaje=(
+                                f"📞 *Llamar ahora:* {telefono_cliente}\n\n"
+                                + mensaje
+                            ),
+                            datos_extras={"cita_id": cita_id, "cliente": nombre_cliente},
+                        )
+                    else:
+                        await self.alertas.enviar_alerta_importante(
+                            client_id=cliente_id,
+                            tipo="appointment_scheduled",
+                            mensaje=mensaje,
+                            datos_extras={"cita_id": cita_id, "cliente": nombre_cliente},
+                        )
                 except Exception as alert_err:
                     logger.warning(f"Error sending appointment alert: {alert_err}")
 
@@ -523,6 +544,23 @@ class AgendamientoModule:
                 f"{nueva_fecha} {nueva_hora}"
             )
 
+            if self.alertas:
+                try:
+                    await self.alertas.enviar_alerta_importante(
+                        client_id=cliente_id,
+                        tipo="appointment_rescheduled",
+                        mensaje=(
+                            f"👤 Cliente: {nombre}\n"
+                            f"📞 Teléfono: {telefono_cliente}\n"
+                            f"📋 Servicio: {servicio}\n"
+                            f"📅 Fecha anterior: {old_appointment['fecha']} {old_appointment['hora']}\n"
+                            f"📅 Nueva fecha: {nueva_fecha} {nueva_hora}"
+                        ),
+                        datos_extras={"cita_id": cita_id},
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Error sending reschedule alert: {alert_err}")
+
             return {
                 "success": True,
                 "cita_id": cita_id,
@@ -580,6 +618,21 @@ class AgendamientoModule:
             }).eq("id", cita_id).execute()
 
             logger.info(f"Appointment {cita_id} cancelled successfully")
+
+            if self.alertas:
+                try:
+                    await self.alertas.enviar_alerta_importante(
+                        client_id=cliente_id,
+                        tipo="appointment_cancelled",
+                        mensaje=(
+                            f"📞 Teléfono: {telefono_cliente}\n"
+                            f"📅 Fecha: {appointment['fecha']} {appointment['hora']}\n"
+                            f"👤 Cliente: {appointment.get('nombre_cliente', 'N/A')}"
+                        ),
+                        datos_extras={"cita_id": cita_id},
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Error sending cancellation alert: {alert_err}")
 
             return {
                 "success": True,

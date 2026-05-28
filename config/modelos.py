@@ -7,7 +7,6 @@ Defines Pydantic schemas for API requests/responses and database models.
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field, EmailStr
 

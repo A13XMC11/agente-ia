@@ -952,6 +952,7 @@ Recuerda confirmar asistencia.
             "customer_frustrated": "CLIENTE FURIOSO",
             "customer_abandoning": "CLIENTE QUIERE IRSE",
             "suspicious_payment": "COMPROBANTE SOSPECHOSO",
+            "llamada_urgente": "LLAMADA URGENTE SOLICITADA",
         }
 
         title = type_labels.get(tipo, tipo.upper())
@@ -977,7 +978,10 @@ Recuerda confirmar asistencia.
         type_labels = {
             "hot_lead": "LEAD CALIENTE",
             "appointment_scheduled": "CITA AGENDADA",
+            "appointment_rescheduled": "CITA REAGENDADA",
+            "appointment_cancelled": "CITA CANCELADA",
             "payment_pending_review": "PAGO PENDIENTE",
+            "quote_accepted": "COTIZACIÓN ACEPTADA",
         }
 
         title = type_labels.get(tipo, tipo.upper())

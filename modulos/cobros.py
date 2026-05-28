@@ -33,6 +33,7 @@ class CobrosModule:
         openai_client: AsyncOpenAI,
         redis_client: Any = None,
         whatsapp_handler: Any = None,
+        alertas_module: Any = None,
     ):
         """
         Initialize payment module.
@@ -41,12 +42,14 @@ class CobrosModule:
             supabase_client: Supabase client instance
             openai_client: OpenAI async client (for gpt-4o vision)
             redis_client: Redis client for pending amount state (24h TTL)
-            whatsapp_handler: WhatsApp handler for owner notifications
+            whatsapp_handler: WhatsApp handler for owner notifications (legacy, kept for compat)
+            alertas_module: AlertasModule instance for reliable owner notifications
         """
         self.supabase = supabase_client
         self.openai = openai_client
         self.redis = redis_client
         self.whatsapp = whatsapp_handler
+        self.alertas = alertas_module
         self.fraud_threshold = float(
             os.environ.get("PAYMENT_FRAUD_SCORE_THRESHOLD", 0.7)
         )
@@ -444,7 +447,7 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
         Only notifies for valid comprobantes (requires approval before confirming to user).
         Invalid/duplicate payments are rejected without notifying owner.
         """
-        if not self.whatsapp or outcome != "valid":
+        if outcome != "valid":
             return
 
         try:
@@ -477,12 +480,21 @@ Responde SOLO con el JSON, sin comentarios adicionales.""",
                 f"❌ RECHAZAR {pago_id}"
             )
 
-            await self.whatsapp.send_message(
-                phone_number_id=phone_number_id,
-                recipient_phone=owner_phone,
-                text=msg,
-                client_id=client_id,
-            )
+            # Use AlertasModule (reliable Meta API path) when available, fallback to handler
+            if self.alertas:
+                await self.alertas._send_whatsapp_via_meta(
+                    client_id=client_id,
+                    phone_number_id=phone_number_id,
+                    to_phone=owner_phone,
+                    message=msg,
+                )
+            elif self.whatsapp:
+                await self.whatsapp.send_message(
+                    phone_number_id=phone_number_id,
+                    recipient_phone=owner_phone,
+                    text=msg,
+                    client_id=client_id,
+                )
 
         except Exception as e:
             logger.error(f"Failed to notify owner: {e}")

@@ -153,9 +153,9 @@ class AgentEngine:
             calendar_id=config.get("google_calendar_id"),
         ) if supabase_client else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
-        self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
+        self.cobros = CobrosModule(supabase_client, self.client, alertas_module=self.alertas) if supabase_client else None
         self.links_pago = LinksPagoModule(supabase_client) if supabase_client else None
-        self.ventas = SalesModule(supabase_client, links_pago_module=self.links_pago) if supabase_client else None
+        self.ventas = SalesModule(supabase_client, links_pago_module=self.links_pago, alertas_module=self.alertas) if supabase_client else None
 
         # Context for current message (injected per-request by the router)
         self._current_media_url: Optional[str] = None

@@ -20,9 +20,11 @@ class SalesModule:
         self,
         supabase_client: Any,
         links_pago_module: Optional["LinksPagoModule"] = None,
+        alertas_module: Any = None,
     ):
         self.supabase = supabase_client
         self.links_pago = links_pago_module
+        self.alertas = alertas_module
 
     async def get_catalog(self, client_id: str) -> list[dict[str, Any]]:
         """Return active products for a client."""
@@ -213,6 +215,25 @@ class SalesModule:
                         logger.warning(f"Could not decrement stock for product {prod_id}: {stock_err}")
 
             logger.info(f"Quote {quote_id} accepted by user {user_id}")
+
+            if self.alertas:
+                try:
+                    items_desc = ", ".join(
+                        f"{it['product_name']} x{it['quantity']}"
+                        for it in (quote.get("items") or [])
+                    )
+                    await self.alertas.enviar_alerta_importante(
+                        client_id=client_id,
+                        tipo="quote_accepted",
+                        mensaje=(
+                            f"💰 Monto: ${quote['total']:.2f} {quote.get('moneda', 'USD')}\n"
+                            f"📦 Productos: {items_desc or 'N/A'}\n"
+                            f"🔗 Link de pago generado automáticamente"
+                        ),
+                        datos_extras={"quote_id": quote_id, "user_id": user_id},
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Error sending quote accepted alert: {alert_err}")
 
             result: dict[str, Any] = {
                 "success": True,
