@@ -16,6 +16,7 @@ import {
   BarChart2,
   Receipt,
   Megaphone,
+  ShoppingBag,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -41,6 +42,7 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
     { href: '/cliente/citas', label: 'Citas', icon: Calendar },
     { href: '/cliente/pagos', label: 'Pagos', icon: CreditCard },
     { href: '/cliente/billing', label: 'Facturación', icon: Receipt },
+    { href: '/cliente/catalogo', label: 'Catálogo', icon: ShoppingBag },
     { href: '/cliente/campanas', label: 'Campañas', icon: Megaphone },
     { href: '/cliente/analytics', label: 'Analytics', icon: BarChart2 },
     { href: '/cliente/configuracion', label: 'Configuración', icon: Settings },

@@ -22,6 +22,8 @@ from modulos.agendamiento import AgendamientoModule
 from modulos.alertas import AlertasModule
 from modulos.calificacion import CalificacionModule
 from modulos.cobros import CobrosModule
+from modulos.links_pago import LinksPagoModule
+from modulos.ventas import SalesModule
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,8 @@ class AgentEngine:
         self.agendamiento = AgendamientoModule(supabase_client, alertas_module=self.alertas) if supabase_client else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         self.cobros = CobrosModule(supabase_client, self.client) if supabase_client else None
+        self.links_pago = LinksPagoModule(supabase_client) if supabase_client else None
+        self.ventas = SalesModule(supabase_client, links_pago_module=self.links_pago) if supabase_client else None
 
         # Context for current message (injected per-request by the router)
         self._current_media_url: Optional[str] = None
@@ -403,8 +407,20 @@ class AgentEngine:
                 {
                     "type": "function",
                     "function": {
+                        "name": "ver_catalogo",
+                        "description": "Fetch the product/service catalog so you can present options and prices to the customer",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {},
+                            "required": [],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "enviar_cotizacion",
-                        "description": "Send a sales quote to the customer",
+                        "description": "Create and send a sales quote when the customer shows interest in buying specific products",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -415,16 +431,16 @@ class AgentEngine:
                                 "productos": {
                                     "type": "array",
                                     "items": {"type": "string"},
-                                    "description": "Product names or IDs",
+                                    "description": "Product names or IDs from the catalog",
                                 },
                                 "cantidades": {
                                     "type": "array",
                                     "items": {"type": "integer"},
-                                    "description": "Quantities for each product",
+                                    "description": "Quantities for each product (same order as productos)",
                                 },
                                 "descuento_porcentaje": {
                                     "type": "number",
-                                    "description": "Optional discount percentage",
+                                    "description": "Optional discount percentage (0-100)",
                                 },
                                 "notas": {
                                     "type": "string",
@@ -432,6 +448,31 @@ class AgentEngine:
                                 },
                             },
                             "required": ["usuario_id", "productos", "cantidades"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "aceptar_cotizacion",
+                        "description": "Mark a quote as accepted and generate a payment link automatically. Call this when the customer confirms they want to buy.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "quote_id": {
+                                    "type": "string",
+                                    "description": "Quote ID to accept",
+                                },
+                                "usuario_id": {
+                                    "type": "string",
+                                    "description": "User/Lead ID",
+                                },
+                                "proveedor": {
+                                    "type": "string",
+                                    "description": "Payment provider: stripe, mercadopago, or paypal (default: stripe)",
+                                },
+                            },
+                            "required": ["quote_id", "usuario_id"],
                         },
                     },
                 },
@@ -787,6 +828,36 @@ class AgentEngine:
                     usuario_id=arguments.get("usuario_id", sender_id),
                     score_delta=arguments.get("score", 0),
                     razon=arguments.get("razon", ""),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "ver_catalogo":
+                if not self.ventas:
+                    return json.dumps({"error": "Módulo de ventas no disponible"})
+                result = await self.ventas.get_catalog(client_id=client_id)
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "enviar_cotizacion":
+                if not self.ventas:
+                    return json.dumps({"error": "Módulo de ventas no disponible"})
+                result = await self.ventas.create_quote(
+                    client_id=client_id,
+                    user_id=arguments.get("usuario_id", sender_id),
+                    productos=arguments.get("productos", []),
+                    cantidades=arguments.get("cantidades", []),
+                    descuento_porcentaje=arguments.get("descuento_porcentaje", 0),
+                    notas=arguments.get("notas"),
+                )
+                return json.dumps(result, ensure_ascii=False)
+
+            if tool_name == "aceptar_cotizacion":
+                if not self.ventas:
+                    return json.dumps({"error": "Módulo de ventas no disponible"})
+                result = await self.ventas.accept_quote(
+                    quote_id=arguments.get("quote_id", ""),
+                    client_id=client_id,
+                    user_id=arguments.get("usuario_id", sender_id),
+                    proveedor=arguments.get("proveedor", "stripe"),
                 )
                 return json.dumps(result, ensure_ascii=False)
 

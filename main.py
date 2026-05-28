@@ -80,10 +80,19 @@ email_handler: EmailHandler | None = None
 # Alerts, follow-ups, and scheduler
 alertas_module: Any | None = None
 seguimiento_module: Any | None = None
+catalog_sync_module: Any | None = None
 scheduler: AsyncIOScheduler | None = None
 
 # Billing
 stripe_billing: StripeBilling | None = None
+
+
+async def _sync_all_catalogs(sync_module: Any) -> None:
+    """APScheduler job: sync all clients with sheets/webhook catalog sources."""
+    try:
+        await sync_module.sync_all_auto_clients()
+    except Exception as e:
+        logger.error(f"Error in catalog sync job: {e}", exc_info=True)
 
 
 async def _verificar_todos_los_seguimientos(
@@ -404,6 +413,11 @@ async def lifespan(app: FastAPI):
             )
             logger.info("seguimiento_module_initialized")
 
+            # Initialize catalog sync module
+            from modulos.catalog_sync import CatalogSyncModule
+            catalog_sync_module = CatalogSyncModule(supabase_service_client)
+            logger.info("catalog_sync_module_initialized")
+
             # Initialize AsyncIO scheduler for cron jobs (UTC timezone)
             scheduler = AsyncIOScheduler(timezone="UTC")
             scheduler.add_job(
@@ -426,8 +440,18 @@ async def lifespan(app: FastAPI):
                 misfire_grace_time=60,
             )
 
+            # Add job for catalog sync every 60 minutes
+            scheduler.add_job(
+                _sync_all_catalogs,
+                "interval",
+                minutes=60,
+                args=(catalog_sync_module,),
+                id="catalog_sync_job",
+                misfire_grace_time=120,
+            )
+
             scheduler.start()
-            logger.info("scheduler_started", jobs=["daily_summary_at_8pm", "seguimientos_automaticos_job"])
+            logger.info("scheduler_started", jobs=["daily_summary_at_8pm", "seguimientos_automaticos_job", "catalog_sync_job"])
         except Exception as e:
             logger.error("alertas_scheduler_init_error", error=str(e), exc_info=True)
             alertas_module = None
@@ -1200,6 +1224,123 @@ async def internal_send_email(request: Request):
 
     print(f"[send-email] Email sent to {to}: {subject}")
     return {"status": "ok"}
+
+
+@app.post("/api/catalog/import")
+async def import_catalog(request: Request):
+    """
+    Import or update a client's product catalog from a CSV or Excel file.
+
+    Accepts multipart/form-data with:
+      - file : CSV (.csv) or Excel (.xlsx/.xls) file
+      - client_id : target client UUID
+
+    Auth: requires Authorization header with super_admin or admin JWT
+    that owns the given client_id.
+
+    Returns: { success, total_rows, created, updated, skipped }
+    """
+    from fastapi import UploadFile
+    import re as _re
+
+    # Auth check
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing auth token")
+    token = auth_header.removeprefix("Bearer ").strip()
+    try:
+        auth_manager_local = AuthManager()
+        payload = auth_manager_local.verify_token(token)
+        caller_role = payload.get("role", "")
+        caller_client = payload.get("cliente_id", "")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    form = await request.form()
+    client_id: str = str(form.get("client_id", "")).strip()
+    file: Any = form.get("file")
+
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id requerido")
+    if not file:
+        raise HTTPException(status_code=400, detail="file requerido")
+
+    # Admins can only import for their own client
+    if caller_role not in ("super_admin",) and caller_client != client_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este cliente")
+
+    if not catalog_sync_module:
+        raise HTTPException(status_code=503, detail="Módulo de catálogo no disponible")
+
+    filename: str = getattr(file, "filename", "") or ""
+    content: bytes = await file.read()
+
+    if filename.lower().endswith(".csv"):
+        result = await catalog_sync_module.import_from_csv(
+            client_id, content.decode("utf-8", errors="replace")
+        )
+    elif _re.search(r"\.(xlsx|xls)$", filename.lower()):
+        result = await catalog_sync_module.import_from_excel(client_id, content)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Formato no soportado. Use .csv, .xlsx o .xls",
+        )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=422, detail=result.get("error", "Import failed"))
+
+    print(f"[catalog/import] client={client_id} file={filename} result={result}")
+    return result
+
+
+@app.post("/api/catalog/sync-config")
+async def upsert_catalog_sync_config(request: Request):
+    """
+    Save or update the catalog sync configuration for a client.
+
+    Body: { client_id, tipo, sheets_url?, webhook_url?, sync_interval_minutes? }
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing auth token")
+    token = auth_header.removeprefix("Bearer ").strip()
+    try:
+        auth_manager_local = AuthManager()
+        payload = auth_manager_local.verify_token(token)
+        caller_role = payload.get("role", "")
+        caller_client = payload.get("cliente_id", "")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    body = await request.json()
+    client_id: str = str(body.get("client_id", "")).strip()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id requerido")
+    if caller_role not in ("super_admin",) and caller_client != client_id:
+        raise HTTPException(status_code=403, detail="No autorizado para este cliente")
+
+    tipo = body.get("tipo", "manual")
+    if tipo not in ("manual", "sheets", "webhook"):
+        raise HTTPException(status_code=400, detail="tipo debe ser manual, sheets o webhook")
+
+    from datetime import datetime as _dt
+    now = _dt.utcnow().isoformat()
+    row = {
+        "cliente_id": client_id,
+        "tipo": tipo,
+        "sheets_url": body.get("sheets_url"),
+        "webhook_url": body.get("webhook_url"),
+        "sync_interval_minutes": int(body.get("sync_interval_minutes", 60)),
+        "activo": True,
+        "updated_at": now,
+    }
+
+    supabase_service_client.table("catalog_sync_config").upsert(
+        row, on_conflict="cliente_id"
+    ).execute()
+
+    return {"success": True, "config": row}
 
 
 # ============================================================================
