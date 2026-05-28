@@ -472,7 +472,23 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 - UI de Campañas Masivas en dashboard — página /cliente/campanas con crear, lanzar y cancelar (2026-05-24)
 
 ## Pendiente / Roadmap
-- Instagram/Facebook: configuración self-service desde dashboard
+- Instagram/Facebook: configuración self-service desde dashboard (esperando cuentas Meta)
+- Onboarding self-service completo:
+  - Landing page pública (lanlabsec.com) con planes y CTA
+  - Página de registro público: cliente llena datos, elige plan, paga con Stripe
+  - Email de bienvenida automático con credenciales tras pago confirmado
+  - Wizard post-login: primer ingreso guía al cliente a conectar WhatsApp y configurar agente
+  (Hoy el super_admin crea clientes manualmente desde /admin/clientes/nuevo)
+
+## Arquitectura Futura (cuando haya clientes enterprise)
+### DB dedicada por cliente enterprise
+Cuando un cliente pague >$1k/mes y requiera aislamiento total:
+1. Crear nuevo proyecto Supabase para ese cliente
+2. Correr las mismas migraciones en el nuevo proyecto
+3. Guardar credenciales en tabla `clientes`: columnas `supabase_url` + `supabase_service_key` (encriptado)
+4. Modificar `core/router.py` → `_get_or_create_agent()` para detectar si el cliente tiene DB propia y usar `create_client()` con esas credenciales
+5. Migrar datos existentes del cliente desde DB compartida a la nueva
+Hoy todos los clientes comparten 1 Supabase con RLS — correcto para planes $149-$399/mes.
 
 ## Tablas Supabase (RLS habilitado en todas)
 leads, canales_config, clientes, conversaciones,

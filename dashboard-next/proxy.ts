@@ -2,71 +2,64 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
 const jwtSecret = process.env.JWT_SECRET
-if (!jwtSecret) {
-  throw new Error('JWT_SECRET environment variable is not set')
-}
-const secretKey = new TextEncoder().encode(jwtSecret)
+const secretKey = jwtSecret ? new TextEncoder().encode(jwtSecret) : null
 
-async function verifyJWT(token: string) {
-  try {
-    const verified = await jwtVerify(token, secretKey)
-    return verified.payload as unknown
-  } catch {
-    return null
-  }
-}
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout', '/onboarding']
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow login and public routes without token verification
-  if (pathname === '/login' || pathname === '/api/auth/login' || pathname.startsWith('/api/auth')) {
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next()
   }
 
-  // Get token from cookies
+  const isProtected =
+    pathname.startsWith('/cliente') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/api/cliente') ||
+    pathname.startsWith('/api/admin') ||
+    pathname.startsWith('/api/clientes')
+
+  if (!isProtected) {
+    return NextResponse.next()
+  }
+
   const token = request.cookies.get('auth-token')?.value
 
-  if (!token) {
-    if (pathname !== '/login') {
-      return NextResponse.redirect(new URL('/login', request.url))
+  if (!token || !secretKey) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, secretKey)
+
+    if (
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/api/admin') ||
+      pathname.startsWith('/api/clientes')
+    ) {
+      if (payload.role !== 'super_admin') {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+        }
+        return NextResponse.redirect(new URL('/cliente', request.url))
+      }
+    }
+
     return NextResponse.next()
-  }
-
-  // Verify token
-  const user = await verifyJWT(token)
-
-  if (!user) {
-    if (pathname !== '/login') {
-      return NextResponse.redirect(new URL('/login', request.url))
+  } catch {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
-    return NextResponse.next()
+    return NextResponse.redirect(new URL('/login', request.url))
   }
-
-  // Role-based access control
-  const userRole = (user as { role?: string }).role
-
-  // Admin routes - only super_admin
-  if (pathname.startsWith('/admin')) {
-    if (userRole !== 'super_admin') {
-      return NextResponse.redirect(new URL('/cliente', request.url))
-    }
-  }
-
-  // Cliente routes - only non-super_admin users (admin, operador, cliente)
-  if (pathname.startsWith('/cliente')) {
-    if (userRole === 'super_admin') {
-      return NextResponse.redirect(new URL('/admin', request.url))
-    }
-    if (userRole !== 'admin' && userRole !== 'operador' && userRole !== 'cliente') {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-  }
-
-  return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+  ],
 }
