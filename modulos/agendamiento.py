@@ -58,9 +58,11 @@ class GoogleCalendarService:
             )
             self._service = build("calendar", "v3", credentials=credentials)
             self._is_available = True
+            print(f"✅ [CALENDAR] Service initialized | calendar_id={self._calendar_id}")
             logger.info("Google Calendar service initialized successfully")
 
         except Exception as e:
+            print(f"❌ [CALENDAR] Failed to initialize Google Calendar service: {e}")
             logger.warning(f"Failed to initialize Google Calendar service: {e}")
             self._is_available = False
 
@@ -131,10 +133,12 @@ class GoogleCalendarService:
             ).execute()
 
             event_id = result.get("id")
+            print(f"✅ [CALENDAR] Event created: {event_id} | {summary} | attendee={attendee_email}")
             logger.info(f"Google Calendar event created: {event_id} ({summary})")
             return event_id
 
         except Exception as e:
+            print(f"❌ [CALENDAR] Failed to create event: {e}")
             logger.warning(f"Failed to create Google Calendar event: {e}")
             return None
 
