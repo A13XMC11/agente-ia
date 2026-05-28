@@ -23,7 +23,7 @@ function createServiceClient() {
   )
 }
 
-export async function getServerSession(): Promise<(User & { cliente_id: string }) | null> {
+export async function getServerSession(): Promise<User | null> {
   const cookieStore = await cookies()
   const token = cookieStore.get('auth-token')?.value
 
@@ -35,7 +35,12 @@ export async function getServerSession(): Promise<(User & { cliente_id: string }
     const verified = await jwtVerify(token, secretKey)
     const user = verified.payload as unknown as User
 
-    // Obtener cliente_id de la tabla usuarios si no está en el JWT
+    // super_admin no tiene cliente_id — es válido
+    if (user.role === 'super_admin') {
+      return user
+    }
+
+    // Para otros roles, obtener cliente_id si no está en el JWT
     if (!user.cliente_id) {
       const supabase = createServiceClient()
       const { data } = await supabase
@@ -53,7 +58,7 @@ export async function getServerSession(): Promise<(User & { cliente_id: string }
       return null
     }
 
-    return user as User & { cliente_id: string }
+    return user
   } catch {
     return null
   }
@@ -66,7 +71,7 @@ export async function requireAuth(): Promise<User> {
     redirect('/login')
   }
 
-  return session
+  return session as User
 }
 
 export async function requireRole(role: 'super_admin' | 'admin' | 'operador'): Promise<User> {
