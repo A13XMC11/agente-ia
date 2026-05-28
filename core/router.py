@@ -309,15 +309,16 @@ class MessageRouter:
                 print(f"{'='*80}\n")
 
                 response = self.supabase_service.table("canales_config").select(
-                    "*"  # Select all to see what fields are available
+                    "*"
                 ).eq("canal", "whatsapp").eq(
                     "phone_number_id", identifier
-                ).single().execute()
+                ).limit(1).execute()
 
                 print(f"🔍 [IDENTIFY] Query response:")
                 if response.data:
-                    print(f"   Found record: {list(response.data.keys())}")
-                    client_id = response.data["cliente_id"]
+                    record = response.data[0]
+                    print(f"   Found record: {list(record.keys())}")
+                    client_id = record["cliente_id"]
                     print(f"✅ [IDENTIFY] Resolved phone_number_id={identifier} → client_id={client_id!r}")
                     return client_id
 
@@ -350,24 +351,22 @@ class MessageRouter:
                 return None
 
             elif identifier_type == "page_id":
-                # Map Instagram/Facebook page_id to client
                 response = self.supabase_service.table("canales_config").select(
                     "cliente_id"
                 ).eq("canal", "instagram").eq(
                     "page_id", identifier
-                ).single().execute()
+                ).limit(1).execute()
 
-                return response.data["cliente_id"] if response.data else None
+                return response.data[0]["cliente_id"] if response.data else None
 
             elif identifier_type == "sender_email":
-                # Map email domain to client
                 response = self.supabase_service.table("canales_config").select(
                     "cliente_id"
                 ).eq("canal", "email").eq(
                     "email_address", identifier
-                ).single().execute()
+                ).limit(1).execute()
 
-                return response.data["cliente_id"] if response.data else None
+                return response.data[0]["cliente_id"] if response.data else None
 
         except Exception as e:
             logger.warning(f"Could not identify client: {e}")
