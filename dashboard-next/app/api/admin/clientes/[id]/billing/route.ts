@@ -165,7 +165,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
     const apiRes = await fetch(`${apiUrl}/api/billing/cancel-subscription`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': process.env.INTERNAL_API_SECRET ?? '',
+      },
       body: JSON.stringify({ client_id: clienteId }),
     })
 
