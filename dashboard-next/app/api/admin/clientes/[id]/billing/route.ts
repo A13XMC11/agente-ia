@@ -42,10 +42,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const { id: clienteId } = await params
     const body = await req.json()
-    const { monthly_amount } = body
+    const { monthly_amount, phone_number, country_code = '593' } = body
 
     if (!monthly_amount || isNaN(Number(monthly_amount)) || Number(monthly_amount) <= 0) {
       return NextResponse.json({ success: false, error: 'monthly_amount requerido y debe ser positivo' }, { status: 400 })
+    }
+    if (!phone_number || typeof phone_number !== 'string' || !phone_number.trim()) {
+      return NextResponse.json({ success: false, error: 'phone_number (teléfono Payphone del cliente) es requerido' }, { status: 400 })
     }
 
     // Block only if there's an active/past_due subscription
@@ -86,6 +89,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       body: JSON.stringify({
         client_id: clienteId,
         monthly_amount: Number(monthly_amount),
+        phone_number: phone_number.trim(),
+        country_code: String(country_code),
         customer_email: cliente.email,
       }),
     })

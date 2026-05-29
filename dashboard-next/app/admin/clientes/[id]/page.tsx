@@ -68,6 +68,7 @@ export default function ClienteDetalle() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [billingAmount, setBillingAmount] = useState('')
+  const [billingPhone, setBillingPhone] = useState('')
   const [billingLoading, setBillingLoading] = useState(false)
 
   useEffect(() => {
@@ -178,19 +179,21 @@ export default function ClienteDetalle() {
   async function handleCreateSubscription() {
     const amount = parseFloat(billingAmount)
     if (!amount || amount <= 0) return alert('Ingresa un monto válido')
+    if (!billingPhone.trim()) return alert('Ingresa el número de teléfono Payphone del cliente')
     setBillingLoading(true)
     try {
       const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ monthly_amount: amount }),
+        body: JSON.stringify({ monthly_amount: amount, phone_number: billingPhone.trim(), country_code: '593' }),
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        alert('Suscripción creada exitosamente')
+        alert('Suscripción creada. El cliente recibirá una notificación en su app Payphone para aprobar el pago.')
         const refreshed = await fetch(`/api/admin/clientes/${clienteId}/billing`)
         if (refreshed.ok) setSubscription((await refreshed.json()).data)
         setBillingAmount('')
+        setBillingPhone('')
       } else {
         alert(data.error || 'Error al crear suscripción')
       }
@@ -454,7 +457,7 @@ export default function ClienteDetalle() {
               {!subscription && (
                 <p className="text-sm text-text-secondary">Sin suscripción activa. Crea una para habilitar el cobro mensual.</p>
               )}
-              <div className="flex items-center gap-3">
+              <div className="flex items-end gap-3 flex-wrap">
                 <div className="space-y-1">
                   <Label>Monto mensual (USD)</Label>
                   <Input
@@ -464,12 +467,22 @@ export default function ClienteDetalle() {
                     placeholder="149.00"
                     value={billingAmount}
                     onChange={(e) => setBillingAmount(e.target.value)}
-                    className="w-40"
+                    className="w-36"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Teléfono Payphone del cliente</Label>
+                  <Input
+                    type="tel"
+                    placeholder="0984111222"
+                    value={billingPhone}
+                    onChange={(e) => setBillingPhone(e.target.value)}
+                    className="w-44"
                   />
                 </div>
                 <Button
                   onClick={handleCreateSubscription}
-                  disabled={billingLoading || !billingAmount}
+                  disabled={billingLoading || !billingAmount || !billingPhone}
                   className="self-end"
                 >
                   {billingLoading ? 'Creando...' : 'Crear suscripción'}
