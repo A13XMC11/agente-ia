@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, Clock } from 'lucide-react'
 
 interface Cliente {
   id: string
@@ -196,6 +196,27 @@ export default function ClienteDetalle() {
         setBillingPhone('')
       } else {
         alert(data.error || 'Error al crear suscripción')
+      }
+    } catch {
+      alert('Error de red')
+    } finally {
+      setBillingLoading(false)
+    }
+  }
+
+  async function handleManualActivate() {
+    if (!confirm('¿Confirmas que verificaste el pago en el dashboard de Payphone y quieres activar la suscripción?')) return
+    setBillingLoading(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, { method: 'PATCH' })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert('Suscripción activada correctamente')
+        const refreshed = await fetch(`/api/admin/clientes/${clienteId}/billing`)
+        const refreshedData = await refreshed.json()
+        setSubscription(refreshedData.data ?? null)
+      } else {
+        alert(data.error || 'Error al activar suscripción')
       }
     } catch {
       alert('Error de red')
@@ -424,6 +445,7 @@ export default function ClienteDetalle() {
               <div className="flex items-center gap-3">
                 {subscription.status === 'active' && <CheckCircle className="h-5 w-5 text-success" />}
                 {subscription.status === 'past_due' && <AlertTriangle className="h-5 w-5 text-warning" />}
+                {subscription.status === 'pending_payment' && <Clock className="h-5 w-5 text-accent" />}
                 <div>
                   <p className="font-semibold text-text-primary capitalize">{subscription.status.replace('_', ' ')}</p>
                   <p className="text-sm text-text-secondary">
@@ -435,16 +457,32 @@ export default function ClienteDetalle() {
                       <> · {subscription.payment_failed_count} pago(s) fallido(s)</>
                     )}
                   </p>
+                  {subscription.status === 'pending_payment' && (
+                    <p className="text-xs text-text-secondary mt-1">
+                      Esperando aprobación del cliente en su app Payphone. Si ya pagó, actívala manualmente.
+                    </p>
+                  )}
                 </div>
               </div>
-              <Button
-                variant="destructive"
-                onClick={handleCancelSubscription}
-                disabled={billingLoading}
-                className="w-full sm:w-auto"
-              >
-                {billingLoading ? 'Cancelando...' : 'Cancelar suscripción'}
-              </Button>
+              <div className="flex gap-2 flex-wrap">
+                {subscription.status === 'pending_payment' && (
+                  <Button
+                    onClick={handleManualActivate}
+                    disabled={billingLoading}
+                    className="w-full sm:w-auto"
+                  >
+                    {billingLoading ? 'Activando...' : 'Activar manualmente'}
+                  </Button>
+                )}
+                <Button
+                  variant="destructive"
+                  onClick={handleCancelSubscription}
+                  disabled={billingLoading}
+                  className="w-full sm:w-auto"
+                >
+                  {billingLoading ? 'Cancelando...' : 'Cancelar suscripción'}
+                </Button>
+              </div>
             </>
           ) : (
             <div className="space-y-3">
