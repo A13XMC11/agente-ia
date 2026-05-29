@@ -136,13 +136,10 @@ class GoogleCalendarService:
                 },
             }
 
-            if attendee_email:
-                event["attendees"] = [{"email": attendee_email}]
-
             result = self._service.events().insert(
                 calendarId=self._calendar_id,
                 body=event,
-                sendUpdates="all" if attendee_email else "none",
+                sendUpdates="none",
             ).execute()
 
             event_id = result.get("id")

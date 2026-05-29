@@ -158,13 +158,14 @@ class AgentEngine:
         self._tools_cache = None
 
         self.supabase = supabase_client
-        self.alertas = AlertasModule(supabase_client) if supabase_client else None
+        _svc = supabase_service_client or supabase_client
+        self.alertas = AlertasModule(_svc) if _svc else None
         self.agendamiento = AgendamientoModule(
-            supabase_client,
+            _svc,
             google_credentials_json=client_config.get("google_calendar_credentials_json"),
             alertas_module=self.alertas,
             calendar_id=client_config.get("google_calendar_id"),
-        ) if supabase_client else None
+        ) if _svc else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         self.cobros = CobrosModule(supabase_client, self.client, alertas_module=self.alertas) if supabase_client else None
         self.links_pago = LinksPagoModule(supabase_client) if supabase_client else None
