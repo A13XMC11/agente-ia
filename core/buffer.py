@@ -277,3 +277,60 @@ class MessageBuffer:
 
         buffer_key = f"buffer:{conversation_id}"
         return await self.redis.llen(buffer_key)
+
+    async def add_inbound_message(
+        self,
+        key: str,
+        text: str,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
+    ) -> None:
+        """
+        Buffer an inbound user message for debounced processing.
+
+        Accumulates rapid multi-part messages so the agent receives them
+        as a single combined input instead of responding to each fragment.
+
+        Args:
+            key: Unique key for the conversation (e.g. "{client_id}:{sender_id}")
+            text: Normalized message text
+            media_url: Optional media URL
+            media_type: Optional media type
+        """
+        if not self.redis:
+            raise RuntimeError("Buffer not initialized")
+
+        inbound_key = f"inbound:{key}"
+        data: dict[str, Any] = {"text": text}
+        if media_url:
+            data["media_url"] = media_url
+        if media_type:
+            data["media_type"] = media_type
+
+        await self.redis.rpush(inbound_key, json.dumps(data))
+        await self.redis.expire(inbound_key, 60)
+
+    async def get_and_clear_inbound(self, key: str) -> list[dict[str, Any]]:
+        """
+        Atomically fetch and clear all buffered inbound messages.
+
+        Args:
+            key: Unique key for the conversation
+
+        Returns:
+            List of message dicts with "text" and optional "media_url"/"media_type"
+        """
+        if not self.redis:
+            return []
+
+        inbound_key = f"inbound:{key}"
+        raw_messages = await self.redis.lrange(inbound_key, 0, -1)
+        await self.redis.delete(inbound_key)
+
+        messages: list[dict[str, Any]] = []
+        for raw in raw_messages:
+            try:
+                messages.append(json.loads(raw.decode()))
+            except json.JSONDecodeError:
+                logger.error("failed_to_parse_inbound_message", inbound_key=inbound_key)
+        return messages

@@ -4,6 +4,7 @@ Facebook channel: Meta Graph API webhook handler.
 Handles Messenger messages and sends responses.
 """
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -49,6 +50,8 @@ class FacebookHandler:
         self.memory = memory
         self.api_base_url = "https://graph.instagram.com/v18.0"
         self.http_client = httpx.AsyncClient(timeout=30.0)
+        self._pending_tasks: dict[str, asyncio.Task] = {}
+        self._debounce_delay: float = 3.0
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -178,8 +181,6 @@ class FacebookHandler:
         """
         try:
             sender_id = event.get("sender", {}).get("id", "")
-            message_data = event.get("message", {})
-            timestamp = event.get("timestamp", "")
 
             logger.info(
                 f"Processing Facebook message from {sender_id}",
@@ -202,6 +203,52 @@ class FacebookHandler:
                 logger.warning("Failed to normalize message")
                 return
 
+            debounce_key = f"{client_id}:{sender_id}"
+            await self.buffer.add_inbound_message(
+                debounce_key,
+                normalized["text"],
+                media_url=normalized.get("media_url"),
+                media_type=normalized.get("media_type"),
+            )
+
+            existing = self._pending_tasks.pop(debounce_key, None)
+            if existing and not existing.done():
+                existing.cancel()
+
+            task = asyncio.create_task(
+                self._debounced_process(client_id, page_id, sender_id, debounce_key)
+            )
+            self._pending_tasks[debounce_key] = task
+
+        except Exception as e:
+            logger.error(f"Error handling message: {e}", exc_info=True)
+
+    async def _debounced_process(
+        self,
+        client_id: str,
+        page_id: str,
+        sender_id: str,
+        debounce_key: str,
+    ) -> None:
+        """
+        Called after the debounce delay expires.
+
+        Collects all messages accumulated since the last keystroke, combines
+        them into a single input, and calls the agent once.
+        """
+        try:
+            await asyncio.sleep(self._debounce_delay)
+            self._pending_tasks.pop(debounce_key, None)
+
+            inbound = await self.buffer.get_and_clear_inbound(debounce_key)
+            if not inbound:
+                return
+
+            combined_text = "\n".join(m["text"] for m in inbound)
+            first_media = next((m for m in inbound if m.get("media_url")), {})
+            media_url = first_media.get("media_url")
+            media_type = first_media.get("media_type")
+
             conversation = await self.memory.get_or_create_conversation(
                 client_id,
                 sender_id,
@@ -213,10 +260,10 @@ class FacebookHandler:
                 conversation["id"],
                 sender_id,
                 "user",
-                normalized["text"],
+                combined_text,
                 "facebook",
-                media_url=normalized.get("media_url"),
-                media_type=normalized.get("media_type"),
+                media_url=media_url,
+                media_type=media_type,
             )
 
             memory_context = await self.memory.get_context_for_agent(
@@ -227,11 +274,11 @@ class FacebookHandler:
             agent_response = await self.router.route_message(
                 client_id,
                 {
-                    "text": normalized["text"],
+                    "text": combined_text,
                     "sender_id": sender_id,
                     "channel": "facebook",
-                    "media_url": normalized.get("media_url"),
-                    "media_type": normalized.get("media_type"),
+                    "media_url": media_url,
+                    "media_type": media_type,
                 },
                 memory_context,
             )
@@ -241,12 +288,7 @@ class FacebookHandler:
                 return
 
             response_text = agent_response.get("response_text", "")
-            await self.send_message(
-                page_id,
-                sender_id,
-                response_text,
-                client_id,
-            )
+            await self.send_message(page_id, sender_id, response_text, client_id)
 
             await self.memory.save_message(
                 client_id,
@@ -257,8 +299,10 @@ class FacebookHandler:
                 "facebook",
             )
 
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
-            logger.error(f"Error handling message: {e}", exc_info=True)
+            logger.error(f"Error in debounced process: {e}", exc_info=True)
 
     async def send_message(
         self,

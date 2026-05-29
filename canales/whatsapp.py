@@ -59,6 +59,8 @@ class WhatsAppHandler:
         self.api_base_url = "https://graph.facebook.com/v21.0"
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self._pending_tasks: dict[str, asyncio.Task] = {}
+        self._debounce_delay: float = 3.0
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -211,7 +213,6 @@ class WhatsAppHandler:
         try:
             print(f"\n\n>>> WHATSAPP MESSAGE RECEIVED <<<")
             sender_id = message.get("from", "")
-            timestamp = message.get("timestamp", "")
             print(f">>> sender_id={sender_id}, client_id={client_id}")
 
             logger.info(
@@ -219,7 +220,7 @@ class WhatsAppHandler:
                 extra={"client_id": client_id},
             )
 
-            # Handle audio messages: download and transcribe
+            # Handle audio messages: download and transcribe immediately before buffering
             if message.get("type") == "audio":
                 media_id = message.get("audio", {}).get("id")
                 if media_id:
@@ -264,8 +265,7 @@ class WhatsAppHandler:
                     logger.warning("Audio message without media_id")
                     return
 
-            # EARLY EXIT: Check if sender is owner and message is approval/rejection command
-            # This prevents owner responses from going through the AI and being interpreted as customer messages
+            # EARLY EXIT: owner approval/rejection commands bypass debounce entirely
             if message.get("type") == "text" and self.cobros_module:
                 msg_text = message.get("text", {}).get("body", "").strip()
                 is_owner = await self._is_owner(client_id, sender_id)
@@ -307,7 +307,58 @@ class WhatsAppHandler:
                 logger.warning("Failed to normalize message")
                 return
 
-            # Memory operations are best-effort — Supabase may be unavailable.
+            # Accumulate message in Redis and (re)start the debounce timer.
+            # If the user sends several rapid messages they are combined into one
+            # agent call instead of triggering a separate response each time.
+            debounce_key = f"{client_id}:{sender_id}"
+            await self.buffer.add_inbound_message(
+                debounce_key,
+                normalized["text"],
+                media_url=normalized.get("media_url"),
+                media_type=normalized.get("media_type"),
+            )
+
+            existing = self._pending_tasks.pop(debounce_key, None)
+            if existing and not existing.done():
+                existing.cancel()
+
+            task = asyncio.create_task(
+                self._debounced_process(client_id, phone_number_id, sender_id, debounce_key)
+            )
+            self._pending_tasks[debounce_key] = task
+            print(f">>> debounce task scheduled for {sender_id} (delay={self._debounce_delay}s)")
+
+        except Exception as e:
+            logger.error(f"Error handling message: {e}", exc_info=True)
+
+    async def _debounced_process(
+        self,
+        client_id: str,
+        phone_number_id: str,
+        sender_id: str,
+        debounce_key: str,
+    ) -> None:
+        """
+        Called after the debounce delay expires.
+
+        Collects all messages accumulated since the last keystroke, combines
+        them into a single input, and calls the agent once.
+        """
+        try:
+            await asyncio.sleep(self._debounce_delay)
+            self._pending_tasks.pop(debounce_key, None)
+
+            inbound = await self.buffer.get_and_clear_inbound(debounce_key)
+            if not inbound:
+                return
+
+            combined_text = "\n".join(m["text"] for m in inbound)
+            first_media = next((m for m in inbound if m.get("media_url")), {})
+            media_url = first_media.get("media_url")
+            media_type = first_media.get("media_type")
+
+            print(f"\n>>> DEBOUNCE FIRED for {sender_id}: {len(inbound)} message(s) combined")
+
             conversation_id = None
             memory_context: dict = {}
 
@@ -326,10 +377,10 @@ class WhatsAppHandler:
                         conversation_id,
                         sender_id,
                         "user",
-                        normalized["text"],
+                        combined_text,
                         "whatsapp",
-                        media_url=normalized.get("media_url"),
-                        media_type=normalized.get("media_type"),
+                        media_url=media_url,
+                        media_type=media_type,
                     )
 
                     memory_context = await self.memory.get_context_for_agent(
@@ -350,11 +401,11 @@ class WhatsAppHandler:
             agent_response = await self.router.route_message(
                 client_id,
                 {
-                    "text": normalized["text"],
+                    "text": combined_text,
                     "sender_id": sender_id,
                     "channel": "whatsapp",
-                    "media_url": normalized.get("media_url"),
-                    "media_type": normalized.get("media_type"),
+                    "media_url": media_url,
+                    "media_type": media_type,
                 },
                 memory_context,
             )
@@ -373,7 +424,6 @@ class WhatsAppHandler:
             chunks = self._split_response(response_text)
             for i, chunk in enumerate(chunks):
                 await self.send_typing_indicator(phone_number_id, sender_id, client_id)
-                # Delay proportional to chunk length: ~40ms/char, capped 0.8–3.5s
                 typing_delay = min(max(len(chunk) * 0.04, 0.8), 3.5) + random.uniform(0.2, 0.6)
                 await asyncio.sleep(typing_delay)
                 await self.send_message(phone_number_id, sender_id, chunk, client_id)
@@ -395,8 +445,10 @@ class WhatsAppHandler:
                         f"memory_save_response_failed: {mem_err} client_id={client_id}"
                     )
 
+        except asyncio.CancelledError:
+            pass  # A newer message arrived and reset the timer — nothing to do
         except Exception as e:
-            logger.error(f"Error handling message: {e}", exc_info=True)
+            logger.error(f"Error in debounced process: {e}", exc_info=True)
 
     async def _download_audio(
         self,
