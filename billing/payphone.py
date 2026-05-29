@@ -191,13 +191,13 @@ class PayphoneBilling:
 
             sub_response = self.supabase.table("subscription").select(
                 "cliente_id"
-            ).eq("payphone_client_transaction_id", client_transaction_id).maybeSingle().execute()
+            ).eq("payphone_client_transaction_id", client_transaction_id).execute()
 
             if not sub_response.data:
                 logger.warning(f"Subscription not found for clientTransactionId: {client_transaction_id}")
                 return {"status": "not_found"}
 
-            client_id = sub_response.data["cliente_id"]
+            client_id = sub_response.data[0]["cliente_id"]
 
             if transaction_status == PAYPHONE_STATUS_APPROVED:
                 now = datetime.utcnow()
@@ -227,9 +227,9 @@ class PayphoneBilling:
             else:
                 failed_resp = self.supabase.table("subscription").select(
                     "payment_failed_count"
-                ).eq("payphone_client_transaction_id", client_transaction_id).maybeSingle().execute()
+                ).eq("payphone_client_transaction_id", client_transaction_id).execute()
 
-                failed_count = (failed_resp.data or {}).get("payment_failed_count", 0) or 0
+                failed_count = (failed_resp.data[0] if failed_resp.data else {}).get("payment_failed_count", 0) or 0
                 new_count = failed_count + 1
 
                 self.supabase.table("subscription").update({

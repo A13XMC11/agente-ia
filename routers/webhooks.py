@@ -257,10 +257,19 @@ async def payphone_notificacion_externa(request: Request):
 
     print(f"[PAYPHONE] Notificación externa recibida: {body}")
 
-    transaction_id = body.get("TransactionId")
-    client_transaction_id = body.get("ClientTransactionId")
-    status_code = body.get("StatusCode")
-    transaction_status = body.get("TransactionStatus", "")
+    transaction_id = (
+        body.get("TransactionId")
+        or body.get("transactionId")
+        or body.get("TransactionID")
+    )
+    client_transaction_id = (
+        body.get("ClientTransactionId")
+        or body.get("clientTransactionId")
+        or body.get("ClientTransactionID")
+        or body.get("clientTransactionID")
+    )
+    status_code = body.get("StatusCode") if body.get("StatusCode") is not None else body.get("statusCode")
+    transaction_status = body.get("TransactionStatus", "") or body.get("transactionStatus", "")
 
     if not transaction_id or not client_transaction_id or status_code is None:
         print(f"[PAYPHONE] Notificación externa: campos requeridos faltantes en {list(body.keys())}")
