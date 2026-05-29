@@ -104,6 +104,15 @@ class AgentEngine:
             "- Simplemente responde al contenido del mensaje transcrito como si fuera texto normal\n"
             "- El usuario envió voz; tú recibiste texto — responde naturalmente"
         )
+        _MULTI_MESSAGE_RULE = (
+            "\n\nREGLA DE MENSAJES MÚLTIPLES (CRÍTICA):\n"
+            "- El usuario a veces envía varios mensajes en rápida sucesión (ej: 'Hola', 'Buenas tardes', 'quiero info').\n"
+            "- Estos mensajes llegan combinados como uno solo. Tratalos como UN ÚNICO mensaje del usuario.\n"
+            "- NUNCA saludes dos veces ni hagas múltiples introducciones en una misma respuesta.\n"
+            "- Da UN SOLO saludo inicial y luego responde al tema principal.\n"
+            "- Si hay varios saludos (Hola, Buenos días, etc.), ignora los duplicados y saluda UNA VEZ.\n"
+            "- Tu respuesta debe ser un bloque de texto coherente y unificado."
+        )
         _COBROS_RULE = (
             "\n\n🚨 REGLA CRÍTICA DE COBROS (MÁXIMA PRIORIDAD):\n"
             "INSTRUCCIÓN OBLIGATORIA: Si el usuario menciona CUALQUIERA de estos términos:\n"
@@ -132,7 +141,7 @@ class AgentEngine:
             "\n"
             "Si el usuario envía una imagen (comprobante), luego invoca 'registrar_pago'."
         )
-        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _COBROS_RULE
+        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _MULTI_MESSAGE_RULE + _COBROS_RULE
 
         if not client_config.get("system_prompt"):
             logger.warning(

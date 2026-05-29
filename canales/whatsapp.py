@@ -575,6 +575,7 @@ class WhatsAppHandler:
     def _split_response(text: str) -> list[str]:
         """Split agent response at paragraph breaks for natural multi-message delivery."""
         max_chunk = 500
+        max_chunks = 2
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 
         chunks: list[str] = []
@@ -595,7 +596,15 @@ class WhatsAppHandler:
                 if current:
                     chunks.append(current.rstrip())
 
-        return chunks if chunks else [text]
+        if not chunks:
+            return [text]
+
+        # Merge excess chunks beyond max_chunks into the last allowed chunk
+        if len(chunks) > max_chunks:
+            merged_tail = " ".join(chunks[max_chunks - 1:])
+            chunks = chunks[: max_chunks - 1] + [merged_tail]
+
+        return chunks
 
     async def send_message(
         self,
