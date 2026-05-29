@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **AI**: OpenAI GPT-4o with function calling
 - **Database**: Supabase (PostgreSQL + Row Level Security)
 - **Cache/Queue**: Redis
-- **Payments**: Stripe (business subscription), Stripe/MercadoPago/PayPal (client payment links)
+- **Payments**: Payphone (business subscription + client payment links), MercadoPago/PayPal (client links)
 - **Channels**: Meta Cloud API (WhatsApp, Instagram, Facebook), SendGrid (Email)
 - **Integrations**: Google Calendar API, GPT-4o Vision (receipt verification)
 - **Dashboard**: Streamlit
@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 │   ├── ventas.py          → Sales: catalog, quotes, objection handling
 │   ├── agendamiento.py    → Booking: Google Calendar integration, full lifecycle
 │   ├── cobros.py          → Payment verification with GPT-4o Vision
-│   ├── links_pago.py      → Payment links (Stripe, MercadoPago, PayPal)
+│   ├── links_pago.py      → Payment requests (Payphone, MercadoPago, PayPal)
 │   ├── calificacion.py    → Lead scoring (0-10, automatic notifications)
 │   ├── campanas.py        → Bulk messaging campaigns
 │   ├── alertas.py         → Critical/Important/Info alerts to business owner
@@ -56,7 +56,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 │   ├── admin.py           → Business owner panel (their data only)
 │   └── operador.py        → Human advisor panel (assigned conversations)
 ├── /billing               → Subscription and usage tracking
-│   ├── stripe.py          → Monthly client billing
+│   ├── payphone.py        → Monthly client billing (Payphone API Sale)
 │   └── usage.py           → Token consumption tracking per client
 ├── /config                → Feature toggles and configuration
 │   ├── modulos.py         → Module activation per client
@@ -209,11 +209,22 @@ Agent checks module enablement before every action.
 
 ### Billing Model
 
-- **My Revenue**: Monthly subscription from each client (Stripe)
-- **Client Payments**: Clients can accept payments via links (Stripe, MercadoPago, PayPal)
+- **My Revenue**: Monthly subscription from each client (Payphone — push payment to client's app)
+- **Client Payments**: Clients can accept payments via Payphone, MercadoPago, PayPal
 - **Token Costs**: I pay OpenAI; client limit enforced by message quota
 - **Pausing**: If client doesn't pay after 3 days, agent pauses automatically
 - **Reactivation**: Resume immediately when payment received
+
+#### Payphone Payment Flow (API Sale)
+Payphone is a push-payment model — no redirect link, the payer receives a push notification in their Payphone app:
+1. `POST https://pay.payphonetodoesposible.com/api/Sale` with payer's `phoneNumber` + `countryCode`
+2. Payphone sends push notification to payer's mobile app
+3. Payer approves/rejects within **5 minutes**
+4. Payphone POSTs to `PAYPHONE_RESPONSE_URL` with `?id=<transactionId>&clientTransactionID=<uuid>`
+5. Backend calls `POST /button/V2/Confirm` to verify → updates `subscription` table
+- Auth: `Authorization: Bearer PAYPHONE_TOKEN`
+- Amount in **centavos** (USD × 100): $1.49 → 149
+- Required fields: `phoneNumber`, `countryCode`, `amount`, `currency`, `clientTransactionId`
 
 ## Key Implementation Details
 
@@ -297,9 +308,10 @@ REDIS_URL=redis://localhost:6379
 META_VERIFY_TOKEN=<random_token_for_webhook_validation>
 META_ACCESS_TOKEN=<long_lived_token>
 
-# My Stripe (for billing my clients)
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_PUBLISHABLE_KEY=pk_live_...
+# Payphone (for billing my clients — Ecuadorian payment gateway)
+PAYPHONE_TOKEN=<token_from_payphone_developer>
+PAYPHONE_STORE_ID=<store_id_optional>
+PAYPHONE_RESPONSE_URL=https://api.lanlabsec.com/webhooks/payphone
 
 # Sendgrid
 SENDGRID_API_KEY=SG....
@@ -324,7 +336,7 @@ LOG_LEVEL=DEBUG|INFO|WARNING|ERROR
 - `alerts_log`: Immutable audit log of all alerts sent
 - `feature_toggles`: Module enablement per client
 - `api_credentials`: Encrypted credentials (Google, Stripe, etc)
-- `subscription`: Stripe subscription status per client
+- `subscription`: Payphone subscription status per client (columns: payphone_client_transaction_id, payphone_transaction_id)
 - `usage_logs`: Token count per client per day
 
 All tables have RLS policies: `auth.uid()` and `current_client_id()` functions enforce isolation.
@@ -401,7 +413,7 @@ All tables have RLS policies: `auth.uid()` and `current_client_id()` functions e
 - OpenAI: https://platform.openai.com/docs/
 - Meta Cloud API: https://developers.facebook.com/docs/whatsapp/cloud-api/
 - Redis: https://redis.io/documentation
-- Stripe: https://stripe.com/docs
+- Payphone: https://docs.payphone.app/api-sale
 
 ---
 
@@ -422,7 +434,7 @@ Plataforma SaaS multi-tenant de agentes IA conversacionales. **En producción.**
 - Backend: Python 3.11, FastAPI, OpenAI GPT-4o, Supabase, Redis
 - Frontend: Next.js, TypeScript, Tailwind CSS v4
 - IA: GPT-4o (function calling), Whisper (audio), GPT-4o Vision (comprobantes)
-- Integraciones: Meta Cloud API, Google Calendar (Service Account), Stripe, SendGrid
+- Integraciones: Meta Cloud API, Google Calendar (Service Account), Payphone, SendGrid
 
 ## Cliente de Prueba
 - ID: d21c2725-7e2d-442b-8207-958fd4bcb038
@@ -456,11 +468,11 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 - Alertas al dueño por WhatsApp en tiempo real
 - Calificación de leads acumulativa (score 0-10)
 - Seguimientos automáticos (APScheduler cada 30min)
-- Links de pago (Stripe, MercadoPago, PayPal) — modulos/links_pago.py
+- Links de pago (Payphone, MercadoPago, PayPal) — modulos/links_pago.py
 - Campañas masivas — modulos/campanas.py
 - Dashboard Next.js completo con datos reales
 - Login JWT con roles (super_admin, admin, operador)
-- Billing / Stripe — suscripciones, cancelación, reactivación
+- Billing / Payphone — suscripciones, cancelación, reactivación (push payment a app Payphone)
 - Analytics en dashboard — métricas, gráficos por día/canal/estado
 - Onboarding de clientes (wizard 4 pasos)
 - Aprobación de pagos desde dashboard
@@ -475,7 +487,7 @@ El dashboard usa un tema OLED azul oscuro (diferente a la paleta original en est
 - Instagram/Facebook: configuración self-service desde dashboard (esperando cuentas Meta)
 - Onboarding self-service completo:
   - Landing page pública (lanlabsec.com) con planes y CTA
-  - Página de registro público: cliente llena datos, elige plan, paga con Stripe
+  - Página de registro público: cliente llena datos, elige plan, paga con Payphone
   - Email de bienvenida automático con credenciales tras pago confirmado
   - Wizard post-login: primer ingreso guía al cliente a conectar WhatsApp y configurar agente
   (Hoy el super_admin crea clientes manualmente desde /admin/clientes/nuevo)
@@ -513,7 +525,9 @@ SUPABASE_SERVICE_KEY=...
 OPENAI_API_KEY=...
 REDIS_URL=...
 SENDGRID_API_KEY=SG....
-STRIPE_SECRET_KEY=sk_live_...
+PAYPHONE_TOKEN=...
+PAYPHONE_STORE_ID=...
+PAYPHONE_RESPONSE_URL=https://api.lanlabsec.com/webhooks/payphone
 
 ## Variables de Entorno Dashboard (Vercel)
 NEXT_PUBLIC_SUPABASE_URL=...
@@ -528,7 +542,7 @@ NEXT_PUBLIC_APP_URL=https://dashboard.lanlabsec.com
 /modulos: ventas.py, agendamiento.py, cobros.py, links_pago.py,
           calificacion.py, campanas.py, alertas.py, seguimiento.py, analytics.py
 /canales: whatsapp.py, instagram.py, facebook.py, email.py
-/billing: stripe.py, usage.py
+/billing: payphone.py, usage.py
 /migrations: create_campanas.sql, add_follow_up_columns.sql, (re)enable_rls_leads.sql
 /dashboard-next: Next.js dashboard (app router)
   /app/admin: gestión de clientes (super_admin)
