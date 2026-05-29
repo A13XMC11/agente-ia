@@ -284,10 +284,6 @@ class AgentEngine:
                                     "type": "string",
                                     "description": "Client ID (business)",
                                 },
-                                "telefono_cliente": {
-                                    "type": "string",
-                                    "description": "Customer phone number — auto-populated from WhatsApp session, do NOT ask the user for it",
-                                },
                                 "nueva_fecha": {
                                     "type": "string",
                                     "description": "New date (YYYY-MM-DD)",
@@ -312,10 +308,6 @@ class AgentEngine:
                                 "cliente_id": {
                                     "type": "string",
                                     "description": "Client ID (business)",
-                                },
-                                "telefono_cliente": {
-                                    "type": "string",
-                                    "description": "Customer phone number — auto-populated from WhatsApp session, do NOT ask the user for it",
                                 },
                             },
                             "required": ["cliente_id"],
@@ -780,7 +772,7 @@ class AgentEngine:
                     fecha=arguments.get("fecha", ""),
                     hora=arguments.get("hora", ""),
                     nombre_cliente=arguments.get("nombre_cliente", ""),
-                    telefono_cliente=arguments.get("telefono_cliente") or sender_id,
+                    telefono_cliente=sender_id,
                     servicio=arguments.get("servicio", ""),
                     email_cliente=arguments.get("email_cliente", ""),
                     duracion_minutos=arguments.get("duracion_minutos", 60),
@@ -792,7 +784,7 @@ class AgentEngine:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.reagendar_cita(
                     cliente_id=client_id,
-                    telefono_cliente=arguments.get("telefono_cliente") or sender_id,
+                    telefono_cliente=sender_id,
                     nueva_fecha=arguments.get("nueva_fecha", ""),
                     nueva_hora=arguments.get("nueva_hora", ""),
                 )
@@ -803,7 +795,7 @@ class AgentEngine:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
                 result = await self.agendamiento.cancelar_cita(
                     cliente_id=client_id,
-                    telefono_cliente=arguments.get("telefono_cliente") or sender_id,
+                    telefono_cliente=sender_id,
                 )
                 return json.dumps(result, ensure_ascii=False)
 
