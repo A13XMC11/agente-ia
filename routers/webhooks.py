@@ -213,13 +213,13 @@ async def payphone_callback_get(request: Request):
     supabase = state.payphone_billing.supabase
     sub_resp = supabase.table("subscription").select("cliente_id").eq(
         "payphone_client_transaction_id", str(client_transaction_id)
-    ).maybeSingle().execute()
+    ).execute()
 
     if not sub_resp.data:
         logger.warning("payphone_callback_subscription_not_found", client_transaction_id=client_transaction_id)
         return JSONResponse({"status": "not_found"})
 
-    client_id = sub_resp.data["cliente_id"]
+    client_id = sub_resp.data[0]["cliente_id"]
     now = datetime.utcnow().isoformat()
 
     supabase.table("subscription").update({
@@ -273,13 +273,13 @@ async def payphone_notificacion_externa(request: Request):
 
     sub_resp = supabase.table("subscription").select("cliente_id").eq(
         "payphone_client_transaction_id", str(client_transaction_id)
-    ).maybeSingle().execute()
+    ).execute()
 
     if not sub_resp.data:
         print(f"[PAYPHONE] Notificación externa: suscripción no encontrada para clientTransactionId={client_transaction_id}")
         return JSONResponse({"Response": False, "ErrorCode": "333"})
 
-    client_id = sub_resp.data["cliente_id"]
+    client_id = sub_resp.data[0]["cliente_id"]
     now = datetime.utcnow().isoformat()
 
     if status_code == 3 or transaction_status == "Approved":
