@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { ExternalLink, CheckCircle, AlertCircle, Loader2, ArrowLeft, Calendar } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { ExternalLink, CheckCircle, AlertCircle, Loader2, ArrowLeft, Calendar, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
@@ -15,40 +16,35 @@ function buildSteps(serviceAccountEmail: string) {
   return [
     {
       number: 1,
-      title: 'Abre Google Calendar',
-      items: ['Ve a calendar.google.com', 'Inicia sesión con tu cuenta de Google'],
-      link: { label: 'Abrir Google Calendar', url: 'https://calendar.google.com' },
+      title: 'Crea un Service Account en Google Cloud',
+      items: [
+        'Ve a Google Cloud Console → IAM & Admin → Service Accounts',
+        'Crea un Service Account nuevo',
+        'En "Keys" → "Add Key" → "Create new key" → JSON',
+        'Descarga el archivo JSON generado',
+      ],
+      link: { label: 'Abrir Google Cloud Console', url: 'https://console.cloud.google.com/iam-admin/serviceaccounts' },
     },
     {
       number: 2,
-      title: 'Crea o selecciona un calendario',
-      items: [
-        'En el panel izquierdo, haz clic en "+" junto a "Otros calendarios"',
-        'Selecciona "Crear nuevo calendario"',
-        'Dale un nombre (ej: "Citas de clientes") y guarda',
-      ],
-    },
-    {
-      number: 3,
       title: 'Comparte el calendario con el agente',
       items: [
-        'Haz clic en los tres puntos (...) junto al calendario creado',
-        'Selecciona "Configuración y uso compartido"',
-        'En "Compartir con personas específicas", haz clic en "+ Agregar personas"',
-        `Ingresa este email: ${serviceAccountEmail || '(cargando…)'}`,
+        'Ve a Google Calendar → Configuración del calendario',
+        'En "Compartir con personas específicas" → "+ Agregar personas"',
+        `Ingresa el email del Service Account: ${serviceAccountEmail || '(pega primero las credenciales)'}`,
         'Permiso: "Realizar cambios en eventos" → Guardar',
       ],
       warning: serviceAccountEmail
-        ? `Usa exactamente este email: ${serviceAccountEmail}`
+        ? `Comparte el calendario con: ${serviceAccountEmail}`
         : undefined,
     },
     {
-      number: 4,
+      number: 3,
       title: 'Copia el ID del calendario',
       items: [
-        'En la misma pantalla de configuración, baja hasta "Integrar el calendario"',
+        'En la configuración del calendario, baja hasta "Integrar el calendario"',
         'Copia el "ID de calendario" (termina en @group.calendar.google.com o es un email)',
-        'Pégalo en el campo de abajo',
+        'Pégalo en el campo Calendar ID de abajo',
       ],
     },
   ]
@@ -56,11 +52,31 @@ function buildSteps(serviceAccountEmail: string) {
 
 export default function CalendarConfigPage() {
   const [currentCalendarId, setCurrentCalendarId] = useState<string | null>(null)
-  const [serviceAccountEmail, setServiceAccountEmail] = useState('')
+  const [hasCredentials, setHasCredentials] = useState(false)
+  const [credentialsEmail, setCredentialsEmail] = useState<string | null>(null)
+  const [globalServiceEmail, setGlobalServiceEmail] = useState('')
   const [loadingConfig, setLoadingConfig] = useState(true)
+
   const [calendarId, setCalendarId] = useState('')
+  const [credentialsJson, setCredentialsJson] = useState('')
+  const [showJson, setShowJson] = useState(false)
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  // Validate credentials JSON in real time
+  const jsonValidation = (() => {
+    if (!credentialsJson.trim()) return null
+    try {
+      const p = JSON.parse(credentialsJson)
+      if (p.type !== 'service_account') return { ok: false, message: 'Debe ser tipo "service_account"' }
+      if (!p.client_email || !p.private_key) return { ok: false, message: 'Faltan campos: client_email o private_key' }
+      return { ok: true, message: p.client_email as string }
+    } catch {
+      return { ok: false, message: 'JSON inválido' }
+    }
+  })()
+
+  const displayedEmail = credentialsEmail ?? globalServiceEmail
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
@@ -69,47 +85,63 @@ export default function CalendarConfigPage() {
 
     Promise.all([
       fetch('/api/cliente/calendar').then((r) => r.json()),
-      fetch(`${API_URL}/api/calendar/service-account-email`, { headers }).then((r) => r.json()).catch(() => ({ success: false })),
-    ]).then(([calRes, saRes]) => {
-      if (calRes.success && calRes.data?.google_calendar_id) {
-        setCurrentCalendarId(calRes.data.google_calendar_id)
-      }
-      if (saRes.success && saRes.email) {
-        setServiceAccountEmail(saRes.email)
-      }
-    }).catch(console.error).finally(() => setLoadingConfig(false))
+      fetch(`${API_URL}/api/calendar/service-account-email`, { headers })
+        .then((r) => r.json())
+        .catch(() => ({ success: false })),
+    ])
+      .then(([calRes, saRes]) => {
+        if (calRes.success && calRes.data) {
+          setCurrentCalendarId(calRes.data.google_calendar_id ?? null)
+          setHasCredentials(calRes.data.has_credentials ?? false)
+          setCredentialsEmail(calRes.data.credentials_email ?? null)
+        }
+        if (saRes.success && saRes.email) {
+          setGlobalServiceEmail(saRes.email)
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoadingConfig(false))
   }, [])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!calendarId.trim()) return
+    if (credentialsJson && jsonValidation && !jsonValidation.ok) return
 
     setSaving(true)
     setResult(null)
 
     try {
+      const body: Record<string, string> = { google_calendar_id: calendarId.trim() }
+      if (credentialsJson.trim()) body.google_calendar_credentials_json = credentialsJson.trim()
+
       const res = await fetch('/api/cliente/calendar', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ google_calendar_id: calendarId.trim() }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
 
       if (res.ok && data.success) {
-        setResult({ ok: true, message: '✅ Calendar ID guardado exitosamente' })
+        setResult({ ok: true, message: 'Configuración guardada exitosamente' })
         setCurrentCalendarId(calendarId.trim())
+        if (credentialsJson.trim() && jsonValidation?.ok) {
+          setHasCredentials(true)
+          setCredentialsEmail(jsonValidation.message)
+        }
         setCalendarId('')
+        setCredentialsJson('')
       } else {
-        setResult({ ok: false, message: data.error ?? '❌ Error al guardar la configuración' })
+        setResult({ ok: false, message: data.error ?? 'Error al guardar la configuración' })
       }
     } catch {
-      setResult({ ok: false, message: '❌ Error de conexión. Inténtalo de nuevo.' })
+      setResult({ ok: false, message: 'Error de conexión. Inténtalo de nuevo.' })
     } finally {
       setSaving(false)
     }
   }
 
-  const steps = buildSteps(serviceAccountEmail)
+  const steps = buildSteps(jsonValidation?.ok ? jsonValidation.message : displayedEmail)
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -124,40 +156,36 @@ export default function CalendarConfigPage() {
         </p>
       </div>
 
+      {/* Current status */}
       {!loadingConfig && currentCalendarId && (
         <Card className="border-success/30 bg-success/5">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="h-5 w-5 text-success shrink-0" />
-              <div>
+            <div className="flex items-start gap-3">
+              <CheckCircle className="h-5 w-5 text-success shrink-0 mt-0.5" />
+              <div className="space-y-1">
                 <p className="font-medium text-success">Calendar conectado</p>
                 <p className="text-sm text-text-secondary font-mono break-all">{currentCalendarId}</p>
+                {hasCredentials && credentialsEmail && (
+                  <p className="text-xs text-text-secondary">
+                    Cuenta de servicio: <span className="font-mono text-accent">{credentialsEmail}</span>
+                  </p>
+                )}
+                {!hasCredentials && (
+                  <p className="text-xs text-warning flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    Sin credenciales propias — usando cuenta global del sistema
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {serviceAccountEmail && (
-        <Card className="border-surface bg-surface/50">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start gap-3">
-              <Calendar className="h-5 w-5 text-accent shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-text-primary">Email de la cuenta de servicio</p>
-                <p className="text-xs text-text-secondary mt-1">
-                  Comparte tu calendario con este email para que el agente pueda crear y gestionar citas:
-                </p>
-                <p className="text-xs font-mono text-accent mt-1 break-all select-all">{serviceAccountEmail}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
+      {/* Guide */}
       <Card>
         <CardHeader>
-          <CardTitle>Cómo conectar tu Google Calendar en 4 pasos</CardTitle>
+          <CardTitle>Cómo conectar tu Google Calendar</CardTitle>
           <CardDescription>Sigue esta guía antes de ingresar tu Calendar ID</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -199,26 +227,80 @@ export default function CalendarConfigPage() {
         </CardContent>
       </Card>
 
+      {/* Form */}
       <Card>
         <CardHeader>
-          <CardTitle>Ingresa tu Calendar ID</CardTitle>
+          <CardTitle>Credenciales y Calendar ID</CardTitle>
           <CardDescription>
-            Lo encuentras en Google Calendar → Configuración del calendario → Integrar el calendario
+            Ingresa las credenciales del Service Account y el ID de tu calendario
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSave} className="space-y-4">
+          <form onSubmit={handleSave} className="space-y-5">
+
+            {/* Credentials JSON */}
             <div className="space-y-2">
-              <Label htmlFor="calendar_id">Calendar ID</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="credentials_json">
+                  {hasCredentials ? 'Actualizar credenciales (Service Account JSON)' : 'Credenciales Service Account (JSON)'}
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setShowJson(!showJson)}
+                  className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  {showJson ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {showJson ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+              <Textarea
+                id="credentials_json"
+                rows={showJson ? 10 : 4}
+                placeholder={
+                  hasCredentials
+                    ? 'Pega el nuevo JSON para actualizar las credenciales...'
+                    : '{"type": "service_account", "project_id": "...", "client_email": "...", "private_key": "..."}'
+                }
+                className="font-mono text-xs resize-none"
+                value={credentialsJson}
+                onChange={(e) => {
+                  setCredentialsJson(e.target.value)
+                  setResult(null)
+                }}
+              />
+              {credentialsJson && jsonValidation && (
+                <div className={`flex items-center gap-1.5 text-xs ${jsonValidation.ok ? 'text-success' : 'text-error'}`}>
+                  {jsonValidation.ok
+                    ? <><CheckCircle className="h-3.5 w-3.5 shrink-0" /> JSON válido — cuenta: <span className="font-mono">{jsonValidation.message}</span></>
+                    : <><AlertCircle className="h-3.5 w-3.5 shrink-0" /> {jsonValidation.message}</>
+                  }
+                </div>
+              )}
+              {hasCredentials && !credentialsJson && (
+                <p className="text-xs text-text-muted">
+                  Deja vacío para mantener las credenciales actuales
+                  {credentialsEmail && <> (<span className="font-mono">{credentialsEmail}</span>)</>}.
+                </p>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Calendar ID */}
+            <div className="space-y-2">
+              <Label htmlFor="calendar_id">Calendar ID *</Label>
               <Input
                 id="calendar_id"
                 placeholder="ej: abc123xyz@group.calendar.google.com"
                 value={calendarId}
-                onChange={(e) => setCalendarId(e.target.value)}
+                onChange={(e) => {
+                  setCalendarId(e.target.value)
+                  setResult(null)
+                }}
                 required
               />
               <p className="text-xs text-text-muted">
-                Puede ser un email de Gmail o terminar en @group.calendar.google.com
+                Lo encuentras en Google Calendar → Configuración del calendario → Integrar el calendario
               </p>
             </div>
 
@@ -228,23 +310,29 @@ export default function CalendarConfigPage() {
                   result.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'
                 }`}
               >
-                {result.ok ? (
-                  <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                )}
+                {result.ok
+                  ? <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                }
                 <span>{result.message}</span>
               </div>
             )}
 
-            <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+            <Button
+              type="submit"
+              disabled={saving || (!!credentialsJson && !!jsonValidation && !jsonValidation.ok)}
+              className="w-full sm:w-auto"
+            >
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Guardando...
                 </>
               ) : (
-                'Guardar Calendar ID'
+                <>
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Guardar configuración
+                </>
               )}
             </Button>
           </form>
