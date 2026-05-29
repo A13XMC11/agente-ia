@@ -1,8 +1,9 @@
 """Webhook endpoints for WhatsApp, Instagram, Facebook, Email, and Payphone."""
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 import structlog
 
 import app_state as state
@@ -206,20 +207,71 @@ async def payphone_callback_get(request: Request):
 
 
 @router.post("/webhooks/payphone")
-async def payphone_callback_post(request: Request):
+async def payphone_notificacion_externa(request: Request):
     """
-    Payphone payment callback (POST — server-to-server notification).
+    Payphone Notificación Externa — POST automático tras pago aprobado.
 
-    Same logic as GET but reads params from JSON body.
+    Payphone envía esto al webhook configurado cuando un pago se aprueba.
+    Solo se notifican transacciones aprobadas (StatusCode 3).
+    No requiere llamar a /button/V2/Confirm — Payphone ya trae el estado completo.
+
+    Respuesta requerida por Payphone:
+      {"Response": true,  "ErrorCode": "000"}  → recepción correcta
+      {"Response": false, "ErrorCode": "XXX"}  → error
     """
-    if not state.payphone_billing:
-        raise HTTPException(status_code=503, detail="Billing service not configured")
-
     try:
-        params = await request.json()
+        body = await request.json()
     except Exception:
-        params = dict(request.query_params)
+        return JSONResponse({"Response": False, "ErrorCode": "111"})
 
-    result = await state.payphone_billing.handle_callback(params)
-    logger.info("payphone_callback_post_processed", result_status=result.get("status"))
-    return result
+    print(f"[PAYPHONE] Notificación externa recibida: {body}")
+
+    transaction_id = body.get("TransactionId")
+    client_transaction_id = body.get("ClientTransactionId")
+    status_code = body.get("StatusCode")
+    transaction_status = body.get("TransactionStatus", "")
+
+    if not transaction_id or not client_transaction_id or status_code is None:
+        print(f"[PAYPHONE] Notificación externa: campos requeridos faltantes en {list(body.keys())}")
+        return JSONResponse({"Response": False, "ErrorCode": "444"})
+
+    if not state.payphone_billing:
+        return JSONResponse({"Response": False, "ErrorCode": "222"})
+
+    supabase = state.payphone_billing.supabase
+
+    sub_resp = supabase.table("subscription").select("cliente_id").eq(
+        "payphone_client_transaction_id", str(client_transaction_id)
+    ).maybeSingle().execute()
+
+    if not sub_resp.data:
+        print(f"[PAYPHONE] Notificación externa: suscripción no encontrada para clientTransactionId={client_transaction_id}")
+        return JSONResponse({"Response": False, "ErrorCode": "333"})
+
+    client_id = sub_resp.data["cliente_id"]
+    now = datetime.utcnow().isoformat()
+
+    if status_code == 3 or transaction_status == "Approved":
+        supabase.table("subscription").update({
+            "status": "active",
+            "payphone_transaction_id": str(transaction_id),
+            "last_payment_date": now,
+            "payment_failed_count": 0,
+        }).eq("payphone_client_transaction_id", str(client_transaction_id)).execute()
+
+        supabase.table("clientes").update({"estado": "activo"}).eq(
+            "id", client_id
+        ).eq("estado", "pausado").execute()
+
+        print(f"[PAYPHONE] Suscripción activada para cliente {client_id}")
+
+    elif status_code == 2 or transaction_status == "Canceled":
+        supabase.table("subscription").update({
+            "status": "cancelled",
+            "cancelled_date": now,
+        }).eq("payphone_client_transaction_id", str(client_transaction_id)).execute()
+
+        print(f"[PAYPHONE] Pago cancelado para cliente {client_id}")
+
+    logger.info("payphone_notificacion_externa", client_id=client_id, status_code=status_code)
+    return JSONResponse({"Response": True, "ErrorCode": "000"})

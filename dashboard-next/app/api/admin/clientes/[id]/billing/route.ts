@@ -112,6 +112,42 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   }
 }
 
+/* ── PATCH — manually activate subscription (interim while Notificación Externa pending) ── */
+export async function PATCH(_req: NextRequest, { params }: RouteContext) {
+  try {
+    const session = await getServerSession()
+    if (!session || session.role !== 'super_admin') {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id: clienteId } = await params
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL
+    if (!apiUrl) {
+      return NextResponse.json({ success: false, error: 'API_URL no configurada' }, { status: 500 })
+    }
+
+    const apiRes = await fetch(`${apiUrl}/api/billing/manual-activate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': process.env.INTERNAL_API_SECRET ?? '',
+      },
+      body: JSON.stringify({ client_id: clienteId }),
+    })
+
+    if (!apiRes.ok) {
+      const errBody = await apiRes.json().catch(() => ({}))
+      return NextResponse.json({ success: false, error: errBody.detail || 'Error al activar suscripción' }, { status: 502 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('[ADMIN BILLING PATCH] unexpected:', err)
+    return NextResponse.json({ success: false, error: 'Error interno' }, { status: 500 })
+  }
+}
+
 /* ── DELETE — cancel subscription ─────────────────── */
 export async function DELETE(_req: NextRequest, { params }: RouteContext) {
   try {

@@ -122,6 +122,54 @@ async def confirm_payment(request: Request):
     return {"status": "ok", "result": result}
 
 
+@router.post("/api/billing/manual-activate")
+async def manual_activate_subscription(request: Request):
+    """
+    Manually mark a subscription as active (super_admin only).
+
+    Interim endpoint while Payphone Notificación Externa authorization is pending.
+    Super_admin verifies payment in Payphone dashboard and calls this to activate in DB.
+
+    Body: { client_id }
+    """
+    from datetime import datetime
+
+    user = await _resolve_caller(request)
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can manually activate subscriptions")
+
+    body = await request.json()
+    client_id = body.get("client_id")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+
+    if not state.payphone_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    supabase = state.payphone_billing.supabase
+
+    sub_resp = supabase.table("subscription").select("id, status").eq(
+        "cliente_id", client_id
+    ).order("created_at", desc=True).limit(1).execute()
+
+    if not sub_resp.data:
+        raise HTTPException(status_code=404, detail="No subscription found for this client")
+
+    now = datetime.utcnow().isoformat()
+    supabase.table("subscription").update({
+        "status": "active",
+        "last_payment_date": now,
+        "payment_failed_count": 0,
+    }).eq("cliente_id", client_id).execute()
+
+    supabase.table("clientes").update({"estado": "activo"}).eq(
+        "id", client_id
+    ).eq("estado", "pausado").execute()
+
+    logger.info("subscription_manually_activated", client_id=client_id)
+    return {"status": "ok", "message": "Subscription activated manually"}
+
+
 @router.post("/api/billing/cancel-subscription")
 async def cancel_subscription(request: Request):
     """
