@@ -449,10 +449,6 @@ async def lifespan(app: FastAPI):
                         "PAYPHONE_RESPONSE_URL",
                         "https://api.lanlabsec.com/webhooks/payphone",
                     ),
-                    cancellation_url=os.getenv(
-                        "PAYPHONE_CANCELLATION_URL",
-                        "https://dashboard.lanlabsec.com/cliente/billing",
-                    ),
                     store_id=os.getenv("PAYPHONE_STORE_ID") or None,
                 )
                 logger.info("payphone_billing_initialized")
