@@ -23,7 +23,7 @@ interface Cliente {
 }
 
 interface Subscription {
-  status: 'active' | 'past_due' | 'cancelled' | 'trialing'
+  status: 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending_payment'
   monthly_amount: number
   next_billing_date: string | null
   current_period_end: string | null
