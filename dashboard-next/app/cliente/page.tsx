@@ -72,13 +72,16 @@ async function getMetrics(clienteId: string): Promise<Metrics> {
 }
 
 async function getConversacionesRecientes(clienteId: string): Promise<Conversacion[]> {
-  const { data: convs } = await supabase
+  const { data: convs, error: convError } = await supabase
     .from('conversaciones')
-    .select('id, usuario_id, usuario_nombre, canal, estado, ultimo_mensaje, fecha_ultimo_mensaje')
+    .select('id, usuario_id, usuario_nombre, canal, estado, fecha_ultimo_mensaje')
     .eq('cliente_id', clienteId)
     .order('fecha_ultimo_mensaje', { ascending: false })
     .limit(5)
 
+  if (convError) {
+    console.error('[Dashboard] Error fetching conversaciones:', convError.message)
+  }
   if (!convs || convs.length === 0) return []
 
   const telefonos = convs.map((c) => c.usuario_id).filter(Boolean)
