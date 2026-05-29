@@ -105,7 +105,7 @@ class PayphoneBilling:
             print(f"[PAYPHONE] Sale response status: {response.status_code}")
             print(f"[PAYPHONE] Sale response body: {response.text}")
 
-            if response.status_code != 200:
+            if not (200 <= response.status_code < 300):
                 logger.error(f"Payphone sale error: {response.status_code} {response.text}")
                 return None
 
