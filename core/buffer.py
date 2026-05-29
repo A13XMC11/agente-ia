@@ -334,3 +334,47 @@ class MessageBuffer:
             except json.JSONDecodeError:
                 logger.error("failed_to_parse_inbound_message", inbound_key=inbound_key)
         return messages
+
+    async def set_debounce_token(self, key: str, token: str) -> None:
+        """
+        Store the latest debounce token for a conversation in Redis.
+
+        Each new inbound message overwrites the token so only the task
+        holding the latest token may process the batch.
+
+        Args:
+            key: Conversation key (e.g. "{client_id}:{sender_id}")
+            token: UUID string identifying this debounce cycle
+        """
+        if not self.redis:
+            return
+        await self.redis.setex(f"debounce:token:{key}", 30, token)
+
+    async def claim_debounce(self, key: str, token: str) -> bool:
+        """
+        Atomically claim the right to process the debounced batch.
+
+        Uses a Lua script so only one worker wins even under concurrent execution.
+        Returns True only if the stored token still matches (no newer message arrived
+        on another worker), and deletes the token to prevent duplicate processing.
+
+        Args:
+            key: Conversation key
+            token: Token this task was assigned when it was scheduled
+
+        Returns:
+            True if this task should process the batch
+        """
+        if not self.redis:
+            return True  # fallback: always process when Redis is unavailable
+
+        _claim_script = """
+        local val = redis.call('GET', KEYS[1])
+        if val == ARGV[1] then
+            redis.call('DEL', KEYS[1])
+            return 1
+        end
+        return 0
+        """
+        result = await self.redis.eval(_claim_script, 1, f"debounce:token:{key}", token)
+        return bool(result)

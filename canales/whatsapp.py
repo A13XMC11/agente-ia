@@ -14,6 +14,7 @@ import os
 import random
 from io import BytesIO
 from typing import Any, Optional
+from uuid import uuid4
 
 import httpx
 from openai import AsyncOpenAI
@@ -308,8 +309,7 @@ class WhatsAppHandler:
                 return
 
             # Accumulate message in Redis and (re)start the debounce timer.
-            # If the user sends several rapid messages they are combined into one
-            # agent call instead of triggering a separate response each time.
+            # Token is stored in Redis so cancellation works across multiple workers.
             debounce_key = f"{client_id}:{sender_id}"
             await self.buffer.add_inbound_message(
                 debounce_key,
@@ -318,12 +318,15 @@ class WhatsAppHandler:
                 media_type=normalized.get("media_type"),
             )
 
+            token = str(uuid4())
+            await self.buffer.set_debounce_token(debounce_key, token)
+
             existing = self._pending_tasks.pop(debounce_key, None)
             if existing and not existing.done():
                 existing.cancel()
 
             task = asyncio.create_task(
-                self._debounced_process(client_id, phone_number_id, sender_id, debounce_key)
+                self._debounced_process(client_id, phone_number_id, sender_id, debounce_key, token)
             )
             self._pending_tasks[debounce_key] = task
             print(f">>> debounce task scheduled for {sender_id} (delay={self._debounce_delay}s)")
@@ -337,16 +340,23 @@ class WhatsAppHandler:
         phone_number_id: str,
         sender_id: str,
         debounce_key: str,
+        token: str,
     ) -> None:
         """
         Called after the debounce delay expires.
 
         Collects all messages accumulated since the last keystroke, combines
         them into a single input, and calls the agent once.
+        Uses a Redis token to ensure only one worker processes the batch even
+        when multiple uvicorn workers receive messages for the same conversation.
         """
         try:
             await asyncio.sleep(self._debounce_delay)
             self._pending_tasks.pop(debounce_key, None)
+
+            if not await self.buffer.claim_debounce(debounce_key, token):
+                print(f">>> debounce superseded for {sender_id}, skipping")
+                return
 
             inbound = await self.buffer.get_and_clear_inbound(debounce_key)
             if not inbound:

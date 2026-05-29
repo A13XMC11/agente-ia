@@ -10,6 +10,7 @@ import hmac
 import json
 import logging
 from typing import Any, Optional
+from uuid import uuid4
 
 import httpx
 
@@ -222,12 +223,15 @@ class InstagramHandler:
                 media_type=normalized.get("media_type"),
             )
 
+            token = str(uuid4())
+            await self.buffer.set_debounce_token(debounce_key, token)
+
             existing = self._pending_tasks.pop(debounce_key, None)
             if existing and not existing.done():
                 existing.cancel()
 
             task = asyncio.create_task(
-                self._debounced_process(client_id, page_id, sender_id, debounce_key)
+                self._debounced_process(client_id, page_id, sender_id, debounce_key, token)
             )
             self._pending_tasks[debounce_key] = task
 
@@ -240,6 +244,7 @@ class InstagramHandler:
         page_id: str,
         sender_id: str,
         debounce_key: str,
+        token: str,
     ) -> None:
         """
         Called after the debounce delay expires.
@@ -250,6 +255,9 @@ class InstagramHandler:
         try:
             await asyncio.sleep(self._debounce_delay)
             self._pending_tasks.pop(debounce_key, None)
+
+            if not await self.buffer.claim_debounce(debounce_key, token):
+                return
 
             inbound = await self.buffer.get_and_clear_inbound(debounce_key)
             if not inbound:
