@@ -161,6 +161,7 @@ class AgentEngine:
         self.alertas = AlertasModule(supabase_client) if supabase_client else None
         self.agendamiento = AgendamientoModule(
             supabase_client,
+            google_credentials_json=client_config.get("google_calendar_credentials_json"),
             alertas_module=self.alertas,
             calendar_id=client_config.get("google_calendar_id"),
         ) if supabase_client else None
