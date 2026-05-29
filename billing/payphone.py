@@ -95,11 +95,15 @@ class PayphoneBilling:
             if self.store_id:
                 payload["storeId"] = self.store_id
 
+            print(f"[PAYPHONE] Sending sale request to {phone_number} (countryCode={country_code}), amount={amount_cents} cents")
             response = await self.http_client.post(
                 f"{PAYPHONE_API_URL}/Sale",
                 headers=self._headers(),
                 json=payload,
             )
+
+            print(f"[PAYPHONE] Sale response status: {response.status_code}")
+            print(f"[PAYPHONE] Sale response body: {response.text}")
 
             if response.status_code != 200:
                 logger.error(f"Payphone sale error: {response.status_code} {response.text}")
@@ -112,11 +116,13 @@ class PayphoneBilling:
                 errors = data.get("errors", [])
                 detail = errors[0].get("message") if errors else data.get("message", "Unknown error")
                 logger.error(f"Payphone sale rejected: {detail}")
+                print(f"[PAYPHONE] Sale rejected by API: {detail}")
                 return None
 
             payphone_transaction_id = data.get("transactionId")
             if not payphone_transaction_id:
                 logger.error(f"Payphone returned no transactionId: {data}")
+                print(f"[PAYPHONE] No transactionId in response: {data}")
                 return None
 
             now = datetime.utcnow()
