@@ -28,7 +28,7 @@ interface Lead {
   id: string
   usuario_id: string
   usuario_nombre: string
-  calificacion: number
+  score: number
   estado: string
   created_at: string
 }
@@ -234,7 +234,7 @@ export default function ClientePanelPage() {
                       {leads.map((lead) => (
                         <tr key={lead.id} className="border-b hover:bg-surface">
                           <td className="py-3 px-4 text-text-primary">{lead.usuario_nombre}</td>
-                          <td className="py-3 px-4 text-text-secondary">{lead.calificacion}/10</td>
+                          <td className="py-3 px-4 text-text-secondary">{lead.score}/10</td>
                           <td className="py-3 px-4">
                             <span
                               className={`px-2 py-1 rounded text-xs font-medium ${
