@@ -61,7 +61,7 @@ class WhatsAppHandler:
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self._pending_tasks: dict[str, asyncio.Task] = {}
-        self._debounce_delay: float = 3.0
+        self._debounce_delay: float = 5.0
 
     async def close(self) -> None:
         """Close HTTP client."""
