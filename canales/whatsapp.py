@@ -370,7 +370,7 @@ class WhatsAppHandler:
             print(f"\n>>> DEBOUNCE FIRED for {sender_id}: {len(inbound)} message(s) combined")
 
             conversation_id = None
-            memory_context: dict = {}
+            memory_context: list = []
 
             if self.memory:
                 try:
@@ -382,6 +382,13 @@ class WhatsAppHandler:
                     )
                     conversation_id = conversation["id"]
 
+                    # Fetch history BEFORE saving the current message to avoid duplicating
+                    # it in the context (process_message appends it again as the final turn).
+                    memory_context = await self.memory.get_context_for_agent(
+                        client_id,
+                        conversation_id,
+                    )
+
                     await self.memory.save_message(
                         client_id,
                         conversation_id,
@@ -392,16 +399,11 @@ class WhatsAppHandler:
                         media_url=media_url,
                         media_type=media_type,
                     )
-
-                    memory_context = await self.memory.get_context_for_agent(
-                        client_id,
-                        conversation_id,
-                    )
                 except Exception as mem_err:
                     logger.warning(
                         f"memory_unavailable_degraded_mode: {mem_err} client_id={client_id} sender_id={sender_id}"
                     )
-                    memory_context = {}
+                    memory_context = []
             else:
                 logger.warning(
                     f"memory_not_initialized_degraded_mode client_id={client_id} sender_id={sender_id}"

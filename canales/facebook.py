@@ -263,6 +263,11 @@ class FacebookHandler:
                 "facebook",
             )
 
+            memory_context = await self.memory.get_context_for_agent(
+                client_id,
+                conversation["id"],
+            )
+
             await self.memory.save_message(
                 client_id,
                 conversation["id"],
@@ -272,11 +277,6 @@ class FacebookHandler:
                 "facebook",
                 media_url=media_url,
                 media_type=media_type,
-            )
-
-            memory_context = await self.memory.get_context_for_agent(
-                client_id,
-                conversation["id"],
             )
 
             agent_response = await self.router.route_message(
