@@ -45,7 +45,7 @@ const TODOS_LOS_MODULOS = [
   { key: 'ventas', label: 'Ventas', desc: 'Catálogo, cotizaciones, objecciones' },
   { key: 'agendamiento', label: 'Agendamiento', desc: 'Integración Google Calendar' },
   { key: 'cobros', label: 'Cobros', desc: 'Verificación de pagos con IA Vision' },
-  { key: 'links_pago', label: 'Links de Pago', desc: 'Stripe, MercadoPago, PayPal' },
+  { key: 'links_pago', label: 'Links de Pago', desc: 'Payphone, MercadoPago, PayPal' },
   { key: 'calificacion', label: 'Calificación', desc: 'Scoring automático de leads' },
   { key: 'campanas', label: 'Campañas', desc: 'Mensajería masiva' },
   { key: 'analytics', label: 'Analytics', desc: 'Reportes y métricas' },

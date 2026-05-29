@@ -465,7 +465,7 @@ class AgentEngine:
                     "type": "function",
                     "function": {
                         "name": "aceptar_cotizacion",
-                        "description": "Mark a quote as accepted and generate a payment link automatically. Call this when the customer confirms they want to buy.",
+                        "description": "Mark a quote as accepted and initiate a payment request automatically. Call this when the customer confirms they want to buy. For Payphone, ask the customer for their Payphone phone number first.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -479,7 +479,15 @@ class AgentEngine:
                                 },
                                 "proveedor": {
                                     "type": "string",
-                                    "description": "Payment provider: stripe, mercadopago, or paypal (default: stripe)",
+                                    "description": "Payment provider: payphone, mercadopago, or paypal (default: payphone)",
+                                },
+                                "phone_number": {
+                                    "type": "string",
+                                    "description": "Customer's Payphone phone number (required for payphone, e.g. '0984111222')",
+                                },
+                                "country_code": {
+                                    "type": "string",
+                                    "description": "E.164 country code without + (default '593' for Ecuador)",
                                 },
                             },
                             "required": ["quote_id", "usuario_id"],
@@ -874,7 +882,9 @@ class AgentEngine:
                     quote_id=arguments.get("quote_id", ""),
                     client_id=client_id,
                     user_id=arguments.get("usuario_id", sender_id),
-                    proveedor=arguments.get("proveedor", "stripe"),
+                    proveedor=arguments.get("proveedor", "payphone"),
+                    phone_number=arguments.get("phone_number"),
+                    country_code=arguments.get("country_code", "593"),
                 )
                 return json.dumps(result, ensure_ascii=False)
 

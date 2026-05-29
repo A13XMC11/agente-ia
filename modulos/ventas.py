@@ -146,12 +146,15 @@ class SalesModule:
         quote_id: str,
         client_id: str,
         user_id: str,
-        proveedor: str = "stripe",
+        proveedor: str = "payphone",
+        phone_number: Optional[str] = None,
+        country_code: str = "593",
     ) -> dict[str, Any]:
         """
-        Mark a quote as accepted and auto-generate a payment link.
+        Mark a quote as accepted and initiate a payment request.
 
-        Returns the quote total and the ready-to-send payment URL.
+        For Payphone, phone_number is required — a push notification is sent
+        to the customer's Payphone app. Returns the transaction ID on success.
         """
         try:
             response = (
@@ -178,6 +181,8 @@ class SalesModule:
                     monto=quote["total"],
                     descripcion=descripcion,
                     proveedores=[proveedor],
+                    phone_number=phone_number,
+                    country_code=country_code,
                 )
                 opciones = payment_result.get("payment_options", {}).get("opciones", {})
                 first_option = next(iter(opciones.values()), {})

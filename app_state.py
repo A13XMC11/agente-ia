@@ -18,4 +18,4 @@ alertas_module: Optional[Any] = None
 seguimiento_module: Optional[Any] = None
 catalog_sync_module: Optional[Any] = None
 scheduler: Optional[Any] = None
-stripe_billing: Optional[Any] = None
+payphone_billing: Optional[Any] = None

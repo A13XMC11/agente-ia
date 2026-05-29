@@ -27,7 +27,7 @@ from canales.email import EmailHandler
 from seguridad.auth import AuthManager
 from seguridad.rate_limiter import RateLimiter
 from seguridad.validator import WebhookValidator
-from billing.stripe import StripeBilling
+from billing.payphone import PayphoneBilling
 import app_state as state  # shared mutable service instances
 
 
@@ -438,34 +438,29 @@ async def lifespan(app: FastAPI):
             state.alertas_module = None
             state.scheduler = None
 
-        # 8. Initialize Stripe billing
+        # 8. Initialize Payphone billing
         try:
-            stripe_secret_key = os.getenv("STRIPE_SECRET_KEY", "")
-            stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-            if stripe_secret_key and stripe_webhook_secret:
-                # Map amount_cents → Stripe Price ID for pre-defined plans
-                stripe_price_map: dict[int, str] = {}
-                for plan, cents in [
-                    ("BASICO", 14900),
-                    ("PROFESIONAL", 24900),
-                    ("EMPRESARIAL", 39900),
-                ]:
-                    pid = os.getenv(f"STRIPE_PRICE_{plan}")
-                    if pid:
-                        stripe_price_map[cents] = pid
-                state.stripe_billing = StripeBilling(
-                    stripe_secret_key=stripe_secret_key,
-                    stripe_webhook_secret=stripe_webhook_secret,
+            payphone_token = os.getenv("PAYPHONE_TOKEN", "")
+            if payphone_token:
+                state.payphone_billing = PayphoneBilling(
+                    payphone_token=payphone_token,
                     supabase_client=state.supabase_service_client,
-                    stripe_product_id=os.getenv("STRIPE_PRODUCT_ID") or None,
-                    price_map=stripe_price_map or None,
+                    response_url=os.getenv(
+                        "PAYPHONE_RESPONSE_URL",
+                        "https://api.lanlabsec.com/webhooks/payphone",
+                    ),
+                    cancellation_url=os.getenv(
+                        "PAYPHONE_CANCELLATION_URL",
+                        "https://dashboard.lanlabsec.com/cliente/billing",
+                    ),
+                    store_id=os.getenv("PAYPHONE_STORE_ID") or None,
                 )
-                logger.info("stripe_billing_initialized")
+                logger.info("payphone_billing_initialized")
             else:
-                logger.warning("stripe_billing_skipped", reason="STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET not set")
+                logger.warning("payphone_billing_skipped", reason="PAYPHONE_TOKEN not set")
         except Exception as e:
-            logger.error("stripe_billing_init_error", error=str(e))
-            state.stripe_billing = None
+            logger.error("payphone_billing_init_error", error=str(e))
+            state.payphone_billing = None
 
         startup_ok = True
         logger.info("application_startup_complete")
@@ -486,12 +481,12 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error("scheduler_shutdown_error", error=str(e))
 
-        if state.stripe_billing:
+        if state.payphone_billing:
             try:
-                await state.stripe_billing.close()
-                logger.info("stripe_billing_closed")
+                await state.payphone_billing.close()
+                logger.info("payphone_billing_closed")
             except Exception as e:
-                logger.error("stripe_billing_close_error", error=str(e))
+                logger.error("payphone_billing_close_error", error=str(e))
 
         if state.seguimiento_module:
             try:

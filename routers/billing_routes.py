@@ -1,4 +1,4 @@
-"""Billing endpoints — Stripe subscription management."""
+"""Billing endpoints — Payphone subscription management."""
 import hmac
 import os
 from typing import Any
@@ -39,53 +39,98 @@ async def _resolve_caller(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
-@router.post("/api/billing/create-subscription")
-async def create_subscription(request: Request):
+@router.post("/api/billing/create-payment-link")
+async def create_payment_link(request: Request):
     """
-    Create a Stripe subscription for a client.
+    Initiate a Payphone sale request for a client's monthly subscription.
 
-    Body: { client_id, monthly_amount, customer_email }
+    Sends a push notification to the client's Payphone app. The client
+    approves or rejects within 5 minutes. Payphone then calls our webhook.
+
+    Body: { client_id, monthly_amount, phone_number, country_code? }
     Accepts JWT (super_admin) or X-Internal-Secret (dashboard server).
+    Returns: { transaction_id, client_transaction_id }
     """
-    if not state.stripe_billing:
+    if not state.payphone_billing:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
     user = await _resolve_caller(request)
     body = await request.json()
 
     monthly_amount = body.get("monthly_amount")
-    customer_email = body.get("customer_email")
+    phone_number = body.get("phone_number")
+    country_code = body.get("country_code", "593")
 
     if user.get("role") == "super_admin":
         client_id = body.get("client_id") or user.get("client_id")
     else:
         client_id = user.get("client_id")
 
-    if not client_id or not monthly_amount or not customer_email:
-        raise HTTPException(status_code=400, detail="client_id, monthly_amount and customer_email are required")
+    if not client_id or not monthly_amount or not phone_number:
+        raise HTTPException(
+            status_code=400,
+            detail="client_id, monthly_amount and phone_number are required",
+        )
 
-    result = await state.stripe_billing.create_subscription(
+    result = await state.payphone_billing.create_sale(
         client_id=client_id,
         monthly_amount=float(monthly_amount),
-        customer_email=customer_email,
+        phone_number=str(phone_number),
+        country_code=str(country_code),
     )
 
     if not result:
-        raise HTTPException(status_code=502, detail="Failed to create subscription in Stripe")
+        raise HTTPException(status_code=502, detail="Failed to create sale in Payphone")
 
-    logger.info("subscription_created", client_id=client_id)
-    return {"status": "ok", "subscription_id": result.get("id")}
+    logger.info("payphone_sale_created", client_id=client_id)
+    return {
+        "status": "ok",
+        "transaction_id": result["transaction_id"],
+        "client_transaction_id": result["client_transaction_id"],
+    }
+
+
+@router.post("/api/billing/confirm-payment")
+async def confirm_payment(request: Request):
+    """
+    Manually confirm a Payphone payment by transaction IDs.
+
+    Body: { payphone_transaction_id, client_transaction_id }
+    Accepts JWT (super_admin) or X-Internal-Secret.
+    """
+    if not state.payphone_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    await _resolve_caller(request)
+    body = await request.json()
+
+    payphone_transaction_id = body.get("payphone_transaction_id")
+    client_transaction_id = body.get("client_transaction_id")
+
+    if not payphone_transaction_id or not client_transaction_id:
+        raise HTTPException(
+            status_code=400,
+            detail="payphone_transaction_id and client_transaction_id are required",
+        )
+
+    result = await state.payphone_billing.confirm_payment(
+        payphone_transaction_id=int(payphone_transaction_id),
+        client_transaction_id=str(client_transaction_id),
+    )
+
+    logger.info("payment_confirmed", result_status=result.get("status"))
+    return {"status": "ok", "result": result}
 
 
 @router.post("/api/billing/cancel-subscription")
 async def cancel_subscription(request: Request):
     """
-    Cancel a client's Stripe subscription.
+    Cancel a client's subscription.
 
     Accepts JWT (super_admin) or X-Internal-Secret (dashboard server).
     Body (super_admin / internal): { client_id }
     """
-    if not state.stripe_billing:
+    if not state.payphone_billing:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
     user = await _resolve_caller(request)
@@ -99,46 +144,10 @@ async def cancel_subscription(request: Request):
     if not client_id:
         raise HTTPException(status_code=400, detail="client_id could not be determined")
 
-    success = await state.stripe_billing.cancel_subscription(client_id)
+    success = await state.payphone_billing.cancel_subscription(client_id)
 
     if not success:
         raise HTTPException(status_code=502, detail="Failed to cancel subscription")
 
     logger.info("subscription_cancelled", client_id=client_id)
     return {"status": "ok"}
-
-
-@router.post("/api/billing/customer-portal")
-async def customer_portal(request: Request):
-    """
-    Create a Stripe Billing Portal session for a client.
-
-    Body: { client_id, return_url }
-    Accepts JWT or X-Internal-Secret.
-    Returns: { portal_url }
-    """
-    if not state.stripe_billing:
-        raise HTTPException(status_code=503, detail="Billing service not configured")
-
-    user = await _resolve_caller(request)
-    body = await request.json()
-
-    if user.get("role") == "super_admin":
-        client_id = body.get("client_id") or user.get("client_id")
-    else:
-        client_id = user.get("client_id")
-
-    return_url = body.get("return_url", "")
-    if not client_id or not return_url:
-        raise HTTPException(status_code=400, detail="client_id and return_url are required")
-
-    portal_url = await state.stripe_billing.create_customer_portal_session(
-        client_id=client_id,
-        return_url=return_url,
-    )
-
-    if not portal_url:
-        raise HTTPException(status_code=502, detail="Failed to create portal session. Ensure Stripe Billing Portal is configured.")
-
-    logger.info("customer_portal_session_created", client_id=client_id)
-    return {"portal_url": portal_url}

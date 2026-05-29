@@ -1,21 +1,21 @@
-import { CreditCard, CheckCircle, AlertTriangle, XCircle, Clock, HelpCircle, ExternalLink } from 'lucide-react'
+import { CreditCard, CheckCircle, AlertTriangle, XCircle, Clock, HelpCircle, Mail } from 'lucide-react'
 import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
 /* ── Types ─────────────────────────────────────────── */
-type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing'
+type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending_payment'
 
 interface Subscription {
   id: string
   cliente_id: string
-  stripe_subscription_id: string
-  stripe_customer_id: string
+  payphone_client_transaction_id: string | null
+  payphone_transaction_id: string | null
   monthly_amount: number
   status: SubscriptionStatus
-  current_period_start: string
-  current_period_end: string
-  next_billing_date: string
+  current_period_start: string | null
+  current_period_end: string | null
+  next_billing_date: string | null
   last_payment_date: string | null
   payment_failed_count: number
   cancelled_date: string | null
@@ -39,10 +39,17 @@ const STATUS_CONFIG: Record<SubscriptionStatus, {
   },
   past_due: {
     label: 'Pago pendiente',
-    description: 'No pudimos procesar tu último pago. Por favor actualiza tu método de pago.',
+    description: 'No pudimos confirmar tu último pago. Contacta a soporte para enviar un nuevo link de pago.',
     icon: AlertTriangle,
     iconColor: 'text-warning',
     badgeCls: 'bg-warning/10 text-warning border border-warning/20',
+  },
+  pending_payment: {
+    label: 'Esperando pago',
+    description: 'Se generó un link de pago. Completa el pago para activar tu suscripción.',
+    icon: Clock,
+    iconColor: 'text-accent',
+    badgeCls: 'bg-accent/10 text-accent border border-accent/20',
   },
   cancelled: {
     label: 'Cancelado',
@@ -110,6 +117,7 @@ function NoSubscription() {
         href="mailto:soporte@lanlabsec.com"
         className="mt-6 inline-flex items-center gap-2 rounded-lg bg-accent/10 text-accent border border-accent/20 px-4 py-2 text-sm font-medium hover:bg-accent/15 transition-colors"
       >
+        <Mail className="h-3.5 w-3.5" />
         Contactar soporte
       </a>
     </div>
@@ -151,7 +159,7 @@ export default async function BillingPage() {
           {/* Status banner */}
           <div className="stagger-2 rounded-xl border border-border bg-card-bg p-6">
             <div className="flex items-start gap-4">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card-bg border border-border`}>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card-bg border border-border">
                 {statusCfg && <statusCfg.icon className={`h-5 w-5 ${statusCfg.iconColor}`} />}
               </div>
               <div className="flex-1 min-w-0">
@@ -165,7 +173,6 @@ export default async function BillingPage() {
                 </div>
                 <p className="text-text-secondary text-sm mt-1">{statusCfg?.description}</p>
 
-                {/* Past-due warning */}
                 {subscription.status === 'past_due' && subscription.payment_failed_count > 0 && (
                   <div className="mt-3 flex items-center gap-2 text-xs text-warning">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -193,13 +200,18 @@ export default async function BillingPage() {
               Detalles del plan
             </h2>
             <div className="mt-1">
-              <InfoRow label="Período actual" value={`${formatDate(subscription.current_period_start)} — ${formatDate(subscription.current_period_end)}`} />
+              {subscription.current_period_start && subscription.current_period_end && (
+                <InfoRow
+                  label="Período actual"
+                  value={`${formatDate(subscription.current_period_start)} — ${formatDate(subscription.current_period_end)}`}
+                />
+              )}
               <InfoRow
                 label="Próximo cobro"
                 value={
                   subscription.status === 'cancelled'
                     ? 'Sin cobros futuros'
-                    : daysUntilBilling !== null
+                    : daysUntilBilling !== null && subscription.next_billing_date
                     ? `${formatDate(subscription.next_billing_date)} (en ${daysUntilBilling} día${daysUntilBilling !== 1 ? 's' : ''})`
                     : formatDate(subscription.next_billing_date)
                 }
@@ -209,24 +221,18 @@ export default async function BillingPage() {
             </div>
           </div>
 
-          {/* Customer Portal */}
-          {subscription.status !== 'cancelled' && (
-            <div className="stagger-4 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-text-primary">Gestionar método de pago</p>
-                <p className="text-xs text-text-muted mt-0.5">
-                  Actualiza tu tarjeta, descarga facturas o cancela tu suscripción desde el portal de Stripe.
-                </p>
-              </div>
-              <a
-                href="/api/cliente/billing/portal"
-                className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-accent/10 text-accent border border-accent/20 px-4 py-2 text-sm font-medium hover:bg-accent/15 transition-colors"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Abrir portal
-              </a>
+          {/* Payment info — Payphone */}
+          <div className="stagger-4 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Método de pago</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Los cobros se realizan mediante Payphone. Si necesitas actualizar tu método de pago o tienes problemas con un cobro, contáctanos.
+              </p>
             </div>
-          )}
+            <div className="shrink-0 text-xs font-semibold text-accent bg-accent/10 border border-accent/20 rounded-lg px-3 py-1.5">
+              Payphone
+            </div>
+          </div>
 
           {/* Support */}
           <div className="stagger-5 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
@@ -238,6 +244,7 @@ export default async function BillingPage() {
               href="mailto:soporte@lanlabsec.com"
               className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-accent/10 text-accent border border-accent/20 px-4 py-2 text-sm font-medium hover:bg-accent/15 transition-colors"
             >
+              <Mail className="h-3.5 w-3.5" />
               Contactar soporte
             </a>
           </div>

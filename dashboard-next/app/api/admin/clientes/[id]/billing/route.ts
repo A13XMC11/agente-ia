@@ -71,13 +71,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ success: false, error: 'Cliente no encontrado' }, { status: 404 })
     }
 
-    // Create via backend API (which handles Stripe + DB insert)
+    // Create via backend API (Payphone payment link + DB insert)
     const apiUrl = process.env.NEXT_PUBLIC_API_URL
     if (!apiUrl) {
       return NextResponse.json({ success: false, error: 'API_URL no configurada' }, { status: 500 })
     }
 
-    const apiRes = await fetch(`${apiUrl}/api/billing/create-subscription`, {
+    const apiRes = await fetch(`${apiUrl}/api/billing/create-payment-link`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

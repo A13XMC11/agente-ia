@@ -1,4 +1,4 @@
-"""Webhook endpoints for WhatsApp, Instagram, Facebook, Email, and Stripe."""
+"""Webhook endpoints for WhatsApp, Instagram, Facebook, Email, and Payphone."""
 import os
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -184,27 +184,42 @@ async def email_webhook(request: Request):
 
 
 # ============================================================================
-# STRIPE
+# PAYPHONE
 # ============================================================================
 
-@router.post("/webhooks/stripe")
-async def stripe_webhook(request: Request):
-    """Stripe webhook endpoint."""
-    if not state.stripe_billing:
+@router.get("/webhooks/payphone")
+async def payphone_callback_get(request: Request):
+    """
+    Payphone payment callback (GET redirect after user pays).
+
+    Payphone redirects the user here with query params:
+      transactionId, clientTransactionId, transactionStatus
+    We confirm with the Payphone API to validate before updating state.
+    """
+    if not state.payphone_billing:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
-    raw_body = await request.body()
-    signature = request.headers.get("Stripe-Signature", "")
+    params = dict(request.query_params)
+    result = await state.payphone_billing.handle_callback(params)
+    logger.info("payphone_callback_processed", result_status=result.get("status"))
+    return result
 
-    if not state.stripe_billing.verify_webhook_signature(raw_body, signature):
-        logger.warning("stripe_webhook_invalid_signature")
-        raise HTTPException(status_code=400, detail="Invalid signature")
+
+@router.post("/webhooks/payphone")
+async def payphone_callback_post(request: Request):
+    """
+    Payphone payment callback (POST — server-to-server notification).
+
+    Same logic as GET but reads params from JSON body.
+    """
+    if not state.payphone_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
 
     try:
-        event = await request.json()
+        params = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        params = dict(request.query_params)
 
-    result = await state.stripe_billing.handle_webhook(event)
-    logger.info("stripe_webhook_processed", event_type=event.get("type"))
+    result = await state.payphone_billing.handle_callback(params)
+    logger.info("payphone_callback_post_processed", result_status=result.get("status"))
     return result

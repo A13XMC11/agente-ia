@@ -21,7 +21,7 @@ export interface Cliente {
   telefono: string
   plan: 'starter' | 'professional' | 'enterprise'
   estado: 'activo' | 'pausado' | 'cancelado'
-  stripe_customer_id?: string
+  payphone_customer_id?: string
   mrr: number
   created_at: string
   updated_at: string

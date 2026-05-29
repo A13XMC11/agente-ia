@@ -53,7 +53,7 @@ const MODULOS_DISPONIBLES = [
   { id: 'ventas', nombre: 'Ventas', descripcion: 'Catálogo, cotizaciones, objecciones' },
   { id: 'agendamiento', nombre: 'Agendamiento', descripcion: 'Integración Google Calendar' },
   { id: 'cobros', nombre: 'Cobros', descripcion: 'Verificación de pagos con IA Vision' },
-  { id: 'links_pago', nombre: 'Links de Pago', descripcion: 'Stripe, MercadoPago, PayPal' },
+  { id: 'links_pago', nombre: 'Links de Pago', descripcion: 'Payphone, MercadoPago, PayPal' },
   { id: 'calificacion', nombre: 'Calificación', descripcion: 'Scoring automático de leads' },
   { id: 'campanas', nombre: 'Campañas', descripcion: 'Mensajería masiva' },
   { id: 'analytics', nombre: 'Analytics', descripcion: 'Reportes y métricas' },
