@@ -43,10 +43,21 @@ class GoogleCalendarService:
             try:
                 credentials_dict = json.loads(credentials_json)
             except json.JSONDecodeError:
-                credentials_dict = json.loads(base64.b64decode(credentials_json))
+                try:
+                    credentials_dict = json.loads(base64.b64decode(credentials_json))
+                except Exception as decode_err:
+                    print(f"❌ [CALENDAR] Failed to decode credentials JSON: {decode_err}")
+                    return
 
-            if credentials_dict.get("type") != "service_account":
-                logger.warning("Google Calendar requires Service Account credentials")
+            cred_type = credentials_dict.get("type")
+            if cred_type != "service_account":
+                print(
+                    f"❌ [CALENDAR] Wrong credential type: '{cred_type}'. "
+                    f"Expected 'service_account'. Keys present: {list(credentials_dict.keys())}"
+                )
+                logger.warning(
+                    f"Google Calendar requires Service Account credentials, got type='{cred_type}'"
+                )
                 return
 
             from google.oauth2 import service_account
@@ -74,13 +85,15 @@ class GoogleCalendarService:
             return []
 
         try:
-            start_dt = datetime.fromisoformat(f"{date_str}T{start_time}:00")
-            end_dt = datetime.fromisoformat(f"{date_str}T{end_time}:00")
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(self._timezone)
+            start_dt = datetime.fromisoformat(f"{date_str}T{start_time}:00").replace(tzinfo=tz)
+            end_dt = datetime.fromisoformat(f"{date_str}T{end_time}:00").replace(tzinfo=tz)
 
             result = self._service.events().list(
                 calendarId=self._calendar_id,
-                timeMin=start_dt.isoformat() + "Z",
-                timeMax=end_dt.isoformat() + "Z",
+                timeMin=start_dt.isoformat(),
+                timeMax=end_dt.isoformat(),
                 singleEvents=True,
                 orderBy="startTime",
                 showDeleted=False,
