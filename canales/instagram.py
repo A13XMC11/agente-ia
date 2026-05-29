@@ -52,7 +52,7 @@ class InstagramHandler:
         self.api_base_url = "https://graph.instagram.com/v18.0"
         self.http_client = httpx.AsyncClient(timeout=30.0)
         self._pending_tasks: dict[str, asyncio.Task] = {}
-        self._debounce_delay: float = 5.0
+        self._debounce_delay: float = 10.0
 
     async def close(self) -> None:
         """Close HTTP client."""
