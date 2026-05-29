@@ -120,6 +120,12 @@ interface ApiResponse {
 
 const VALID_PLANS = ['basico', 'profesional', 'empresarial'] as const
 
+const PLAN_PRICES: Record<string, number> = {
+  basico: 149,
+  profesional: 249,
+  empresarial: 399,
+}
+
 export async function POST(request: Request): Promise<Response> {
   const role = await getUserRole()
   if (role !== 'super_admin') {
@@ -208,6 +214,16 @@ export async function POST(request: Request): Promise<Response> {
       if (!bancosResult.success) {
         throw new Error(bancosResult.error || 'Error saving bank data')
       }
+    }
+
+    // 6. Create trialing subscription so the bot works until first billing cycle
+    const { error: subError } = await supabase.from('subscription').insert({
+      cliente_id: clienteId,
+      status: 'trialing',
+      monthly_amount: PLAN_PRICES[plan] ?? 0,
+    })
+    if (subError) {
+      throw new Error(`Error creating subscription: ${subError.message}`)
     }
 
     // Generate a temporary password for the client

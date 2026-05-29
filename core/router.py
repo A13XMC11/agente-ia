@@ -432,6 +432,21 @@ class MessageRouter:
                     "escalated": True,
                 }
 
+            # Check subscription is paid (active or trialing)
+            sub_response = self.supabase_service.table("subscription").select("status").eq(
+                "cliente_id", client_id
+            ).order("created_at", desc=True).limit(1).execute()
+
+            sub = sub_response.data[0] if sub_response.data else None
+            sub_status = sub["status"] if sub else None
+
+            if sub_status not in ("active", "trialing"):
+                logger.warning(f"Client {client_id} subscription not paid: {sub_status}")
+                return {
+                    "response_text": "El servicio está suspendido. Comunícate con el administrador para renovar tu suscripción.",
+                    "escalated": True,
+                }
+
             # Get agent instance for this client
             print(f"\n{'='*80}")
             print(f"🔍 [ROUTE_MESSAGE] Getting or creating agent instance:")
