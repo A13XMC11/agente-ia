@@ -11,6 +11,7 @@ import hmac
 import json
 import logging
 import os
+import random
 from io import BytesIO
 from typing import Any, Optional
 
@@ -369,12 +370,15 @@ class WhatsAppHandler:
                 )
                 response_text = "Disculpa, hubo un problema. ¿Puedes repetir tu pregunta?"
 
-            await self.send_message(
-                phone_number_id,
-                sender_id,
-                response_text,
-                client_id,
-            )
+            chunks = self._split_response(response_text)
+            for i, chunk in enumerate(chunks):
+                await self.send_typing_indicator(phone_number_id, sender_id, client_id)
+                # Delay proportional to chunk length: ~40ms/char, capped 0.8–3.5s
+                typing_delay = min(max(len(chunk) * 0.04, 0.8), 3.5) + random.uniform(0.2, 0.6)
+                await asyncio.sleep(typing_delay)
+                await self.send_message(phone_number_id, sender_id, chunk, client_id)
+                if i < len(chunks) - 1:
+                    await asyncio.sleep(random.uniform(0.4, 1.0))
 
             if self.memory and conversation_id:
                 try:
@@ -496,6 +500,32 @@ class WhatsAppHandler:
 
         except Exception as e:
             logger.error(f"Error handling status: {e}")
+
+    @staticmethod
+    def _split_response(text: str) -> list[str]:
+        """Split agent response at paragraph breaks for natural multi-message delivery."""
+        max_chunk = 500
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+
+        chunks: list[str] = []
+        for para in paragraphs:
+            if len(para) <= max_chunk:
+                chunks.append(para)
+            else:
+                sentences = para.split(". ")
+                current = ""
+                for sentence in sentences:
+                    candidate = current + sentence + ". "
+                    if len(candidate) <= max_chunk:
+                        current = candidate
+                    else:
+                        if current:
+                            chunks.append(current.rstrip())
+                        current = sentence + ". "
+                if current:
+                    chunks.append(current.rstrip())
+
+        return chunks if chunks else [text]
 
     async def send_message(
         self,
