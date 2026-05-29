@@ -645,8 +645,12 @@ class AgentEngine:
             response_text = assistant_message.content or ""
             function_calls = []
 
-            # Agentic loop: execute tool calls and get a final natural-language response
-            if assistant_message.tool_calls:
+            # Agentic loop: keep executing tool calls until the model returns plain text
+            max_rounds = 5
+            for _ in range(max_rounds):
+                if not assistant_message.tool_calls:
+                    break
+
                 for tool_call in assistant_message.tool_calls:
                     function_calls.append(
                         {
@@ -656,10 +660,8 @@ class AgentEngine:
                         }
                     )
 
-                # Append the assistant turn (with tool_calls) to the conversation
                 messages.append(assistant_message)
 
-                # Execute each tool and feed result back
                 for tool_call in assistant_message.tool_calls:
                     tool_result = await self._execute_tool_call(
                         tool_call.function.name,
@@ -675,14 +677,18 @@ class AgentEngine:
                         }
                     )
 
-                # Second GPT-4o call to get a natural-language response from tool results
-                final_response = await self.client.chat.completions.create(
+                # Call again WITH tools so the model can chain crear_cita after consultar_disponibilidad
+                next_response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
+                    tools=self._get_available_tools(),
+                    tool_choice="auto",
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 )
-                response_text = final_response.choices[0].message.content or ""
+                assistant_message = next_response.choices[0].message
+
+            response_text = assistant_message.content or ""
 
             # Simulate response delay
             response_delay = self._calculate_response_delay(len(response_text))
