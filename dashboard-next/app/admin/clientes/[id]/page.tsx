@@ -70,10 +70,36 @@ export default function ClienteDetalle() {
   const [billingAmount, setBillingAmount] = useState('')
   const [billingPhone, setBillingPhone] = useState('')
   const [billingLoading, setBillingLoading] = useState(false)
+  const [isPollingBilling, setIsPollingBilling] = useState(false)
 
   useEffect(() => {
     loadData()
   }, [clienteId])
+
+  useEffect(() => {
+    if (subscription?.status !== 'pending_payment') return
+
+    setIsPollingBilling(true)
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/admin/clientes/${clienteId}/billing`)
+        if (!res.ok) return
+        const data = await res.json()
+        const updated: Subscription | null = data.data ?? null
+        setSubscription(updated)
+        if (updated?.status !== 'pending_payment') {
+          setIsPollingBilling(false)
+        }
+      } catch {
+        // keep polling on network error
+      }
+    }, 5000)
+
+    return () => {
+      clearInterval(interval)
+      setIsPollingBilling(false)
+    }
+  }, [subscription?.status, clienteId])
 
   async function loadData() {
     try {
@@ -459,7 +485,9 @@ export default function ClienteDetalle() {
                   </p>
                   {subscription.status === 'pending_payment' && (
                     <p className="text-xs text-text-secondary mt-1">
-                      Esperando aprobación del cliente en su app Payphone. Si ya pagó, actívala manualmente.
+                      {isPollingBilling
+                        ? 'Verificando pago automáticamente...'
+                        : 'Esperando aprobación del cliente en su app Payphone. Si ya pagó, actívala manualmente.'}
                     </p>
                   )}
                 </div>
