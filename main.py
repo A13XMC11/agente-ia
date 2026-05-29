@@ -232,7 +232,7 @@ async def lifespan(app: FastAPI):
             state.buffer = None
 
         try:
-            state.memory = MemoryManager(supabase_client=state.supabase_client)
+            state.memory = MemoryManager(supabase_client=state.supabase_service_client)
             logger.info("memory_manager_created")
         except Exception as e:
             logger.error("memory_init_error", error=str(e))
