@@ -364,6 +364,7 @@ class AgendamientoModule:
         These are stored in `notas` and used to build the calendar event.
         """
         extra = metadata or {}
+        print(f"📅 [CREAR_CITA] Iniciando: fecha={fecha}, hora={hora}, cliente={nombre_cliente}, email={email_cliente}")
         logger.info(
             f"Creating appointment: cliente_id={cliente_id}, "
             f"fecha={fecha}, hora={hora}, cliente={nombre_cliente}, metadata={extra}"
@@ -371,8 +372,10 @@ class AgendamientoModule:
 
         try:
             availability = await self.consultar_disponibilidad(cliente_id, fecha)
+            print(f"📅 [CREAR_CITA] Disponibilidad para {fecha}: disponibles={availability.get('disponibles', [])}")
 
             if hora not in availability.get("disponibles", []):
+                print(f"❌ [CREAR_CITA] Slot {hora} no disponible. Slots disponibles: {availability.get('disponibles', [])}")
                 logger.warning(f"Slot {hora} not available on {fecha}")
                 return {
                     "error": f"El horario {hora} no está disponible en {fecha}",

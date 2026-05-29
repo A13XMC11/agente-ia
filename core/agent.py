@@ -742,6 +742,7 @@ class AgentEngine:
         never trust the cliente_id from GPT-4o arguments.
         """
         try:
+            print(f"🔧 [TOOL_CALL] tool={tool_name} | args={list(arguments.keys())}")
             if tool_name == "consultar_disponibilidad":
                 if not self.agendamiento:
                     return json.dumps({"error": "Módulo de agendamiento no disponible"})
