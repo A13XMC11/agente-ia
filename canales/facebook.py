@@ -252,7 +252,13 @@ class FacebookHandler:
             if not inbound:
                 return
 
-            combined_text = "\n".join(m["text"] for m in inbound)
+            parts = []
+            for m in inbound:
+                text = m["text"].strip()
+                if text and text[-1] not in ".!?¡¿,;:":
+                    text += "."
+                parts.append(text)
+            combined_text = " ".join(parts)
             first_media = next((m for m in inbound if m.get("media_url")), {})
             media_url = first_media.get("media_url")
             media_type = first_media.get("media_type")
