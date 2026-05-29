@@ -127,15 +127,28 @@ class PayphoneBilling:
 
             now = datetime.utcnow()
 
-            # Upsert subscription row — pending until payer approves in app
-            self.supabase.table("subscription").upsert({
-                "cliente_id": client_id,
+            # Check if a subscription row already exists for this client
+            existing = self.supabase.table("subscription").select("id").eq(
+                "cliente_id", client_id
+            ).order("created_at", desc=True).limit(1).execute()
+
+            sub_data = {
                 "payphone_client_transaction_id": client_transaction_id,
                 "payphone_transaction_id": str(payphone_transaction_id),
                 "monthly_amount": monthly_amount,
                 "status": "pending_payment",
-                "created_at": now.isoformat(),
-            }, on_conflict="cliente_id").execute()
+            }
+
+            if existing.data:
+                self.supabase.table("subscription").update(sub_data).eq(
+                    "id", existing.data[0]["id"]
+                ).execute()
+            else:
+                self.supabase.table("subscription").insert({
+                    **sub_data,
+                    "cliente_id": client_id,
+                    "created_at": now.isoformat(),
+                }).execute()
 
             logger.info(f"Payphone sale request sent to {phone_number} for client {client_id}")
             return {

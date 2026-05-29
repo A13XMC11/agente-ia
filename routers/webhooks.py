@@ -191,19 +191,50 @@ async def email_webhook(request: Request):
 @router.get("/webhooks/payphone")
 async def payphone_callback_get(request: Request):
     """
-    Payphone payment callback (GET redirect after user pays).
+    Payphone API Sale responseUrl callback (GET).
 
-    Payphone redirects the user here with query params:
-      transactionId, clientTransactionId, transactionStatus
-    We confirm with the Payphone API to validate before updating state.
+    For API Sale, Payphone calls this URL after the payer approves in the app.
+    The GET itself signals approval — no separate /button/V2/Confirm call is
+    needed (that endpoint belongs to the Button product, not API Sale).
+
+    Params: id (transactionId), clientTransactionId
     """
     if not state.payphone_billing:
         raise HTTPException(status_code=503, detail="Billing service not configured")
 
     params = dict(request.query_params)
-    result = await state.payphone_billing.handle_callback(params)
-    logger.info("payphone_callback_processed", result_status=result.get("status"))
-    return result
+    transaction_id = params.get("id") or params.get("transactionId")
+    client_transaction_id = params.get("clientTransactionID") or params.get("clientTransactionId")
+
+    if not transaction_id or not client_transaction_id:
+        logger.warning("payphone_callback_missing_params", params=list(params.keys()))
+        return JSONResponse({"status": "error", "message": "Missing id or clientTransactionId"})
+
+    supabase = state.payphone_billing.supabase
+    sub_resp = supabase.table("subscription").select("cliente_id").eq(
+        "payphone_client_transaction_id", str(client_transaction_id)
+    ).maybeSingle().execute()
+
+    if not sub_resp.data:
+        logger.warning("payphone_callback_subscription_not_found", client_transaction_id=client_transaction_id)
+        return JSONResponse({"status": "not_found"})
+
+    client_id = sub_resp.data["cliente_id"]
+    now = datetime.utcnow().isoformat()
+
+    supabase.table("subscription").update({
+        "status": "active",
+        "payphone_transaction_id": str(transaction_id),
+        "last_payment_date": now,
+        "payment_failed_count": 0,
+    }).eq("payphone_client_transaction_id", str(client_transaction_id)).execute()
+
+    supabase.table("clientes").update({"estado": "activo"}).eq(
+        "id", client_id
+    ).eq("estado", "pausado").execute()
+
+    logger.info("payphone_callback_activated", client_id=client_id, transaction_id=transaction_id)
+    return JSONResponse({"status": "approved", "client_id": client_id})
 
 
 @router.post("/webhooks/payphone")
