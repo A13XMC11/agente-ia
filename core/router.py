@@ -111,13 +111,7 @@ class MessageRouter:
             config = response.data[0]
 
             # 🔍 DIAGNOSTIC: Log the raw config from DB
-            print(f"\n{'='*80}")
-            print(f"🔍 [ROUTER CONFIG DATA] Raw data from agentes table:")
-            print(f"   config['sistema_prompt'] = {config.get('sistema_prompt', 'KEY NOT FOUND')!r}")
-            print(f"   config['system_prompt'] = {config.get('system_prompt', 'KEY NOT FOUND')!r}")
-            print(f"   config['prompt_sistema'] = {config.get('prompt_sistema', 'KEY NOT FOUND')!r}")
-            print(f"   All keys: {list(config.keys())}")
-            print(f"{'='*80}\n")
+            print(f"[ROUTER] config keys={list(config.keys())} system_prompt_len={len(config.get('system_prompt') or config.get('prompt_sistema') or config.get('sistema_prompt') or '')}")
 
             logger.info(
                 f"agentes row fetched for client_id={client_id}: keys={list(config.keys())}"
@@ -153,16 +147,7 @@ class MessageRouter:
 
             system_prompt = merged.get("system_prompt", "")
 
-            # 🔍 DIAGNOSTIC: Log final merged config
-            print(f"\n{'='*80}")
-            print(f"🔍 [ROUTER MERGED CONFIG] Final config after merge:")
-            print(f"   system_prompt source: {'DB (agentes)' if system_prompt != defaults['system_prompt'] else 'DEFAULT'}")
-            print(f"   system_prompt length: {len(system_prompt)}")
-            print(f"   system_prompt first 150 chars: {system_prompt[:150]!r}")
-            print(f"   temperature: {merged.get('temperature')}")
-            print(f"   max_tokens: {merged.get('max_tokens')}")
-            print(f"   active_modules: {merged.get('active_modules')}")
-            print(f"{'='*80}\n")
+            print(f"[ROUTER] config merged: prompt_len={len(system_prompt)} modules={merged.get('active_modules')}")
 
             logger.info(
                 f"system_prompt for client_id={client_id} "
@@ -241,18 +226,10 @@ class MessageRouter:
 
         # If cached and still fresh, use it
         if is_cached and not cache_expired:
-            print(f"\n{'='*80}")
-            print(f"✅ [AGENT CACHE HIT] Returning cached agent for {client_id}")
-            print(f"   Cache age: {cache_age:.1f}s (TTL: {self.AGENT_CACHE_TTL_SECONDS}s)")
-            print(f"{'='*80}\n")
             return self.agent_instances[client_id]
 
         # Cache miss or expired: invalidate and recreate
         if cache_expired:
-            print(f"\n{'='*80}")
-            print(f"⏰ [AGENT CACHE EXPIRED] Invalidating old agent for {client_id}")
-            print(f"   Cache age: {cache_age:.1f}s (TTL: {self.AGENT_CACHE_TTL_SECONDS}s)")
-            print(f"{'='*80}\n")
             del self.agent_instances[client_id]
             logger.info(f"Agent cache expired for client {client_id} (age: {cache_age:.1f}s)")
 
@@ -448,20 +425,8 @@ class MessageRouter:
                 }
 
             # Get agent instance for this client
-            print(f"\n{'='*80}")
-            print(f"🔍 [ROUTE_MESSAGE] Getting or creating agent instance:")
-            print(f"   client_id: {client_id!r}")
-            print(f"   Checking if already cached... {client_id in self.agent_instances}")
-            print(f"{'='*80}\n")
-
             agent = await self._get_or_create_agent(client_id)
-
-            print(f"\n{'='*80}")
-            print(f"🔍 [ROUTE_MESSAGE] Agent obtained:")
-            print(f"   Agent.client_id: {agent.client_id!r}")
-            print(f"   Agent.system_prompt length: {len(agent.system_prompt)}")
-            print(f"   Agent.system_prompt preview: {agent.system_prompt[:150]!r}")
-            print(f"{'='*80}\n")
+            print(f"[ROUTER] agent ready client={client_id} calificacion_module={agent.calificacion is not None}")
 
             # Process message (guarded by per-client concurrency slot)
             if self.rate_limiter:
