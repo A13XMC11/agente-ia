@@ -484,6 +484,32 @@ class MessageRouter:
             logger.info(f"🟡 === agent.process_message RETURNED ===")
             logger.info(f"🟡 response_text length={len(response.get('response_text', ''))}")
 
+            # Auto-score lead on every user message (fire-and-forget)
+            message_text = mensaje_normalizado.get("text", "")
+            sender_id = mensaje_normalizado.get("sender_id", "")
+            if (
+                message_text
+                and sender_id
+                and agent.active_modules.get("calificacion", False)
+                and agent.calificacion
+            ):
+                try:
+                    prior_messages = tuple(
+                        {"content": m.get("content", ""), "timestamp": m.get("created_at", "")}
+                        for m in (memory_context or [])
+                        if m.get("role") == "user"
+                    )
+                    await agent.calificacion.calcular_score_automatico(
+                        client_id=client_id,
+                        usuario_id=sender_id,
+                        current_message=message_text,
+                        prior_messages=list(prior_messages),
+                        conversation_id=response.get("conversation_id"),
+                    )
+                    logger.info(f"Lead auto-scored for sender_id={sender_id}")
+                except Exception as scoring_err:
+                    logger.warning(f"Lead auto-scoring failed (non-blocking): {scoring_err}")
+
             logger.info(
                 f"Message processed",
                 extra={

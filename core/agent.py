@@ -141,7 +141,16 @@ class AgentEngine:
             "\n"
             "Si el usuario envía una imagen (comprobante), luego invoca 'registrar_pago'."
         )
-        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _MULTI_MESSAGE_RULE + _COBROS_RULE
+        _CALIFICACION_RULE = (
+            "\n\nREGLA DE LEADS:\n"
+            "- Cuando el usuario mencione su nombre (ej: 'Me llamo Juan', 'Soy María', 'Mi nombre es Carlos'),\n"
+            "  llama INMEDIATAMENTE la tool 'guardar_lead' con usuario_id del remitente y el nombre detectado.\n"
+            "- NO esperes a tener todos los datos. Con solo el nombre ya debes llamar guardar_lead.\n"
+            "- Si además el usuario menciona su email o empresa, inclúyelos en la misma llamada.\n"
+            "- NO le digas al usuario que lo registraste — hazlo en silencio como efecto de fondo.\n"
+            "- Solo llama guardar_lead UNA VEZ por conversación cuando obtengas el nombre."
+        )
+        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _MULTI_MESSAGE_RULE + _COBROS_RULE + _CALIFICACION_RULE
 
         if not client_config.get("system_prompt"):
             logger.warning(
