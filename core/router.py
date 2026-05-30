@@ -487,10 +487,12 @@ class MessageRouter:
             # Auto-score lead on every user message (fire-and-forget)
             message_text = mensaje_normalizado.get("text", "")
             sender_id = mensaje_normalizado.get("sender_id", "")
+            calificacion_enabled = agent.active_modules.get("calificacion", False)
+            print(f"[CALIFICACION] check: enabled={calificacion_enabled} module={agent.calificacion is not None} text={bool(message_text)} sender={bool(sender_id)}")
             if (
                 message_text
                 and sender_id
-                and agent.active_modules.get("calificacion", False)
+                and calificacion_enabled
                 and agent.calificacion
             ):
                 try:
@@ -499,6 +501,7 @@ class MessageRouter:
                         for m in (memory_context or [])
                         if m.get("role") == "user"
                     )
+                    print(f"[CALIFICACION] calling calcular_score_automatico for sender={sender_id}")
                     scoring_result = await agent.calificacion.calcular_score_automatico(
                         client_id=client_id,
                         usuario_id=sender_id,
@@ -507,16 +510,11 @@ class MessageRouter:
                         conversation_id=mensaje_normalizado.get("conversation_id"),
                     )
                     if scoring_result.get("error"):
-                        logger.warning(
-                            f"Lead auto-scoring returned error for sender_id={sender_id}: {scoring_result['error']}"
-                        )
+                        print(f"[CALIFICACION] ERROR for sender={sender_id}: {scoring_result['error']}")
                     else:
-                        logger.info(
-                            f"Lead auto-scored for sender_id={sender_id}: "
-                            f"score={scoring_result.get('new_score')} state={scoring_result.get('new_state')}"
-                        )
+                        print(f"[CALIFICACION] OK sender={sender_id} score={scoring_result.get('new_score')} state={scoring_result.get('new_state')}")
                 except Exception as scoring_err:
-                    logger.warning(f"Lead auto-scoring failed (non-blocking): {scoring_err}")
+                    print(f"[CALIFICACION] EXCEPTION (non-blocking): {scoring_err}")
 
             logger.info(
                 f"Message processed",

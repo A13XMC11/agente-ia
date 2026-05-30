@@ -864,8 +864,7 @@ class CalificacionModule:
             or {error: str} on failure (never raises)
         """
         try:
-            logger.info(f"=== CALIFICACION INICIADA para {usuario_id} ===", extra={"client_id": client_id})
-            logger.info(f"Calculando score para usuario_id={usuario_id}", extra={"client_id": client_id})
+            print(f"[CALIFICACION] === INICIADA para usuario={usuario_id} cliente={client_id} ===")
 
             if current_ts is None:
                 current_ts = datetime.utcnow()
@@ -874,16 +873,15 @@ class CalificacionModule:
             prior_tuple = tuple(prior_messages or [])
 
             # Run deterministic scoring engine
-            logger.info(f"Ejecutando scoring engine con mensaje: {current_message[:100]}")
             result = self.scoring_engine.score_message(
                 current_message=current_message,
                 prior_messages=prior_tuple,
                 current_ts=current_ts,
             )
-            logger.info(f"Score calculado: {result.score}, estado: {result.state}, señales: {[s.name for s in result.signals]}")
+            print(f"[CALIFICACION] score={result.score} estado={result.state} señales={[s.name for s in result.signals]}")
 
             # Buscar lead existente
-            logger.info(f"Buscando lead existente: cliente_id={client_id}, usuario_id={usuario_id}")
+            print(f"[CALIFICACION] buscando lead: cliente_id={client_id} telefono={usuario_id}")
             existing = (
                 self.supabase.table("leads")
                 .select("id, score")
@@ -903,17 +901,13 @@ class CalificacionModule:
                 old_score = existing.data[0].get("score", 0)
                 old_state = LeadScoringEngine._state_for_score(old_score)
 
-                # Score acumulativo - suma los puntos del mensaje actual
-                # al score anterior, máximo 10
                 puntos_mensaje = sum(sig.delta for sig in result.signals if sig.delta > 0)
                 new_score = min(old_score + puntos_mensaje, 10)
 
-                # Solo baja el score si hay señales muy negativas
                 puntos_negativos = sum(sig.delta for sig in result.signals if sig.delta < 0)
                 if puntos_negativos < -2:
                     new_score = max(new_score + puntos_negativos, 0)
 
-                # Determinar estado según nuevo score
                 if new_score <= 2:
                     new_state = "curioso"
                 elif new_score <= 4:
@@ -925,26 +919,20 @@ class CalificacionModule:
                 else:
                     new_state = "urgente"
 
-                # Siempre actualizar
                 delta = new_score - old_score
 
-                logger.info(f"Lead encontrado: {lead_id}, score actual: {old_score}")
-                logger.info(f"Score calculado: {result.score}, estado: {result.state}")
-                logger.info(f"Score blended: {old_score} -> {new_score} (delta: {delta})")
-                logger.info(f"Actualizando lead {lead_id} con score={new_score}, estado={new_state}")
-
-                self.supabase.table("leads").update({
+                print(f"[CALIFICACION] lead encontrado id={lead_id} score {old_score}->{new_score} estado={new_state}")
+                update_resp = self.supabase.table("leads").update({
                     "score": int(new_score),
                     "estado": new_state
                 }).eq("id", lead_id).execute()
-                logger.info(f"Lead actualizado: {lead_id} score={new_score}")
+                print(f"[CALIFICACION] lead actualizado: {update_resp.data}")
             else:
                 # Crear nuevo lead - INSERT directo
-                logger.info(f"Lead no existe, creando nuevo...")
+                print(f"[CALIFICACION] lead NO existe, creando nuevo para telefono={usuario_id}")
                 lead_id = str(uuid4())
                 new_score = result.score
 
-                # Determinar estado según score (consistente con lógica acumulativa)
                 if new_score <= 2:
                     new_state = "curioso"
                 elif new_score <= 4:
@@ -958,23 +946,24 @@ class CalificacionModule:
 
                 delta = new_score
 
-                logger.info(f"Insertando nuevo lead: {lead_id}")
+                insert_data = {
+                    "id": lead_id,
+                    "cliente_id": client_id,
+                    "conversacion_id": conversation_id if conversation_id else None,
+                    "telefono": usuario_id,
+                    "canal": "whatsapp",
+                    "nombre": "",
+                    "score": int(new_score),
+                    "estado": new_state,
+                    "created_at": current_ts.isoformat(),
+                }
+                print(f"[CALIFICACION] insertando lead: {insert_data}")
                 try:
-                    result_insert = self.supabase.table("leads").insert({
-                        "id": lead_id,
-                        "cliente_id": client_id,
-                        "conversacion_id": conversation_id if conversation_id else None,
-                        "telefono": usuario_id,
-                        "canal": "whatsapp",
-                        "nombre": "",
-                        "score": int(new_score),
-                        "estado": new_state,
-                        "created_at": current_ts.isoformat(),
-                    }).execute()
-                    logger.info(f"Lead creado: {lead_id} score={new_score}")
+                    result_insert = self.supabase.table("leads").insert(insert_data).execute()
+                    print(f"[CALIFICACION] lead creado OK: {result_insert.data}")
                 except Exception as e:
-                    logger.error(f"ERROR CRITICO al crear lead: {e}")
-                    logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}")
+                    print(f"[CALIFICACION] ERROR CRITICO al crear lead: {e}")
+                    print(f"[CALIFICACION] datos intentados: {insert_data}")
                     raise
 
             # Persistir señales detectadas en leads_signals
@@ -1032,5 +1021,6 @@ class CalificacionModule:
             return result_dict
 
         except Exception as e:
+            print(f"[CALIFICACION] EXCEPTION en calcular_score_automatico usuario={usuario_id}: {e}")
             logger.error(f"Error in calcular_score_automatico para usuario_id={usuario_id}: {e}", exc_info=True, extra={"client_id": client_id})
             return {"error": str(e)}
