@@ -424,6 +424,7 @@ class WhatsAppHandler:
                     "channel": "whatsapp",
                     "media_url": media_url,
                     "media_type": media_type,
+                    "conversation_id": conversation_id,
                 },
                 memory_context,
             )

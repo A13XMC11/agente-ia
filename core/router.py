@@ -499,14 +499,22 @@ class MessageRouter:
                         for m in (memory_context or [])
                         if m.get("role") == "user"
                     )
-                    await agent.calificacion.calcular_score_automatico(
+                    scoring_result = await agent.calificacion.calcular_score_automatico(
                         client_id=client_id,
                         usuario_id=sender_id,
                         current_message=message_text,
                         prior_messages=list(prior_messages),
-                        conversation_id=response.get("conversation_id"),
+                        conversation_id=mensaje_normalizado.get("conversation_id"),
                     )
-                    logger.info(f"Lead auto-scored for sender_id={sender_id}")
+                    if scoring_result.get("error"):
+                        logger.warning(
+                            f"Lead auto-scoring returned error for sender_id={sender_id}: {scoring_result['error']}"
+                        )
+                    else:
+                        logger.info(
+                            f"Lead auto-scored for sender_id={sender_id}: "
+                            f"score={scoring_result.get('new_score')} state={scoring_result.get('new_state')}"
+                        )
                 except Exception as scoring_err:
                     logger.warning(f"Lead auto-scoring failed (non-blocking): {scoring_err}")
 

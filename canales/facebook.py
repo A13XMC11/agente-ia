@@ -293,6 +293,7 @@ class FacebookHandler:
                     "channel": "facebook",
                     "media_url": media_url,
                     "media_type": media_type,
+                    "conversation_id": conversation["id"],
                 },
                 memory_context,
             )

@@ -522,10 +522,14 @@ class CalificacionModule:
                 return {"error": f"Lead no encontrado para usuario_id {usuario_id}"}
             logger.info(f"Lead encontrado: {lead.get('id')}, score actual: {lead.get('score')}")
 
-            # Calculate new state based on score
-            if score >= self.score_threshold_hot:
+            # Calculate new state - same 5-state thresholds as calcular_score_automatico
+            if score > 8:
+                new_state = "urgente"
+            elif score > 6:
                 new_state = "caliente"
-            elif score >= 4:
+            elif score > 4:
+                new_state = "interesado"
+            elif score > 2:
                 new_state = "prospecto"
             else:
                 new_state = "curioso"
@@ -556,10 +560,10 @@ class CalificacionModule:
                 "message": f"Score actualizado a {score}/10",
             }
 
-            # Send notification if hot lead and state changed
+            # Send notification if lead became hot/urgent and wasn't before
             if (
-                new_state == "caliente"
-                and old_state != "caliente"
+                new_state in ("caliente", "urgente")
+                and old_state not in ("caliente", "urgente")
                 and self.notification_enabled
             ):
                 logger.info(f"Enviando notificación de lead caliente para {usuario_id}")

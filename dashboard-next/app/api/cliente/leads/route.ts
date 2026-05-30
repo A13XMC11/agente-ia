@@ -47,11 +47,11 @@ export async function GET() {
       phone: lead.telefono,
       score: lead.score || 0,
       state: lead.estado || 'curioso',
-      urgency: lead.urgency || 0,
-      budget: lead.budget,
-      decision_power: lead.decision_power || 0,
-      last_interaction: lead.last_interaction,
-      interaction_count: lead.interaction_count || 0,
+      urgency: lead.urgencia || 0,
+      budget: lead.presupuesto_estimado ?? null,
+      decision_power: lead.decision || 0,
+      last_interaction: null,
+      interaction_count: 0,
       created_at: lead.created_at,
     }))
 
