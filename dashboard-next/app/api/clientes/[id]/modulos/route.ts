@@ -38,7 +38,7 @@ export async function GET(
       throw error
     }
 
-    const row = data as Record<string, boolean>
+    const row = data as unknown as Record<string, boolean>
     const modules = MODULE_COLUMNS.map(col => ({
       id: col,
       activo: Boolean(row[col]),
