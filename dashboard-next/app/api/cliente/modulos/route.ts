@@ -71,6 +71,16 @@ export async function PUT(request: Request) {
 
     if (error) throw error
 
+    // Invalidate the agent cache so the next message uses the updated module config immediately
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL
+    if (apiUrl && session.cliente_id) {
+      await fetch(`${apiUrl}/internal/invalidate-cache/${session.cliente_id}`, {
+        method: 'POST',
+      }).catch(() => {
+        // Non-critical: cache will expire on its own after 5 minutes
+      })
+    }
+
     return NextResponse.json({ success: true, data: { id: modulo_id, activo } })
   } catch (error) {
     console.error('Error updating modulo:', error)

@@ -269,3 +269,16 @@ async def internal_send_email(request: Request):
 
     logger.info("email_sent")
     return {"status": "ok"}
+
+
+@router.post("/internal/invalidate-cache/{client_id}")
+async def internal_invalidate_cache(client_id: str):
+    """
+    Invalidate the cached agent instance for a client.
+    Called by the dashboard after module toggles or config changes
+    so the next message picks up the updated settings immediately.
+    """
+    if not state.message_router:
+        raise HTTPException(status_code=503, detail="Router not initialized")
+    state.message_router.invalidate_agent_cache(client_id)
+    return {"status": "ok", "client_id": client_id}
