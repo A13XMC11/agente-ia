@@ -17,7 +17,7 @@ export async function GET() {
 
     const result = await supabase
       .from('leads')
-      .select('*')
+      .select('*, conversaciones(usuario_nombre)')
       .eq('cliente_id', clienteId)
       .order('score', { ascending: false })
 
@@ -42,7 +42,7 @@ export async function GET() {
 
     const normalized = (data || []).map((lead: any) => ({
       id: lead.id,
-      name: lead.nombre,
+      name: lead.nombre || lead.conversaciones?.usuario_nombre || '',
       email: lead.email,
       phone: lead.telefono,
       score: lead.score || 0,

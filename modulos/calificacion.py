@@ -946,13 +946,27 @@ class CalificacionModule:
 
                 delta = new_score
 
+                # Obtener nombre del usuario desde conversaciones
+                nombre_lead = ""
+                try:
+                    conv_query = self.supabase.table("conversaciones").select("usuario_nombre")
+                    if conversation_id:
+                        conv_query = conv_query.eq("id", conversation_id)
+                    else:
+                        conv_query = conv_query.eq("cliente_id", client_id).eq("usuario_telefono", usuario_id)
+                    conv_resp = conv_query.limit(1).execute()
+                    if conv_resp.data:
+                        nombre_lead = conv_resp.data[0].get("usuario_nombre", "") or ""
+                except Exception:
+                    pass
+
                 insert_data = {
                     "id": lead_id,
                     "cliente_id": client_id,
                     "conversacion_id": conversation_id if conversation_id else None,
                     "telefono": usuario_id,
                     "canal": "whatsapp",
-                    "nombre": "",
+                    "nombre": nombre_lead,
                     "score": int(new_score),
                     "estado": new_state,
                     "created_at": current_ts.isoformat(),
