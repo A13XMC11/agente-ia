@@ -150,7 +150,47 @@ class AgentEngine:
             "- NO le digas al usuario que lo registraste — hazlo en silencio como efecto de fondo.\n"
             "- Solo llama guardar_lead UNA VEZ por conversación cuando obtengas el nombre."
         )
-        self.system_prompt = (self.system_prompt or "") + _DATE_RULE + _OFF_TOPIC_RULE + _APPOINTMENT_RULE + _AUDIO_RULE + _MULTI_MESSAGE_RULE + _COBROS_RULE + _CALIFICACION_RULE
+
+        # Build disabled-modules rule to prevent the agent from offering unavailable services
+        _disabled_topics = []
+        if not self.active_modules.get("agendamiento", False):
+            _disabled_topics.append("agendar citas, programar reuniones o reservar horarios")
+        if not self.active_modules.get("cobros", False):
+            _disabled_topics.append("procesar pagos, verificar transferencias o enviar datos bancarios")
+        if not self.active_modules.get("ventas", False):
+            _disabled_topics.append("cotizaciones, catálogo de productos o gestión de ventas")
+        if not self.active_modules.get("links_pago", False):
+            _disabled_topics.append("generar links de pago")
+        if not self.active_modules.get("calificacion", False):
+            _disabled_topics.append("calificación de leads")
+
+        _DISABLED_MODULES_RULE = ""
+        if _disabled_topics:
+            topics_list = "\n".join(f"  - {t}" for t in _disabled_topics)
+            _DISABLED_MODULES_RULE = (
+                "\n\n🚫 SERVICIOS NO DISPONIBLES (CRÍTICO — SIN EXCEPCIONES):\n"
+                "Los siguientes servicios están DESACTIVADOS. Si el usuario los solicita,\n"
+                "debes responder amablemente que ese servicio no está disponible en este momento\n"
+                "y ofrecer ayuda con otros temas. NUNCA ofrezcas realizarlos ni pidas datos para ejecutarlos:\n"
+                f"{topics_list}"
+            )
+
+        # Only inject module-specific rules when the module is active
+        _active_appointment_rule = _APPOINTMENT_RULE if self.active_modules.get("agendamiento", False) else ""
+        _active_cobros_rule = _COBROS_RULE if self.active_modules.get("cobros", False) else ""
+        _active_calificacion_rule = _CALIFICACION_RULE if self.active_modules.get("calificacion", False) else ""
+
+        self.system_prompt = (
+            (self.system_prompt or "")
+            + _DATE_RULE
+            + _OFF_TOPIC_RULE
+            + _DISABLED_MODULES_RULE
+            + _active_appointment_rule
+            + _AUDIO_RULE
+            + _MULTI_MESSAGE_RULE
+            + _active_cobros_rule
+            + _active_calificacion_rule
+        )
 
         if not client_config.get("system_prompt"):
             logger.warning(
