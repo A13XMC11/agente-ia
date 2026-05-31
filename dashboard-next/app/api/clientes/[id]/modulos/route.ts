@@ -38,9 +38,10 @@ export async function GET(
       throw error
     }
 
+    const row = data as Record<string, boolean>
     const modules = MODULE_COLUMNS.map(col => ({
       id: col,
-      activo: Boolean((data as Record<ModuleId, boolean>)[col]),
+      activo: Boolean(row[col]),
     }))
 
     return NextResponse.json({ success: true, data: modules })
