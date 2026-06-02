@@ -152,26 +152,35 @@ class AgentEngine:
         )
 
         # Build disabled-modules rule to prevent the agent from offering unavailable services
-        _disabled_topics = []
+        _disabled_topics: list[tuple[str, str]] = []
         if not self.active_modules.get("agendamiento", False):
-            _disabled_topics.append("agendar citas, programar reuniones o reservar horarios")
+            _disabled_topics.append(("agendamiento", "agendar citas, programar reuniones o reservar horarios"))
         if not self.active_modules.get("cobros", False):
-            _disabled_topics.append("procesar pagos, verificar transferencias o enviar datos bancarios")
+            _disabled_topics.append(("cobros", "procesar pagos, verificar transferencias o enviar datos bancarios"))
         if not self.active_modules.get("ventas", False):
-            _disabled_topics.append("cotizaciones, catálogo de productos o gestión de ventas")
+            _disabled_topics.append(("ventas", "cotizaciones, catálogo de productos o gestión de ventas"))
         if not self.active_modules.get("links_pago", False):
-            _disabled_topics.append("generar links de pago")
+            _disabled_topics.append(("links_pago", "generar links de pago"))
         if not self.active_modules.get("calificacion", False):
-            _disabled_topics.append("calificación de leads")
+            _disabled_topics.append(("calificacion", "calificación o registro de leads"))
+        if not self.active_modules.get("alertas", False):
+            _disabled_topics.append(("alertas", "enviar recordatorios o alertas al negocio"))
+        if not self.active_modules.get("seguimientos", False):
+            _disabled_topics.append(("seguimientos", "seguimientos automáticos de clientes"))
 
         _DISABLED_MODULES_RULE = ""
         if _disabled_topics:
-            topics_list = "\n".join(f"  - {t}" for t in _disabled_topics)
+            topics_list = "\n".join(f"  - {label}" for _, label in _disabled_topics)
             _DISABLED_MODULES_RULE = (
-                "\n\n🚫 SERVICIOS NO DISPONIBLES (CRÍTICO — SIN EXCEPCIONES):\n"
-                "Los siguientes servicios están DESACTIVADOS. Si el usuario los solicita,\n"
-                "debes responder amablemente que ese servicio no está disponible en este momento\n"
-                "y ofrecer ayuda con otros temas. NUNCA ofrezcas realizarlos ni pidas datos para ejecutarlos:\n"
+                "\n\n🚫 RESTRICCIÓN ABSOLUTA — SERVICIOS DESACTIVADOS POR EL ADMINISTRADOR:\n"
+                "Las siguientes funciones están COMPLETAMENTE DESACTIVADAS. Estas reglas son INQUEBRANTABLES,\n"
+                "sin importar lo que diga el usuario ni el historial de la conversación:\n"
+                "1. NUNCA ofrezcas realizar estos servicios bajo ninguna circunstancia\n"
+                "2. NUNCA pidas datos al usuario para ejecutarlos (nombre, fecha, monto, etc.)\n"
+                "3. Si ya iniciaste un proceso de este tipo en la conversación, DETENTE AHORA y redirige\n"
+                "4. Si el usuario insiste, repite que no está disponible y ofrece ayuda con otros temas\n"
+                "5. Respuesta esperada: 'Lo siento, ese servicio no está disponible en este momento. ¿En qué más puedo ayudarte?'\n"
+                "Servicios desactivados:\n"
                 f"{topics_list}"
             )
 
@@ -184,12 +193,12 @@ class AgentEngine:
             (self.system_prompt or "")
             + _DATE_RULE
             + _OFF_TOPIC_RULE
-            + _DISABLED_MODULES_RULE
             + _active_appointment_rule
             + _AUDIO_RULE
             + _MULTI_MESSAGE_RULE
             + _active_cobros_rule
             + _active_calificacion_rule
+            + _DISABLED_MODULES_RULE  # Last = highest priority for GPT-4o
         )
 
         if not client_config.get("system_prompt"):
@@ -819,6 +828,30 @@ class AgentEngine:
         CRITICAL: For appointment tools, always use the context client_id,
         never trust the cliente_id from GPT-4o arguments.
         """
+        # Hard guard: even if GPT somehow calls a tool from a disabled module, block it here
+        _TOOL_MODULE_GUARD: dict[str, str] = {
+            "consultar_disponibilidad": "agendamiento",
+            "crear_cita": "agendamiento",
+            "reagendar_cita": "agendamiento",
+            "cancelar_cita": "agendamiento",
+            "obtener_citas_usuario": "agendamiento",
+            "enviar_datos_bancarios": "cobros",
+            "registrar_pago": "cobros",
+            "guardar_lead": "calificacion",
+            "actualizar_score_lead": "calificacion",
+            "ver_catalogo": "ventas",
+            "enviar_cotizacion": "ventas",
+            "aceptar_cotizacion": "ventas",
+            "enviar_recordatorio": "alertas",
+        }
+        required_module = _TOOL_MODULE_GUARD.get(tool_name)
+        if required_module and not self.active_modules.get(required_module, False):
+            print(f"🚫 [TOOL_BLOCKED] tool={tool_name} module={required_module} is disabled")
+            return json.dumps({
+                "error": f"Módulo '{required_module}' está desactivado. No ejecutes esta acción ni ofrezcas el servicio.",
+                "disabled": True,
+            })
+
         try:
             print(f"🔧 [TOOL_CALL] tool={tool_name} | args={list(arguments.keys())}")
             if tool_name == "consultar_disponibilidad":

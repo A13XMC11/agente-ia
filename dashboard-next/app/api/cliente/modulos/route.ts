@@ -76,7 +76,12 @@ export async function PUT(request: Request) {
     if (apiUrl && session.cliente_id) {
       await fetch(`${apiUrl}/internal/invalidate-cache/${session.cliente_id}`, {
         method: 'POST',
-      }).catch(() => {
+      }).then(res => {
+        if (!res.ok) {
+          console.error(`[modulos] cache invalidation failed: HTTP ${res.status}`)
+        }
+      }).catch(err => {
+        console.error('[modulos] cache invalidation unreachable:', err)
         // Non-critical: cache will expire on its own after 5 minutes
       })
     }
