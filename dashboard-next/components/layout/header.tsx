@@ -26,15 +26,12 @@ const PATH_LABELS: Record<string, string> = {
 
 export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: HeaderProps) => {
   const pathname = usePathname()
-  const pageTitle = PATH_LABELS[pathname] ?? title
   const { signOut } = useClerk()
+  const pageTitle = PATH_LABELS[pathname] ?? title
 
   const handleSignOut = async () => {
-    try {
-      await signOut({ redirectUrl: '/sign-in' })
-    } catch {
-      window.location.replace('/sign-in')
-    }
+    await fetch('/api/auth/logout', { method: 'POST' })
+    signOut({ redirectUrl: '/sign-in' })
   }
 
   return (

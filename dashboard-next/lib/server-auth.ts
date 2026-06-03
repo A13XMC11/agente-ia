@@ -1,4 +1,5 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { jwtVerify } from 'jose'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 export type SessionUser = {
@@ -8,32 +9,29 @@ export type SessionUser = {
   cliente_id?: string | null
 }
 
-type ClerkPublicMetadata = {
-  role?: 'super_admin' | 'admin' | 'operador'
-  cliente_id?: string
-  email?: string
-}
-
 export async function getServerSession(): Promise<SessionUser | null> {
-  const { userId } = await auth()
-  if (!userId) return null
+  const cookieStore = await cookies()
+  const token = cookieStore.get('auth-token')?.value
+  if (!token) return null
 
-  const clerkUser = await currentUser()
-  if (!clerkUser) return null
+  const jwtSecret = process.env.JWT_SECRET
+  if (!jwtSecret) return null
 
-  const meta = (clerkUser.publicMetadata ?? {}) as ClerkPublicMetadata
+  try {
+    const secret = new TextEncoder().encode(jwtSecret)
+    const { payload } = await jwtVerify(token, secret)
 
-  // No role means sync hasn't run yet — treat as unauthenticated
-  if (!meta.role) return null
+    const role = payload.role as 'super_admin' | 'admin' | 'operador'
+    if (!role) return null
 
-  const email =
-    meta.email ?? clerkUser.emailAddresses[0]?.emailAddress ?? ''
-
-  return {
-    sub: userId,
-    email,
-    role: meta.role,
-    cliente_id: meta.cliente_id ?? null,
+    return {
+      sub: payload.sub as string,
+      email: payload.email as string,
+      role,
+      cliente_id: (payload.cliente_id as string | null) ?? null,
+    }
+  } catch {
+    return null
   }
 }
 

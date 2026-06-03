@@ -31,12 +31,13 @@ export async function POST(request: Request) {
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
     const { data: usuario } = await supabaseAdmin
       .from('usuarios')
-      .select('rol, cliente_id')
+      .select('rol, cliente_id, must_change_password')
       .eq('email', body.email)
       .single()
 
     const rol = usuario?.rol || 'admin'
     const clienteId = usuario?.cliente_id || null
+    const mustChangePassword = usuario?.must_change_password === true
 
     // Crear JWT
     const secret = new TextEncoder().encode(jwtSecret)
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      must_change_password: mustChangePassword,
       user: {
         id: authData.user.id,
         email: body.email,

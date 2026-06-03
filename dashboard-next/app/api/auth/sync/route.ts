@@ -1,6 +1,7 @@
 import { auth, currentUser, clerkClient } from '@clerk/nextjs/server'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { SignJWT } from 'jose'
 
 function createServiceClient() {
   return createClient(
@@ -27,16 +28,16 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL('/sign-in', request.url))
   }
 
-  // Look up role and cliente_id from Supabase
   const supabase = createServiceClient()
   const { data: usuario } = await supabase
     .from('usuarios')
-    .select('rol, cliente_id')
+    .select('rol, cliente_id, must_change_password')
     .eq('email', email)
     .single()
 
   const role = (usuario?.rol as 'super_admin' | 'admin' | 'operador') ?? 'admin'
   const cliente_id = usuario?.cliente_id ?? null
+  const mustChangePassword = usuario?.must_change_password === true
 
   // Persist role and cliente_id into Clerk publicMetadata
   const clerk = await clerkClient()
@@ -44,19 +45,44 @@ export async function GET(request: Request) {
     publicMetadata: { role, cliente_id, email },
   })
 
-  // Route to the right dashboard (respect ?next= param set by middleware)
+  // Force password change on first login — don't issue JWT yet
+  if (mustChangePassword) {
+    return NextResponse.redirect(new URL('/cambiar-contrasena', request.url))
+  }
+
+  // Issue custom JWT so API routes and server components work
+  const jwtSecret = process.env.JWT_SECRET
+  if (!jwtSecret) {
+    return NextResponse.redirect(new URL('/sign-in', request.url))
+  }
+
+  const secret = new TextEncoder().encode(jwtSecret)
+  const token = await new SignJWT({ sub: userId, email, role, cliente_id })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('24h')
+    .sign(secret)
+
   const { searchParams } = new URL(request.url)
   const next = searchParams.get('next')
   const defaultDestination = role === 'super_admin' ? '/admin' : '/cliente'
   const destination = next && next.startsWith('/') ? next : defaultDestination
 
   const response = NextResponse.redirect(new URL(destination, request.url))
-  // Bridge cookie: lets middleware allow through while Clerk JWT refreshes (~1 min)
+
+  response.cookies.set('auth-token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24,
+    path: '/',
+  })
+
   response.cookies.set('_role_synced', role, {
     maxAge: 300,
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
   })
+
   return response
 }

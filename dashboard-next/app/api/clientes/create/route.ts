@@ -1,7 +1,8 @@
 import { createCliente, createAgent, activateModulos, configureWhatsApp, saveDatosBancarios } from '@/lib/data/clientes'
 import { getUserRole } from '@/lib/auth'
 import { supabase } from '@/lib/supabase/server'
-import { randomBytes } from 'crypto'
+import { clerkClient } from '@clerk/nextjs/server'
+import { randomBytes, randomUUID } from 'crypto'
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dashboard.lanlabsec.com'
 const EMAIL_API_URL = 'https://api.lanlabsec.com/internal/send-email'
@@ -64,28 +65,42 @@ Responde este correo o escríbenos a soporte@lanlabsec.com
   }
 }
 
-async function createAuthUser(email: string, password: string, clienteId: string, nombre: string): Promise<void> {
-  // Create Supabase Auth user
-  const { data, error } = await supabase.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  })
+async function createClerkUser(email: string, password: string, clienteId: string, nombre: string): Promise<void> {
+  const clerk = await clerkClient()
 
-  if (error) throw new Error(`Auth user creation failed: ${error.message}`)
+  // Create user in Clerk with the temporary password
+  let clerkUserId: string
+  try {
+    const parts = nombre.trim().split(' ')
+    const createdUser = await clerk.users.createUser({
+      emailAddress: [email],
+      password,
+      firstName: parts[0],
+      lastName: parts.slice(1).join(' ') || undefined,
+    })
+    clerkUserId = createdUser.id
+  } catch (err: unknown) {
+    const clerkErr = err as { errors?: Array<{ message: string }> }
+    throw new Error(`Clerk user creation failed: ${clerkErr?.errors?.[0]?.message ?? 'Unknown error'}`)
+  }
 
   // Create record in usuarios table so JWT gets rol + cliente_id
   const { error: usuarioError } = await supabase.from('usuarios').insert({
-    id: data.user.id,
+    id: randomUUID(),
     cliente_id: clienteId,
     email,
-    password_hash: 'managed_by_supabase_auth',
+    password_hash: 'managed_by_clerk',
     rol: 'admin',
     nombre_completo: nombre,
     activo: true,
+    must_change_password: true,
   })
 
-  if (usuarioError) throw new Error(`Usuario record creation failed: ${usuarioError.message}`)
+  if (usuarioError) {
+    // Clean up Clerk user to keep state consistent
+    await clerk.users.deleteUser(clerkUserId).catch(() => {})
+    throw new Error(`Usuario record creation failed: ${usuarioError.message}`)
+  }
 }
 
 interface CreateClienteRequest {
@@ -229,8 +244,8 @@ export async function POST(request: Request): Promise<Response> {
     // Generate a temporary password for the client
     const tempPassword = randomBytes(6).toString('hex')
 
-    // Create Supabase Auth user + usuarios record so the client can log in
-    await createAuthUser(body.email, tempPassword, clienteId, body.nombre)
+    // Create Clerk user + usuarios record so the client can log in
+    await createClerkUser(body.email, tempPassword, clienteId, body.nombre)
 
     // Send welcome email (fire-and-forget — don't fail the request if email fails)
     sendWelcomeEmail({

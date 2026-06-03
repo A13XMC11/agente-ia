@@ -1,53 +1,50 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { jwtVerify } from 'jose'
 
-const isPublicRoute = createRouteMatcher([
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-  '/login(.*)',
-  '/api/auth/sync(.*)',
-  '/onboarding(.*)',
-  '/api/auth/logout(.*)',
-])
+export const runtime = 'nodejs'
 
-export const proxy = clerkMiddleware(async (auth, request) => {
-  const { userId, sessionClaims } = await auth()
-  const { pathname } = new URL(request.url)
+const PUBLIC_PATHS = [
+  '/sign-in',
+  '/sign-up',
+  '/login',
+  '/onboarding',
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/cambiar-contrasena',
+]
 
-  if (isPublicRoute(request)) {
+function isPublic(pathname: string) {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
+
+export default async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  if (isPublic(pathname)) {
     return NextResponse.next()
   }
 
-  // Unauthenticated → redirect to Clerk sign-in
-  if (!userId) {
+  const token = request.cookies.get('auth-token')?.value
+  const jwtSecret = process.env.JWT_SECRET
+
+  if (!token || !jwtSecret) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
-    const signIn = new URL('/sign-in', request.url)
-    signIn.searchParams.set('redirect_url', request.url)
-    return NextResponse.redirect(signIn)
+    return NextResponse.redirect(new URL('/sign-in', request.url))
   }
 
-  // Authenticated but role not yet synced → sync
-  const meta = (sessionClaims?.publicMetadata ?? {}) as {
-    role?: string
-    cliente_id?: string
-  }
-
-  // Use JWT role, or fall back to short-lived bridge cookie set by /api/auth/sync
-  // while Clerk's JWT refreshes (JWT caches claims and doesn't update immediately)
-  const roleCookie = request.cookies.get('_role_synced')
-  const effectiveRole = meta.role || roleCookie?.value
-
-  if (!effectiveRole) {
-    // Non-GET requests (e.g. Clerk's internal signOut server actions) must not be
-    // redirected to /api/auth/sync — that route only handles GET navigations.
-    if (request.method !== 'GET') {
+  let role: string | undefined
+  try {
+    const secret = new TextEncoder().encode(jwtSecret)
+    const { payload } = await jwtVerify(token, secret)
+    role = payload.role as string | undefined
+  } catch {
+    if (pathname.startsWith('/api/')) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
-    const syncUrl = new URL('/api/auth/sync', request.url)
-    syncUrl.searchParams.set('next', pathname)
-    return NextResponse.redirect(syncUrl)
+    return NextResponse.redirect(new URL('/sign-in', request.url))
   }
 
   // Role-based route enforcement
@@ -55,7 +52,7 @@ export const proxy = clerkMiddleware(async (auth, request) => {
     (pathname.startsWith('/admin') ||
       pathname.startsWith('/api/admin') ||
       pathname.startsWith('/api/clientes')) &&
-    effectiveRole !== 'super_admin'
+    role !== 'super_admin'
   ) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
@@ -63,12 +60,12 @@ export const proxy = clerkMiddleware(async (auth, request) => {
     return NextResponse.redirect(new URL('/cliente', request.url))
   }
 
-  if (pathname.startsWith('/cliente') && effectiveRole === 'super_admin') {
+  if (pathname.startsWith('/cliente') && role === 'super_admin') {
     return NextResponse.redirect(new URL('/admin', request.url))
   }
 
   return NextResponse.next()
-})
+}
 
 export const config = {
   matcher: [

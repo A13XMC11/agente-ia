@@ -5,39 +5,46 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 export default function SignInPage() {
-  const { signIn, fetchStatus } = useSignIn()
   const router = useRouter()
+  const { signIn } = useSignIn()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-
-  const loading = fetchStatus === 'fetching'
+  const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setErrorMsg('')
+    setLoading(true)
 
-    const { error: createError } = await signIn.create({
-      identifier: email,
-      password,
-    })
+    try {
+      // Clerk v7 Future API: one call authenticates identifier + password
+      const { error: authError } = await signIn.password({ emailAddress: email, password })
 
-    if (createError) {
-      setErrorMsg(createError.message ?? 'Credenciales incorrectas')
-      return
-    }
-
-    if (signIn.status === 'complete') {
-      const { error: finalizeError } = await signIn.finalize()
-      if (finalizeError) {
-        setErrorMsg(finalizeError.message ?? 'Error al iniciar sesión')
-      } else {
-        router.push('/')
+      if (authError) {
+        const clerkErr = authError as { message: string; longMessage?: string }
+        setErrorMsg(clerkErr.longMessage ?? clerkErr.message ?? 'Credenciales incorrectas')
+        return
       }
-    } else {
-      setErrorMsg('Autenticación incompleta. Contacta al administrador.')
+
+      if (signIn.status === 'complete') {
+        // finalize() converts the complete sign-in into an active browser session
+        await signIn.finalize()
+        router.push('/api/auth/sync')
+      } else {
+        setErrorMsg('No se pudo completar el inicio de sesión')
+      }
+    } catch (err: unknown) {
+      const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
+      const msg =
+        clerkError?.errors?.[0]?.longMessage ??
+        clerkError?.errors?.[0]?.message ??
+        'Credenciales incorrectas'
+      setErrorMsg(msg)
+    } finally {
+      setLoading(false)
     }
   }
 

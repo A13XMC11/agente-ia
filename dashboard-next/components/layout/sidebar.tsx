@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useClerk } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
@@ -29,15 +29,12 @@ interface SidebarProps {
 
 export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) => {
   const pathname = usePathname()
+  const router = useRouter()
   const isAdmin = role === 'super_admin'
-  const { signOut } = useClerk()
 
   const handleSignOut = async () => {
-    try {
-      await signOut({ redirectUrl: '/sign-in' })
-    } catch {
-      window.location.replace('/sign-in')
-    }
+    await fetch('/api/auth/logout', { method: 'POST' })
+    router.replace('/sign-in')
   }
 
   const adminLinks = [
