@@ -46,6 +46,12 @@ interface Modulo {
   activo: boolean
 }
 
+const PLANES = [
+  { id: 'basico', nombre: 'Básico', precio: 149 },
+  { id: 'profesional', nombre: 'Profesional', precio: 249 },
+  { id: 'empresarial', nombre: 'Empresarial', precio: 399 },
+]
+
 const MODULOS_DISPONIBLES = [
   { id: 'ventas', nombre: 'Ventas', descripcion: 'Catálogo, cotizaciones, objecciones' },
   { id: 'agendamiento', nombre: 'Agendamiento', descripcion: 'Integración Google Calendar' },
@@ -67,6 +73,10 @@ export default function ClienteDetalle() {
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editingCliente, setEditingCliente] = useState(false)
+  const [editingAgente, setEditingAgente] = useState(false)
+  const [clienteDraft, setClienteDraft] = useState<Cliente | null>(null)
+  const [agenteDraft, setAgenteDraft] = useState<Agente | null>(null)
   const [billingAmount, setBillingAmount] = useState('')
   const [billingPhone, setBillingPhone] = useState('')
   const [billingLoading, setBillingLoading] = useState(false)
@@ -113,11 +123,13 @@ export default function ClienteDetalle() {
       if (clienteRes.ok) {
         const clienteData = await clienteRes.json()
         setCliente(clienteData.data)
+        setClienteDraft(clienteData.data)
       }
 
       if (agenteRes.ok) {
         const agenteData = await agenteRes.json()
         setAgente(agenteData.data)
+        setAgenteDraft(agenteData.data)
       }
 
       if (modulosRes.ok) {
@@ -137,18 +149,19 @@ export default function ClienteDetalle() {
   }
 
   async function handleSaveCliente() {
-    if (!cliente) return
+    if (!clienteDraft) return
     setSaving(true)
 
     try {
       const response = await fetch(`/api/clientes/${clienteId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cliente)
+        body: JSON.stringify(clienteDraft)
       })
 
       if (response.ok) {
-        alert('Cliente actualizado exitosamente')
+        setCliente(clienteDraft)
+        setEditingCliente(false)
       } else {
         alert('Error al actualizar el cliente')
       }
@@ -160,19 +173,25 @@ export default function ClienteDetalle() {
     }
   }
 
+  function handleCancelCliente() {
+    setClienteDraft(cliente)
+    setEditingCliente(false)
+  }
+
   async function handleSaveAgente() {
-    if (!agente) return
+    if (!agenteDraft) return
     setSaving(true)
 
     try {
       const response = await fetch(`/api/clientes/${clienteId}/agente`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(agente)
+        body: JSON.stringify(agenteDraft)
       })
 
       if (response.ok) {
-        alert('Agente actualizado exitosamente')
+        setAgente(agenteDraft)
+        setEditingAgente(false)
       } else {
         alert('Error al actualizar el agente')
       }
@@ -182,6 +201,11 @@ export default function ClienteDetalle() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleCancelAgente() {
+    setAgenteDraft(agente)
+    setEditingAgente(false)
   }
 
   async function handleToggleModulo(moduloId: string, activo: boolean) {
@@ -315,71 +339,126 @@ export default function ClienteDetalle() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Información General</CardTitle>
-          <CardDescription>Datos del cliente</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between">
+          <div>
+            <CardTitle>Información General</CardTitle>
+            <CardDescription>Datos del cliente</CardDescription>
+          </div>
+          {!editingCliente && (
+            <Button variant="outline" size="sm" onClick={() => setEditingCliente(true)}>
+              Editar
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Nombre</Label>
-              <Input
-                value={cliente.nombre}
-                onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })}
-              />
+          {editingCliente && clienteDraft ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nombre</Label>
+                  <Input
+                    value={clienteDraft.nombre}
+                    onChange={(e) => setClienteDraft({ ...clienteDraft, nombre: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={clienteDraft.email}
+                    onChange={(e) => setClienteDraft({ ...clienteDraft, email: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Teléfono</Label>
+                  <Input
+                    value={clienteDraft.telefono}
+                    onChange={(e) => setClienteDraft({ ...clienteDraft, telefono: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Plan</Label>
+                  <select
+                    value={clienteDraft.plan}
+                    onChange={(e) => {
+                      const plan = PLANES.find(p => p.id === e.target.value)
+                      setClienteDraft({
+                        ...clienteDraft,
+                        plan: e.target.value,
+                        precio_mensual: plan?.precio ?? clienteDraft.precio_mensual,
+                      })
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                  >
+                    {PLANES.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Precio Mensual</Label>
+                  <div className="flex items-center h-10 px-3 border rounded-lg bg-surface text-text-primary">
+                    ${PLANES.find(p => p.id === clienteDraft.plan)?.precio ?? clienteDraft.precio_mensual}/mes
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Estado</Label>
+                  <select
+                    value={clienteDraft.estado}
+                    onChange={(e) => setClienteDraft({ ...clienteDraft, estado: e.target.value as Cliente['estado'] })}
+                    className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                  >
+                    <option>activo</option>
+                    <option>pausado</option>
+                    <option>cancelado</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveCliente} disabled={saving}>
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </Button>
+                <Button variant="outline" onClick={handleCancelCliente} disabled={saving}>
+                  Cancelar
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8">
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Nombre</p>
+                <p className="text-text-primary font-medium">{cliente.nombre}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Email</p>
+                <p className="text-text-primary font-medium">{cliente.email}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Teléfono</p>
+                <p className="text-text-primary font-medium">{cliente.telefono || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Plan</p>
+                <p className="text-text-primary font-medium capitalize">{cliente.plan}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Precio Mensual</p>
+                <p className="text-text-primary font-medium">
+                  {cliente.precio_mensual ? `$${cliente.precio_mensual}/mes` : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Estado</p>
+                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                  cliente.estado === 'activo' ? 'bg-success/10 text-success' :
+                  cliente.estado === 'pausado' ? 'bg-warning/10 text-warning' :
+                  'bg-error/10 text-error'
+                }`}>
+                  {cliente.estado}
+                </span>
+              </div>
             </div>
-
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={cliente.email}
-                onChange={(e) => setCliente({ ...cliente, email: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Teléfono</Label>
-              <Input
-                value={cliente.telefono}
-                onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Plan</Label>
-              <Input
-                value={cliente.plan}
-                onChange={(e) => setCliente({ ...cliente, plan: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Precio Mensual</Label>
-              <Input
-                type="number"
-                value={cliente.precio_mensual}
-                onChange={(e) => setCliente({ ...cliente, precio_mensual: parseFloat(e.target.value) })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Estado</Label>
-              <select
-                value={cliente.estado}
-                onChange={(e) => setCliente({ ...cliente, estado: e.target.value as any })}
-                className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-              >
-                <option>activo</option>
-                <option>pausado</option>
-                <option>cancelado</option>
-              </select>
-            </div>
-          </div>
-
-          <Button onClick={handleSaveCliente} disabled={saving}>
-            {saving ? 'Guardando...' : 'Guardar Cliente'}
-          </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -387,72 +466,110 @@ export default function ClienteDetalle() {
 
       {agente && (
         <Card>
-          <CardHeader>
-            <CardTitle>Configuración del Agente</CardTitle>
-            <CardDescription>Personalización de IA para este cliente</CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between">
+            <div>
+              <CardTitle>Configuración del Agente</CardTitle>
+              <CardDescription>Personalización de IA para este cliente</CardDescription>
+            </div>
+            {!editingAgente && (
+              <Button variant="outline" size="sm" onClick={() => setEditingAgente(true)}>
+                Editar
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Nombre del Agente</Label>
-                <Input
-                  value={agente.nombre}
-                  onChange={(e) => setAgente({ ...agente, nombre: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Modelo</Label>
-                <select
-                  value={agente.modelo}
-                  onChange={(e) => setAgente({ ...agente, modelo: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-                >
-                  <option>GPT-4o</option>
-                  <option>GPT-4 Turbo</option>
-                  <option>GPT-3.5 Turbo</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tono</Label>
-                <select
-                  value={agente.tono}
-                  onChange={(e) => setAgente({ ...agente, tono: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-                >
-                  <option>Amigable</option>
-                  <option>Formal</option>
-                  <option>Profesional</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Idioma</Label>
-                <select
-                  value={agente.idioma}
-                  onChange={(e) => setAgente({ ...agente, idioma: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-                >
-                  <option>Español</option>
-                  <option>Inglés</option>
-                  <option>Portugués</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>System Prompt</Label>
-              <Textarea
-                value={agente.system_prompt}
-                onChange={(e) => setAgente({ ...agente, system_prompt: e.target.value })}
-                className="min-h-40"
-              />
-            </div>
-
-            <Button onClick={handleSaveAgente} disabled={saving}>
-              {saving ? 'Guardando...' : 'Guardar Agente'}
-            </Button>
+            {editingAgente && agenteDraft ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Nombre del Agente</Label>
+                    <Input
+                      value={agenteDraft.nombre}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, nombre: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Modelo</Label>
+                    <select
+                      value={agenteDraft.modelo}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, modelo: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                    >
+                      <option>GPT-4o</option>
+                      <option>GPT-4 Turbo</option>
+                      <option>GPT-3.5 Turbo</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tono</Label>
+                    <select
+                      value={agenteDraft.tono}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, tono: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                    >
+                      <option>Amigable</option>
+                      <option>Formal</option>
+                      <option>Profesional</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Idioma</Label>
+                    <select
+                      value={agenteDraft.idioma}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, idioma: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                    >
+                      <option>Español</option>
+                      <option>Inglés</option>
+                      <option>Portugués</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>System Prompt</Label>
+                  <Textarea
+                    value={agenteDraft.system_prompt}
+                    onChange={(e) => setAgenteDraft({ ...agenteDraft, system_prompt: e.target.value })}
+                    className="min-h-40"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleSaveAgente} disabled={saving}>
+                    {saving ? 'Guardando...' : 'Guardar'}
+                  </Button>
+                  <Button variant="outline" onClick={handleCancelAgente} disabled={saving}>
+                    Cancelar
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8">
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Nombre del Agente</p>
+                    <p className="text-text-primary font-medium">{agente.nombre}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Modelo</p>
+                    <p className="text-text-primary font-medium">{agente.modelo}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Tono</p>
+                    <p className="text-text-primary font-medium">{agente.tono}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Idioma</p>
+                    <p className="text-text-primary font-medium">{agente.idioma}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-text-secondary uppercase tracking-wide mb-2">System Prompt</p>
+                  <p className="text-text-primary text-sm whitespace-pre-wrap bg-surface rounded-lg p-3 max-h-40 overflow-y-auto">
+                    {agente.system_prompt || '—'}
+                  </p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       )}
