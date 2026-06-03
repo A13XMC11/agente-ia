@@ -32,9 +32,8 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
   const isAdmin = role === 'super_admin'
   const { signOut } = useClerk()
 
-  const handleSignOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    await signOut()
+  const handleSignOut = () => {
+    signOut()
   }
 
   const adminLinks = [

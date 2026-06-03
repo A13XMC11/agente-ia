@@ -40,6 +40,11 @@ export const proxy = clerkMiddleware(async (auth, request) => {
   const effectiveRole = meta.role || roleCookie?.value
 
   if (!effectiveRole) {
+    // Non-GET requests (e.g. Clerk's internal signOut server actions) must not be
+    // redirected to /api/auth/sync — that route only handles GET navigations.
+    if (request.method !== 'GET') {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
     const syncUrl = new URL('/api/auth/sync', request.url)
     syncUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(syncUrl)
