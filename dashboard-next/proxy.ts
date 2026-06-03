@@ -10,7 +10,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/auth/logout(.*)',
 ])
 
-export default clerkMiddleware(async (auth, request) => {
+export const proxy = clerkMiddleware(async (auth, request) => {
   const { userId, sessionClaims } = await auth()
   const { pathname } = new URL(request.url)
 
@@ -57,3 +57,9 @@ export default clerkMiddleware(async (auth, request) => {
 
   return NextResponse.next()
 })
+
+export const proxyConfig = {
+  matcher: [
+    '/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+  ],
+}
