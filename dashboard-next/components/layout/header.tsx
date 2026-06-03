@@ -1,8 +1,9 @@
 'use client'
 
 import { Avatar } from '@/components/ui/avatar'
+import { useClerk } from '@clerk/nextjs'
+import { LogOut, Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
-import { Menu } from 'lucide-react'
 
 interface HeaderProps {
   title: string
@@ -26,6 +27,13 @@ const PATH_LABELS: Record<string, string> = {
 export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: HeaderProps) => {
   const pathname = usePathname()
   const pageTitle = PATH_LABELS[pathname] ?? title
+  const { signOut } = useClerk()
+
+  const handleSignOut = async () => {
+    // Clear bridge cookie and sign out via Clerk
+    document.cookie = '_role_synced=; Max-Age=0; path=/'
+    await signOut({ redirectUrl: '/sign-in' })
+  }
 
   return (
     <header
@@ -59,6 +67,18 @@ export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: 
           {userEmail && <p className="text-xs text-text-muted mt-0.5">{userEmail}</p>}
         </div>
         <Avatar name={userName} className="ring-1 ring-border-light" />
+        <button
+          onClick={handleSignOut}
+          className={[
+            'shrink-0 h-9 w-9 flex items-center justify-center rounded-lg',
+            'text-text-secondary hover:text-red-400 hover:bg-surface',
+            'transition-all duration-150 active:scale-[0.97] cursor-pointer',
+          ].join(' ')}
+          aria-label="Cerrar sesión"
+          title="Cerrar sesión"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
     </header>
   )
