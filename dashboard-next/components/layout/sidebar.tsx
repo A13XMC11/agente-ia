@@ -35,8 +35,8 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
   const handleSignOut = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-      await signOut()
-    } finally {
+      await signOut({ redirectUrl: '/sign-in' })
+    } catch {
       window.location.replace('/sign-in')
     }
   }
