@@ -30,8 +30,12 @@ export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: 
   const { signOut } = useClerk()
 
   const handleSignOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    await signOut({ redirectUrl: '/sign-in' })
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+      await signOut()
+    } finally {
+      window.location.replace('/sign-in')
+    }
   }
 
   return (

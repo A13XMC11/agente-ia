@@ -33,8 +33,12 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
   const { signOut } = useClerk()
 
   const handleSignOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    await signOut({ redirectUrl: '/sign-in' })
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+      await signOut()
+    } finally {
+      window.location.replace('/sign-in')
+    }
   }
 
   const adminLinks = [
