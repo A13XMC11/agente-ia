@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/server'
 export async function GET() {
   try {
     const session = await getServerSession()
-    console.log('[LEADS] Session:', { id: session?.id, email: session?.email, cliente_id: session?.cliente_id })
+    console.log('[LEADS] Session:', { id: session?.sub, email: session?.email, cliente_id: session?.cliente_id })
 
     if (!session || !session.cliente_id) {
       console.log('[LEADS] Unauthorized: no session or cliente_id')
