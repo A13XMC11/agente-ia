@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useClerk } from '@clerk/nextjs'
 import {
   LayoutDashboard,
   Users,
@@ -29,6 +30,12 @@ interface SidebarProps {
 export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) => {
   const pathname = usePathname()
   const isAdmin = role === 'super_admin'
+  const { signOut } = useClerk()
+
+  const handleSignOut = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    await signOut(() => { window.location.href = '/sign-in' })
+  }
 
   const adminLinks = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -110,20 +117,18 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
 
           {/* Logout */}
           <div className="border-t border-border p-3">
-            <form action="/api/auth/logout" method="POST">
-              <button
-                type="submit"
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer',
-                  'text-text-muted hover:text-error hover:bg-error/8',
-                  'transition-all duration-150',
-                  'active:scale-[0.97]',
-                )}
-              >
-                <LogOut className="h-4 w-4 shrink-0" />
-                <span>Cerrar sesión</span>
-              </button>
-            </form>
+            <button
+              onClick={handleSignOut}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer',
+                'text-text-muted hover:text-error hover:bg-error/8',
+                'transition-all duration-150',
+                'active:scale-[0.97]',
+              )}
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              <span>Cerrar sesión</span>
+            </button>
           </div>
         </div>
       </aside>
