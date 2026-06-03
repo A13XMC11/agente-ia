@@ -31,7 +31,7 @@ export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: 
 
   const handleSignOut = async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    await signOut(() => { window.location.href = '/sign-in' })
+    await signOut({ redirectUrl: '/sign-in' })
   }
 
   return (

@@ -8,10 +8,6 @@ export default async function AdminLayout({
 }) {
   const user = await requireRole('super_admin')
 
-  if (user.role !== 'super_admin') {
-    throw new Error('Unauthorized: only super_admin can access this page')
-  }
-
   return (
     <LayoutClient role="super_admin" userName={user.email}>
       {children}

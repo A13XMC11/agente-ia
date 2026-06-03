@@ -13,8 +13,8 @@ export default async function ClienteLayout({
     redirect('/admin')
   }
 
-  if (user.role !== 'admin' && user.role !== 'operador' && user.role !== 'cliente') {
-    redirect('/login')
+  if (user.role !== 'admin' && user.role !== 'operador') {
+    redirect('/sign-in')
   }
 
   return (
