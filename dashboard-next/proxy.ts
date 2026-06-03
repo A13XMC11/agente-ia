@@ -1,8 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
-export const runtime = 'nodejs'
-
 const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
@@ -12,7 +10,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/auth/logout(.*)',
 ])
 
-export const proxy = clerkMiddleware(async (auth, request) => {
+export default clerkMiddleware(async (auth, request) => {
   const { userId, sessionClaims } = await auth()
   const { pathname } = new URL(request.url)
 
@@ -59,9 +57,3 @@ export const proxy = clerkMiddleware(async (auth, request) => {
 
   return NextResponse.next()
 })
-
-export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|public).*)',
-  ],
-}
