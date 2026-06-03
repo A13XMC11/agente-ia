@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase/server'
 
 const MODULE_COLUMNS = [
   'ventas', 'agendamiento', 'cobros', 'links_pago',
-  'calificacion', 'campanas', 'alertas', 'seguimientos', 'documentos',
+  'calificacion', 'campanas', 'analytics', 'alertas', 'seguimientos', 'documentos',
 ] as const
 
 type ModuleId = typeof MODULE_COLUMNS[number]
