@@ -1,0 +1,153 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { Users } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import type { Cliente } from '@/lib/data/clientes-server'
+
+const PLAN_PRECIOS: Record<string, number> = {
+  basico: 149,
+  profesional: 249,
+  empresarial: 399,
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  basico: 'Plan Básico',
+  profesional: 'Plan Profesional',
+  empresarial: 'Plan Empresarial',
+}
+
+function formatPlan(plan: string): string {
+  const label = PLAN_LABELS[plan.toLowerCase()] ?? plan
+  const precio = PLAN_PRECIOS[plan.toLowerCase()]
+  return precio ? `${label} - $${precio}/mes` : label
+}
+
+function formatDate(dateString: string) {
+  return new Date(dateString).toLocaleDateString('es-EC', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+export function ClientesView({ clientes }: { clientes: Cliente[] }) {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Filter in-memory — no network call needed
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return clientes
+    return clientes.filter(
+      (c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q),
+    )
+  }, [searchQuery, clientes])
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Clientes</h1>
+          <p className="text-text-secondary mt-1 text-sm md:text-base">
+            Gestiona todos los clientes de la plataforma
+          </p>
+        </div>
+        <Link href="/admin/clientes/nuevo" className="shrink-0">
+          <Button size="sm">Nuevo Cliente</Button>
+        </Link>
+      </div>
+
+      <div className="flex gap-2">
+        <Input
+          placeholder="Buscar cliente por nombre o email..."
+          className="flex-1"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Lista de Clientes</CardTitle>
+          <CardDescription>
+            {filtered.length} cliente{filtered.length !== 1 ? 's' : ''} encontrado
+            {filtered.length !== 1 ? 's' : ''}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Users className="h-12 w-12 text-text-muted mb-4" />
+              <p className="text-text-secondary">
+                {searchQuery ? 'No se encontraron clientes' : 'No hay clientes aún'}
+              </p>
+              <p className="text-sm text-text-muted mt-2">
+                {searchQuery
+                  ? 'Intenta con otros términos de búsqueda'
+                  : 'Crea tu primer cliente para empezar'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Nombre</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Email</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Industria</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Plan</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Estado</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Creado</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((cliente) => (
+                    <tr key={cliente.id} className="border-b hover:bg-surface cursor-pointer">
+                      <td className="py-3 px-4 text-text-primary font-medium">
+                        <Link href={`/admin/clientes/${cliente.id}`}>{cliente.nombre}</Link>
+                      </td>
+                      <td className="py-3 px-4 text-text-secondary text-sm">{cliente.email}</td>
+                      <td className="py-3 px-4 text-text-secondary text-sm capitalize">
+                        {cliente.industria ?? <span className="text-text-muted">-</span>}
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        <span className="text-text-primary font-medium">{formatPlan(cliente.plan)}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            cliente.estado === 'activo'
+                              ? 'bg-success/10 text-success'
+                              : cliente.estado === 'pausado'
+                                ? 'bg-warning/10 text-warning'
+                                : 'bg-error/10 text-error'
+                          }`}
+                        >
+                          {cliente.estado}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-text-secondary text-sm">
+                        {formatDate(cliente.created_at)}
+                      </td>
+                      <td className="py-3 px-4">
+                        <Link href={`/admin/clientes/${cliente.id}`}>
+                          <Button variant="outline" size="sm">Ver</Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
