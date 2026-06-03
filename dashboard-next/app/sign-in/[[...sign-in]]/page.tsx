@@ -42,11 +42,11 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="h-screen flex bg-background overflow-hidden">
 
       {/* ── Left panel: illustration ── */}
       <div
-        className="hidden lg:flex lg:w-1/2 xl:w-3/5 relative items-center justify-center overflow-hidden"
+        className="hidden lg:flex lg:w-1/2 xl:w-3/5 relative flex-col items-center justify-between overflow-hidden h-full"
         style={{
           background: 'linear-gradient(135deg, #060D13 0%, #0F1E2D 60%, #0a1929 100%)',
         }}
@@ -71,15 +71,16 @@ export default function SignInPage() {
           }}
         />
 
-        {/* Illustration */}
-        <div className="relative z-10 flex flex-col items-center px-12 text-center">
+        {/* Illustration — fills full height */}
+        <div className="relative z-10 flex flex-col items-center justify-center h-full w-full px-8 pb-6 text-center">
           <img
             src="/lanlabs_home.png"
             alt="Agente IA — canales de comunicación"
-            className="w-full max-w-md xl:max-w-lg drop-shadow-2xl select-none"
+            className="select-none drop-shadow-2xl"
+            style={{ height: '70vh', width: 'auto', objectFit: 'contain' }}
             draggable={false}
           />
-          <div className="mt-8 space-y-2">
+          <div className="mt-6 space-y-2">
             <h2 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               Tu agente IA, siempre activo
             </h2>
@@ -88,7 +89,7 @@ export default function SignInPage() {
             </p>
           </div>
           {/* Accent dots decoration */}
-          <div className="flex gap-2 mt-6">
+          <div className="flex gap-2 mt-5">
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
@@ -97,25 +98,15 @@ export default function SignInPage() {
                   width: i === 1 ? 20 : 6,
                   height: 6,
                   background: i === 1 ? 'var(--accent)' : 'rgba(56,189,248,0.25)',
-                  transition: 'all 0.3s',
                 }}
               />
             ))}
           </div>
         </div>
-
-        {/* Bottom fade */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 inset-x-0 h-32"
-          style={{
-            background: 'linear-gradient(to top, #060D13 0%, transparent 100%)',
-          }}
-        />
       </div>
 
       {/* ── Right panel: form ── */}
-      <div className="flex flex-1 items-center justify-center relative overflow-hidden px-6 py-12">
+      <div className="flex flex-1 items-center justify-center relative overflow-hidden px-6">
         {/* Top ambient glow */}
         <div
           aria-hidden
