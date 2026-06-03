@@ -34,7 +34,7 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
 
   const handleSignOut = async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    await signOut(() => { window.location.href = '/sign-in' })
+    await signOut()
   }
 
   const adminLinks = [
