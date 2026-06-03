@@ -3,7 +3,7 @@
 import { Avatar } from '@/components/ui/avatar'
 import { useClerk } from '@clerk/nextjs'
 import { LogOut, Menu } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 
 interface HeaderProps {
   title: string
@@ -26,15 +26,12 @@ const PATH_LABELS: Record<string, string> = {
 
 export const Header = ({ title, userName = 'Usuario', userEmail, onMenuClick }: HeaderProps) => {
   const pathname = usePathname()
-  const router = useRouter()
   const pageTitle = PATH_LABELS[pathname] ?? title
   const { signOut } = useClerk()
 
   const handleSignOut = async () => {
-    // Clear the httpOnly bridge cookie via server route (JS cannot clear httpOnly cookies)
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    await signOut()
-    router.push('/sign-in')
+    await signOut({ redirectUrl: '/sign-in' })
   }
 
   return (
