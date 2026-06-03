@@ -34,8 +34,15 @@ export const proxy = clerkMiddleware(async (auth, request) => {
     cliente_id?: string
   }
 
-  if (!meta.role) {
-    return NextResponse.redirect(new URL('/api/auth/sync', request.url))
+  // Use JWT role, or fall back to short-lived bridge cookie set by /api/auth/sync
+  // while Clerk's JWT refreshes (JWT caches claims and doesn't update immediately)
+  const roleCookie = request.cookies.get('_role_synced')
+  const effectiveRole = meta.role || roleCookie?.value
+
+  if (!effectiveRole) {
+    const syncUrl = new URL('/api/auth/sync', request.url)
+    syncUrl.searchParams.set('next', pathname)
+    return NextResponse.redirect(syncUrl)
   }
 
   // Role-based route enforcement
@@ -43,7 +50,7 @@ export const proxy = clerkMiddleware(async (auth, request) => {
     (pathname.startsWith('/admin') ||
       pathname.startsWith('/api/admin') ||
       pathname.startsWith('/api/clientes')) &&
-    meta.role !== 'super_admin'
+    effectiveRole !== 'super_admin'
   ) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
@@ -51,7 +58,7 @@ export const proxy = clerkMiddleware(async (auth, request) => {
     return NextResponse.redirect(new URL('/cliente', request.url))
   }
 
-  if (pathname.startsWith('/cliente') && meta.role === 'super_admin') {
+  if (pathname.startsWith('/cliente') && effectiveRole === 'super_admin') {
     return NextResponse.redirect(new URL('/admin', request.url))
   }
 

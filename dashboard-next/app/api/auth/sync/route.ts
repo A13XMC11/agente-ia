@@ -44,7 +44,19 @@ export async function GET(request: Request) {
     publicMetadata: { role, cliente_id, email },
   })
 
-  // Route to the right dashboard
-  const destination = role === 'super_admin' ? '/admin' : '/cliente'
-  return NextResponse.redirect(new URL(destination, request.url))
+  // Route to the right dashboard (respect ?next= param set by middleware)
+  const { searchParams } = new URL(request.url)
+  const next = searchParams.get('next')
+  const defaultDestination = role === 'super_admin' ? '/admin' : '/cliente'
+  const destination = next && next.startsWith('/') ? next : defaultDestination
+
+  const response = NextResponse.redirect(new URL(destination, request.url))
+  // Bridge cookie: lets middleware allow through while Clerk JWT refreshes (~1 min)
+  response.cookies.set('_role_synced', role, {
+    maxAge: 300,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+  })
+  return response
 }
