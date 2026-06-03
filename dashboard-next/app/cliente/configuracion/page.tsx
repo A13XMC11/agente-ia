@@ -62,6 +62,8 @@ const MODULOS_DISPONIBLES = [
 
 export default function ConfiguracionPage() {
   const [agente, setAgente] = useState<Agente | null>(null)
+  const [agenteDraft, setAgenteDraft] = useState<Agente | null>(null)
+  const [editingAgente, setEditingAgente] = useState(false)
   const [modulos, setModulos] = useState<Modulo[]>([])
   const [datosBancarios, setDatosBancarios] = useState<DatoBancario[]>([])
   const [pagos, setPagos] = useState<Pago[]>([])
@@ -93,6 +95,7 @@ export default function ConfiguracionPage() {
       if (agenteRes.ok) {
         const agenteData = await agenteRes.json()
         setAgente(agenteData.data)
+        setAgenteDraft(agenteData.data)
       }
 
       if (modulosRes.ok) {
@@ -117,18 +120,19 @@ export default function ConfiguracionPage() {
   }
 
   async function handleSaveAgente() {
-    if (!agente) return
+    if (!agenteDraft) return
 
     setSaving(true)
     try {
       const response = await fetch('/api/cliente/agente', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(agente)
+        body: JSON.stringify(agenteDraft)
       })
 
       if (response.ok) {
-        alert('Configuración del agente guardada exitosamente')
+        setAgente(agenteDraft)
+        setEditingAgente(false)
       } else {
         alert('Error al guardar la configuración')
       }
@@ -138,6 +142,11 @@ export default function ConfiguracionPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleCancelAgente() {
+    setAgenteDraft(agente)
+    setEditingAgente(false)
   }
 
   async function handleToggleModulo(moduloId: string, activo: boolean) {
@@ -319,77 +328,115 @@ export default function ConfiguracionPage() {
 
       {agente && (
         <Card>
-          <CardHeader>
-            <CardTitle>Configuración del Agente</CardTitle>
-            <CardDescription>Personaliza el comportamiento de tu agente IA</CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between">
+            <div>
+              <CardTitle>Configuración del Agente</CardTitle>
+              <CardDescription>Personaliza el comportamiento de tu agente IA</CardDescription>
+            </div>
+            {!editingAgente && (
+              <Button variant="outline" size="sm" onClick={() => setEditingAgente(true)}>
+                Editar
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="space-y-4 md:space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="agent-name">Nombre del Agente</Label>
-              <Input
-                id="agent-name"
-                value={agente.nombre}
-                onChange={(e) => setAgente({ ...agente, nombre: e.target.value })}
-              />
-            </div>
+            {editingAgente && agenteDraft ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Nombre del Agente</Label>
+                  <Input
+                    value={agenteDraft.nombre}
+                    onChange={(e) => setAgenteDraft({ ...agenteDraft, nombre: e.target.value })}
+                  />
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="tone">Tono</Label>
-                <select
-                  id="tone"
-                  value={agente.tono}
-                  onChange={(e) => setAgente({ ...agente, tono: e.target.value as any })}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-                >
-                  <option>Amigable</option>
-                  <option>Formal</option>
-                  <option>Profesional</option>
-                </select>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Tono</Label>
+                    <select
+                      value={agenteDraft.tono}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, tono: e.target.value as Agente['tono'] })}
+                      className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                    >
+                      <option>Amigable</option>
+                      <option>Formal</option>
+                      <option>Profesional</option>
+                    </select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="language">Idioma</Label>
-                <select
-                  id="language"
-                  value={agente.idioma}
-                  onChange={(e) => setAgente({ ...agente, idioma: e.target.value as any })}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-                >
-                  <option>Español</option>
-                  <option>Inglés</option>
-                  <option>Portugués</option>
-                </select>
-              </div>
+                  <div className="space-y-2">
+                    <Label>Idioma</Label>
+                    <select
+                      value={agenteDraft.idioma}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, idioma: e.target.value as Agente['idioma'] })}
+                      className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                    >
+                      <option>Español</option>
+                      <option>Inglés</option>
+                      <option>Portugués</option>
+                    </select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="model">Modelo</Label>
-                <select
-                  id="model"
-                  value={agente.modelo}
-                  onChange={(e) => setAgente({ ...agente, modelo: e.target.value as any })}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
-                >
-                  <option>GPT-4o</option>
-                  <option>GPT-4 Turbo</option>
-                  <option>GPT-3.5 Turbo</option>
-                </select>
-              </div>
-            </div>
+                  <div className="space-y-2">
+                    <Label>Modelo</Label>
+                    <select
+                      value={agenteDraft.modelo}
+                      onChange={(e) => setAgenteDraft({ ...agenteDraft, modelo: e.target.value as Agente['modelo'] })}
+                      className="w-full px-3 py-2 border rounded-lg bg-background text-text-primary"
+                    >
+                      <option>GPT-4o</option>
+                      <option>GPT-4 Turbo</option>
+                      <option>GPT-3.5 Turbo</option>
+                    </select>
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="system-prompt">System Prompt</Label>
-              <Textarea
-                id="system-prompt"
-                value={agente.system_prompt}
-                onChange={(e) => setAgente({ ...agente, system_prompt: e.target.value })}
-                className="min-h-40"
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label>System Prompt</Label>
+                  <Textarea
+                    value={agenteDraft.system_prompt}
+                    onChange={(e) => setAgenteDraft({ ...agenteDraft, system_prompt: e.target.value })}
+                    className="min-h-40"
+                  />
+                </div>
 
-            <Button onClick={handleSaveAgente} disabled={saving}>
-              {saving ? 'Guardando...' : 'Guardar Cambios'}
-            </Button>
+                <div className="flex gap-2">
+                  <Button onClick={handleSaveAgente} disabled={saving}>
+                    {saving ? 'Guardando...' : 'Guardar'}
+                  </Button>
+                  <Button variant="outline" onClick={handleCancelAgente} disabled={saving}>
+                    Cancelar
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Nombre del Agente</p>
+                    <p className="text-text-primary font-medium">{agente.nombre}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Modelo</p>
+                    <p className="text-text-primary font-medium">{agente.modelo}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Tono</p>
+                    <p className="text-text-primary font-medium">{agente.tono}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-secondary uppercase tracking-wide mb-1">Idioma</p>
+                    <p className="text-text-primary font-medium">{agente.idioma}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-text-secondary uppercase tracking-wide mb-2">System Prompt</p>
+                  <p className="text-text-primary text-sm whitespace-pre-wrap bg-surface rounded-lg p-3 max-h-40 overflow-y-auto">
+                    {agente.system_prompt || '—'}
+                  </p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       )}
