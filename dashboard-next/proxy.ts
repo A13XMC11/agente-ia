@@ -1,62 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { jwtVerify } from 'jose'
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
-const jwtSecret = process.env.JWT_SECRET
-const secretKey = jwtSecret ? new TextEncoder().encode(jwtSecret) : null
+export const runtime = 'nodejs'
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout', '/onboarding']
+const isPublicRoute = createRouteMatcher([
+  '/sign-in(.*)',
+  '/sign-up(.*)',
+  '/login(.*)',
+  '/api/auth/sync(.*)',
+  '/onboarding(.*)',
+  '/api/auth/logout(.*)',
+])
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
+export const proxy = clerkMiddleware(async (auth, request) => {
+  const { userId, sessionClaims } = await auth()
+  const { pathname } = new URL(request.url)
 
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (isPublicRoute(request)) {
     return NextResponse.next()
   }
 
-  const isProtected =
-    pathname.startsWith('/cliente') ||
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/api/cliente') ||
-    pathname.startsWith('/api/admin') ||
-    pathname.startsWith('/api/clientes')
-
-  if (!isProtected) {
-    return NextResponse.next()
-  }
-
-  const token = request.cookies.get('auth-token')?.value
-
-  if (!token || !secretKey) {
+  // Unauthenticated → redirect to Clerk sign-in
+  if (!userId) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
-    return NextResponse.redirect(new URL('/login', request.url))
+    const signIn = new URL('/sign-in', request.url)
+    signIn.searchParams.set('redirect_url', request.url)
+    return NextResponse.redirect(signIn)
   }
 
-  try {
-    const { payload } = await jwtVerify(token, secretKey)
+  // Authenticated but role not yet synced → sync
+  const meta = (sessionClaims?.publicMetadata ?? {}) as {
+    role?: string
+    cliente_id?: string
+  }
 
-    if (
-      pathname.startsWith('/admin') ||
+  if (!meta.role) {
+    return NextResponse.redirect(new URL('/api/auth/sync', request.url))
+  }
+
+  // Role-based route enforcement
+  if (
+    (pathname.startsWith('/admin') ||
       pathname.startsWith('/api/admin') ||
-      pathname.startsWith('/api/clientes')
-    ) {
-      if (payload.role !== 'super_admin') {
-        if (pathname.startsWith('/api/')) {
-          return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-        }
-        return NextResponse.redirect(new URL('/cliente', request.url))
-      }
-    }
-
-    return NextResponse.next()
-  } catch {
+      pathname.startsWith('/api/clientes')) &&
+    meta.role !== 'super_admin'
+  ) {
     if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
     }
-    return NextResponse.redirect(new URL('/login', request.url))
+    return NextResponse.redirect(new URL('/cliente', request.url))
   }
-}
+
+  if (pathname.startsWith('/cliente') && meta.role === 'super_admin') {
+    return NextResponse.redirect(new URL('/admin', request.url))
+  }
+
+  return NextResponse.next()
+})
 
 export const config = {
   matcher: [
