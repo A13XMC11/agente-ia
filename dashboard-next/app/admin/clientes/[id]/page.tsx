@@ -7,9 +7,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
-import { CheckCircle, AlertTriangle, XCircle, Clock } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { CheckCircle, AlertTriangle, XCircle, Clock, Trash2 } from 'lucide-react'
 
 interface Cliente {
   id: string
@@ -65,6 +65,7 @@ const MODULOS_DISPONIBLES = [
 
 export default function ClienteDetalle() {
   const params = useParams()
+  const router = useRouter()
   const clienteId = params.id as string
 
   const [cliente, setCliente] = useState<Cliente | null>(null)
@@ -82,9 +83,22 @@ export default function ClienteDetalle() {
   const [billingLoading, setBillingLoading] = useState(false)
   const [isPollingBilling, setIsPollingBilling] = useState(false)
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const deleteInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     loadData()
   }, [clienteId])
+
+  useEffect(() => {
+    if (showDeleteModal) {
+      setTimeout(() => deleteInputRef.current?.focus(), 50)
+    } else {
+      setDeleteConfirmText('')
+    }
+  }, [showDeleteModal])
 
   useEffect(() => {
     if (subscription?.status !== 'pending_payment') return
@@ -272,6 +286,28 @@ export default function ClienteDetalle() {
       alert('Error de red')
     } finally {
       setBillingLoading(false)
+    }
+  }
+
+  async function handleDeleteCliente() {
+    if (!cliente || deleteConfirmText !== cliente.nombre) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmacion: deleteConfirmText }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        router.push('/admin/clientes')
+      } else {
+        alert(data.error || 'Error al eliminar el cliente')
+        setDeleting(false)
+      }
+    } catch {
+      alert('Error de red al eliminar')
+      setDeleting(false)
     }
   }
 
@@ -705,6 +741,109 @@ export default function ClienteDetalle() {
           </div>
         </CardContent>
       </Card>
+
+      <Separator />
+
+      {/* ── Zona de Peligro ─────────────────────────── */}
+      <Card className="border-error/40">
+        <CardHeader>
+          <CardTitle className="text-error flex items-center gap-2">
+            <Trash2 className="h-5 w-5" />
+            Zona de Peligro
+          </CardTitle>
+          <CardDescription>
+            Acciones irreversibles para este cliente. Procede con cuidado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-error/30 bg-error/5 p-4">
+            <div>
+              <p className="font-medium text-text-primary">Eliminar este cliente</p>
+              <p className="text-sm text-text-secondary mt-1">
+                Elimina permanentemente al cliente y todos sus datos: conversaciones, leads,
+                citas, pagos, agente, módulos, suscripción y usuario de acceso.
+                Esta acción <strong>no se puede deshacer</strong>.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              Eliminar cliente
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Modal de confirmación de eliminación ────── */}
+      {showDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget && !deleting) setShowDeleteModal(false) }}
+        >
+          <div className="w-full max-w-md rounded-xl border border-error/40 bg-[#060D13] p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-error/15">
+                <Trash2 className="h-5 w-5 text-error" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">Eliminar cliente</h2>
+                <p className="text-xs text-text-secondary">Esta acción es permanente e irreversible</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-error/10 border border-error/20 p-3 mb-5 text-sm text-error space-y-1">
+              <p className="font-medium">Se eliminará permanentemente:</p>
+              <ul className="list-disc list-inside text-error/80 space-y-0.5 text-xs">
+                <li>Todos los mensajes y conversaciones</li>
+                <li>Leads, citas y pagos registrados</li>
+                <li>Configuración del agente y módulos</li>
+                <li>Suscripción de facturación</li>
+                <li>Usuario de acceso al dashboard</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2 mb-5">
+              <Label className="text-sm text-text-secondary">
+                Para confirmar, escribe el nombre exacto del cliente:
+              </Label>
+              <p className="text-sm font-mono font-semibold text-text-primary bg-surface px-3 py-2 rounded-lg select-all">
+                {cliente?.nombre}
+              </p>
+              <Input
+                ref={deleteInputRef}
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && deleteConfirmText === cliente?.nombre) handleDeleteCliente() }}
+                placeholder="Escribe el nombre aquí..."
+                disabled={deleting}
+                className={deleteConfirmText && deleteConfirmText !== cliente?.nombre ? 'border-error/60' : ''}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleDeleteCliente}
+                disabled={deleting || deleteConfirmText !== cliente?.nombre}
+              >
+                {deleting ? 'Eliminando...' : 'Eliminar definitivamente'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
