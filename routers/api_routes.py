@@ -271,6 +271,49 @@ async def internal_send_email(request: Request):
     return {"status": "ok"}
 
 
+@router.post("/internal/catalog/sync-now")
+async def internal_catalog_sync_now(request: Request):
+    """
+    Trigger an immediate catalog sync for a client.
+    Called by the Next.js dashboard "Sincronizar ahora" button.
+    Body: { client_id: string }
+    """
+    if not state.catalog_sync_module:
+        raise HTTPException(status_code=503, detail="Catalog sync module not ready")
+    if not state.supabase_service_client:
+        raise HTTPException(status_code=503, detail="Database not ready")
+
+    body = await request.json()
+    client_id: str = str(body.get("client_id", "")).strip()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id requerido")
+
+    try:
+        cfg_resp = state.supabase_service_client.table("catalog_sync_config").select("*").eq(
+            "cliente_id", client_id
+        ).single().execute()
+        cfg = cfg_resp.data
+    except Exception:
+        cfg = None
+
+    if not cfg:
+        raise HTTPException(status_code=404, detail="No hay configuración de sincronización para este cliente")
+
+    tipo = cfg.get("tipo", "manual")
+    if tipo == "sheets" and cfg.get("sheets_url"):
+        result = await state.catalog_sync_module.sync_from_sheets(client_id, cfg["sheets_url"])
+    elif tipo == "webhook" and cfg.get("webhook_url"):
+        result = await state.catalog_sync_module.sync_from_webhook(client_id, cfg["webhook_url"])
+    else:
+        raise HTTPException(status_code=400, detail="No hay fuente de sincronización configurada (configura Google Sheets o API externa)")
+
+    if not result.get("success"):
+        raise HTTPException(status_code=502, detail=result.get("error", "Error al sincronizar"))
+
+    logger.info("catalog_synced_manually", client_id=client_id, result=result)
+    return result
+
+
 @router.post("/internal/invalidate-cache/{client_id}")
 async def internal_invalidate_cache(client_id: str):
     """

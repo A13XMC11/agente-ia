@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.lanlabsec.com'
+
 export async function GET() {
   try {
     const session = await getServerSession()
@@ -66,5 +68,30 @@ export async function PUT(req: NextRequest) {
   } catch (error) {
     console.error('[SYNC-CONFIG] PUT error:', error)
     return NextResponse.json({ success: false, error: 'Error al guardar configuración' }, { status: 500 })
+  }
+}
+
+export async function POST() {
+  try {
+    const session = await getServerSession()
+    if (!session?.cliente_id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const res = await fetch(`${API_URL}/internal/catalog/sync-now`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: session.cliente_id }),
+    })
+
+    const json = await res.json()
+    if (!res.ok) {
+      return NextResponse.json({ success: false, error: json.detail ?? 'Error al sincronizar' }, { status: res.status })
+    }
+
+    return NextResponse.json({ success: true, ...json })
+  } catch (error) {
+    console.error('[SYNC-CONFIG] POST (sync-now) error:', error)
+    return NextResponse.json({ success: false, error: 'Error al sincronizar catálogo' }, { status: 500 })
   }
 }

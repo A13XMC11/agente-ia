@@ -203,6 +203,9 @@ export default function CatalogoPage() {
   const [syncLoading, setSyncLoading] = useState(true)
   const [syncSaving, setSyncSaving] = useState(false)
   const [syncSaved, setSyncSaved] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ created: number; updated: number; total_rows: number } | null>(null)
+  const [syncError, setSyncError] = useState('')
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -349,6 +352,23 @@ export default function CatalogoPage() {
       alert(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
       setSyncSaving(false)
+    }
+  }
+
+  const handleSyncNow = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    setSyncError('')
+    try {
+      const res = await fetch('/api/cliente/catalogo/sync-config', { method: 'POST' })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      setSyncResult({ created: json.created, updated: json.updated, total_rows: json.total_rows })
+      await fetchProducts()
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Error al sincronizar')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -754,18 +774,50 @@ export default function CatalogoPage() {
                 </div>
               )}
 
-              <Button
-                onClick={handleSaveSync}
-                disabled={syncSaving}
-                className="gap-2"
-              >
-                {syncSaved
-                  ? <><Check className="h-4 w-4" />Guardado</>
-                  : syncSaving
-                    ? 'Guardando…'
-                    : 'Guardar configuración'
-                }
-              </Button>
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button
+                  onClick={handleSaveSync}
+                  disabled={syncSaving}
+                  className="gap-2"
+                >
+                  {syncSaved
+                    ? <><Check className="h-4 w-4" />Guardado</>
+                    : syncSaving
+                      ? 'Guardando…'
+                      : 'Guardar configuración'
+                  }
+                </Button>
+
+                {syncConfig.tipo !== 'manual' && (
+                  <Button
+                    variant="outline"
+                    onClick={handleSyncNow}
+                    disabled={syncing || syncSaving}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                    {syncing ? 'Sincronizando…' : 'Sincronizar ahora'}
+                  </Button>
+                )}
+              </div>
+
+              {syncResult && (
+                <div className="rounded-xl border border-success/30 bg-success/5 p-4 flex items-start gap-3">
+                  <Check className="h-4 w-4 text-success mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Sincronización completada</p>
+                    <p className="text-xs text-text-muted mt-0.5">
+                      {syncResult.total_rows} filas procesadas · {syncResult.created} creados · {syncResult.updated} actualizados
+                    </p>
+                  </div>
+                </div>
+              )}
+              {syncError && (
+                <div className="rounded-xl border border-error/30 bg-error/5 p-4 flex items-start gap-3">
+                  <AlertTriangle className="h-4 w-4 text-error mt-0.5 shrink-0" />
+                  <p className="text-sm text-error">{syncError}</p>
+                </div>
+              )}
             </>
           )}
         </div>
