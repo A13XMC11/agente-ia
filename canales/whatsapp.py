@@ -721,6 +721,72 @@ class WhatsAppHandler:
             logger.error(f"Error sending message: {e}", exc_info=True)
             return False
 
+    async def send_template_message(
+        self,
+        phone_number_id: str,
+        recipient_phone: str,
+        template_name: str,
+        template_variables: list[str],
+        client_id: str,
+        language_code: str = "es",
+    ) -> bool:
+        """
+        Send a pre-approved Meta HSM template message.
+
+        Required for outbound messages outside the 24-hour conversation window.
+        template_variables maps positionally to {{1}}, {{2}}, ... in the template body.
+        """
+        try:
+            credentials = await self._get_client_credentials(client_id, "whatsapp")
+            access_token = credentials.get("access_token") if credentials else None
+
+            if not access_token:
+                access_token = os.getenv("META_ACCESS_TOKEN")
+
+            if not access_token:
+                logger.error(f"No WhatsApp access token for client {client_id}")
+                return False
+
+            components = []
+            if template_variables:
+                components.append({
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": str(v)} for v in template_variables
+                    ],
+                })
+
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": recipient_phone,
+                "type": "template",
+                "template": {
+                    "name": template_name,
+                    "language": {"code": language_code},
+                    "components": components,
+                },
+            }
+
+            url = f"{self.api_base_url}/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+
+            response = await self.http_client.post(url, json=payload, headers=headers)
+
+            if response.status_code in (200, 201):
+                message_id = response.json().get("messages", [{}])[0].get("id", "")
+                logger.info(f"Template sent: {template_name} → {recipient_phone} (msg_id={message_id})")
+                return True
+            else:
+                logger.error(f"Template send failed: {response.status_code} {response.text}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error sending template message: {e}", exc_info=True)
+            return False
+
     async def send_typing_indicator(
         self,
         phone_number_id: str,

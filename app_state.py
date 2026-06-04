@@ -17,5 +17,6 @@ email_handler: Optional[Any] = None
 alertas_module: Optional[Any] = None
 seguimiento_module: Optional[Any] = None
 catalog_sync_module: Optional[Any] = None
+campanas_module: Optional[Any] = None
 scheduler: Optional[Any] = None
 payphone_billing: Optional[Any] = None

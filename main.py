@@ -80,6 +80,16 @@ async def _sync_all_catalogs(sync_module: Any) -> None:
         logger.error(f"Error in catalog sync job: {e}", exc_info=True)
 
 
+async def _ejecutar_campanas_pendientes(campanas_module: Any, whatsapp_handler: Any) -> None:
+    """APScheduler job: send all scheduled campaigns whose scheduled_for <= now."""
+    try:
+        result = await campanas_module.ejecutar_campanas_programadas(whatsapp_handler)
+        if result.get("executed", 0) > 0:
+            print(f"[CAMPANAS] Executed {result['executed']} campaigns — sent: {result.get('sent', 0)}, failed: {result.get('failed', 0)}")
+    except Exception as e:
+        logger.error(f"Error in campanas job: {e}", exc_info=True)
+
+
 async def _verificar_todos_los_seguimientos(
     seg_module: Any,
     supabase_client: Any,
@@ -399,6 +409,11 @@ async def lifespan(app: FastAPI):
             state.catalog_sync_module = CatalogSyncModule(state.supabase_service_client)
             logger.info("catalog_sync_module_initialized")
 
+            # Initialize campaigns module
+            from modulos.campanas import CampanasModule
+            state.campanas_module = CampanasModule(state.supabase_service_client)
+            logger.info("campanas_module_initialized")
+
             # Initialize AsyncIO scheduler for cron jobs (UTC timezone)
             state.scheduler = AsyncIOScheduler(timezone="UTC")
             state.scheduler.add_job(
@@ -431,8 +446,18 @@ async def lifespan(app: FastAPI):
                 misfire_grace_time=120,
             )
 
+            # Add job for campaigns execution every 5 minutes
+            state.scheduler.add_job(
+                _ejecutar_campanas_pendientes,
+                "interval",
+                minutes=5,
+                args=(state.campanas_module, state.whatsapp_handler),
+                id="campanas_job",
+                misfire_grace_time=60,
+            )
+
             state.scheduler.start()
-            logger.info("scheduler_started", jobs=["daily_summary_at_8pm", "seguimientos_automaticos_job", "catalog_sync_job"])
+            logger.info("scheduler_started", jobs=["daily_summary_at_8pm", "seguimientos_automaticos_job", "catalog_sync_job", "campanas_job"])
         except Exception as e:
             logger.error("alertas_scheduler_init_error", error=str(e), exc_info=True)
             state.alertas_module = None

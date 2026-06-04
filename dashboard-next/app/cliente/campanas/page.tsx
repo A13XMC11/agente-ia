@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Megaphone, Plus, X, Send, Ban, Clock, CheckCircle2, FileText, Users, MessageCircle } from 'lucide-react'
+import { Megaphone, Plus, X, Send, Ban, Clock, CheckCircle2, FileText, Users, MessageCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -17,6 +17,9 @@ interface Campana {
   status: CampanaStatus
   scheduled_for: string
   recipients_count: number | null
+  template_name: string | null
+  template_variables: string[]
+  template_language: string
   created_at: string
   launched_at?: string
   sent_at?: string
@@ -73,9 +76,15 @@ export default function CampanasPage() {
 
   // Form state
   const [titulo, setTitulo] = useState('')
-  const [mensaje, setMensaje] = useState('')
   const [segment, setSegment] = useState<Segment>('all')
   const [programada, setProgramada] = useState('')
+  const [useTemplate, setUseTemplate] = useState(true)
+  // Template mode
+  const [templateName, setTemplateName] = useState('')
+  const [templateLanguage, setTemplateLanguage] = useState('es')
+  const [templateVars, setTemplateVars] = useState<string[]>([''])
+  // Free-text mode (only for contacts within 24h window)
+  const [mensaje, setMensaje] = useState('')
   const [creating, setCreating] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -94,18 +103,55 @@ export default function CampanasPage() {
     }
   }
 
+  function addTemplateVar() {
+    setTemplateVars((prev) => [...prev, ''])
+  }
+
+  function removeTemplateVar(i: number) {
+    setTemplateVars((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  function updateTemplateVar(i: number, val: string) {
+    setTemplateVars((prev) => prev.map((v, idx) => (idx === i ? val : v)))
+  }
+
   async function createCampana() {
-    if (!titulo.trim() || !mensaje.trim()) {
-      setFormError('El título y el mensaje son requeridos')
+    if (!titulo.trim()) {
+      setFormError('El título es requerido')
       return
     }
+    if (useTemplate && !templateName.trim()) {
+      setFormError('El nombre del template es requerido')
+      return
+    }
+    if (!useTemplate && !mensaje.trim()) {
+      setFormError('El mensaje es requerido')
+      return
+    }
+
     setCreating(true)
     setFormError('')
     try {
+      const body: Record<string, unknown> = {
+        titulo,
+        target_segment: segment,
+        canal: 'whatsapp',
+        programada_para: programada || undefined,
+      }
+
+      if (useTemplate) {
+        body.template_name = templateName.trim()
+        body.template_variables = templateVars.filter((v) => v.trim() !== '')
+        body.template_language = templateLanguage
+        body.mensaje = templateName.trim() // store template name as message fallback for display
+      } else {
+        body.mensaje = mensaje
+      }
+
       const res = await fetch('/api/cliente/campanas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo, mensaje, target_segment: segment, canal: 'whatsapp', programada_para: programada || undefined }),
+        body: JSON.stringify(body),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -139,16 +185,20 @@ export default function CampanasPage() {
 
   function resetForm() {
     setTitulo('')
-    setMensaje('')
     setSegment('all')
     setProgramada('')
+    setUseTemplate(true)
+    setTemplateName('')
+    setTemplateLanguage('es')
+    setTemplateVars([''])
+    setMensaje('')
     setFormError('')
   }
 
   const stats = useMemo(() => ({
-    total:     campanas.length,
+    total:      campanas.length,
     borradores: campanas.filter((c) => c.status === 'draft').length,
-    enviadas:  campanas.filter((c) => c.status === 'sent').length,
+    enviadas:   campanas.filter((c) => c.status === 'sent').length,
     programadas: campanas.filter((c) => c.status === 'scheduled').length,
   }), [campanas])
 
@@ -257,8 +307,17 @@ export default function CampanasPage() {
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <p className="font-semibold text-text-primary text-sm truncate">{c.title}</p>
                       <StatusBadge status={c.status} />
+                      {c.template_name && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                          Template: {c.template_name}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">{c.message}</p>
+                    <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+                      {c.template_name
+                        ? `Variables: ${(c.template_variables || []).join(', ') || 'sin variables'}`
+                        : c.message}
+                    </p>
                     <div className="flex flex-wrap gap-3 pt-0.5">
                       <span className="inline-flex items-center gap-1 text-xs text-text-muted">
                         <Users className="h-3 w-3" />
@@ -333,7 +392,7 @@ export default function CampanasPage() {
           <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => { setShowModal(false); resetForm() }} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="w-full max-w-lg glass rounded-2xl shadow-2xl flex flex-col"
+              className="w-full max-w-lg glass rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto"
               style={{ animation: 'fadeInUp 200ms cubic-bezier(0.23,1,0.32,1) both' }}
             >
               <style>{`
@@ -343,7 +402,7 @@ export default function CampanasPage() {
                 }
               `}</style>
 
-              <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card-bg/95 backdrop-blur-sm">
                 <h2 className="text-base font-semibold text-text-primary">Nueva campaña</h2>
                 <button
                   onClick={() => { setShowModal(false); resetForm() }}
@@ -358,7 +417,7 @@ export default function CampanasPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-text-secondary">Título de la campaña</label>
                   <Input
-                    placeholder="Ej: Promoción mayo 2026"
+                    placeholder="Ej: Promoción junio 2026"
                     value={titulo}
                     onChange={(e) => setTitulo(e.target.value)}
                   />
@@ -367,7 +426,7 @@ export default function CampanasPage() {
                 {/* Segment */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-text-secondary">Audiencia</label>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {(Object.entries(SEGMENT_LABELS) as [Segment, string][]).map(([val, label]) => (
                       <button
                         key={val}
@@ -386,26 +445,142 @@ export default function CampanasPage() {
                   </div>
                 </div>
 
-                {/* Message */}
+                {/* Message type toggle */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-text-secondary">
-                    Mensaje
-                    <span className="ml-2 text-text-muted font-normal">{mensaje.length}/1000</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    maxLength={1000}
-                    placeholder="Hola 👋 Tenemos una oferta especial para ti..."
-                    value={mensaje}
-                    onChange={(e) => setMensaje(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50 transition-colors duration-150"
-                  />
+                  <label className="text-xs font-medium text-text-secondary">Tipo de mensaje</label>
+                  <div className="flex rounded-lg border border-border overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setUseTemplate(true)}
+                      className={[
+                        'flex-1 py-2 text-xs font-medium transition-colors duration-150',
+                        useTemplate ? 'bg-accent/10 text-accent' : 'bg-surface text-text-secondary hover:text-text-primary',
+                      ].join(' ')}
+                    >
+                      Template aprobado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseTemplate(false)}
+                      className={[
+                        'flex-1 py-2 text-xs font-medium transition-colors duration-150 border-l border-border',
+                        !useTemplate ? 'bg-accent/10 text-accent' : 'bg-surface text-text-secondary hover:text-text-primary',
+                      ].join(' ')}
+                    >
+                      Texto libre
+                    </button>
+                  </div>
                 </div>
+
+                {useTemplate ? (
+                  <>
+                    {/* Info banner */}
+                    <div className="flex gap-2.5 rounded-lg bg-violet-500/8 border border-violet-500/20 px-3 py-2.5">
+                      <Info className="h-3.5 w-3.5 text-violet-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-violet-300 leading-relaxed">
+                        Meta exige templates aprobados para contactar usuarios fuera de la ventana de 24h.
+                        Crea y aprueba el template en{' '}
+                        <span className="font-medium text-violet-200">Meta Business Manager → WhatsApp → Plantillas</span>.
+                      </p>
+                    </div>
+
+                    {/* Template name + language */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2 space-y-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Nombre del template</label>
+                        <Input
+                          placeholder="ej: oferta_especial"
+                          value={templateName}
+                          onChange={(e) => setTemplateName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Idioma</label>
+                        <select
+                          value={templateLanguage}
+                          onChange={(e) => setTemplateLanguage(e.target.value)}
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50"
+                        >
+                          <option value="es">es</option>
+                          <option value="en_US">en_US</option>
+                          <option value="pt_BR">pt_BR</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Template variables */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-text-secondary">
+                          Variables <span className="text-text-muted font-normal">(&#123;&#123;1&#125;&#125;, &#123;&#123;2&#125;&#125;, ...)</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={addTemplateVar}
+                          className="text-xs text-accent hover:text-accent/80 transition-colors"
+                        >
+                          + Agregar
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {templateVars.map((v, i) => (
+                          <div key={i} className="flex gap-2 items-center">
+                            <span className="text-xs text-text-muted w-8 shrink-0 text-right">{`{{${i + 1}}}`}</span>
+                            <Input
+                              placeholder={`Valor para {{${i + 1}}}`}
+                              value={v}
+                              onChange={(e) => updateTemplateVar(i, e.target.value)}
+                              className="flex-1"
+                            />
+                            {templateVars.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeTemplateVar(i)}
+                                className="h-8 w-8 flex items-center justify-center rounded-lg text-text-muted hover:text-error hover:bg-error/8 transition-all"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {templateVars.every((v) => !v.trim()) && (
+                        <p className="text-xs text-text-muted">Si tu template no tiene variables, deja el campo vacío.</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Warning for free text */}
+                    <div className="flex gap-2.5 rounded-lg bg-warning/8 border border-warning/20 px-3 py-2.5">
+                      <Info className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
+                      <p className="text-xs text-warning/80 leading-relaxed">
+                        Solo funciona si el contacto te escribió en las últimas <span className="font-medium text-warning">24 horas</span>.
+                        Para campañas generales usa un template aprobado.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-text-secondary">
+                        Mensaje
+                        <span className="ml-2 text-text-muted font-normal">{mensaje.length}/1000</span>
+                      </label>
+                      <textarea
+                        rows={4}
+                        maxLength={1000}
+                        placeholder="Hola 👋 Tenemos una oferta especial para ti..."
+                        value={mensaje}
+                        onChange={(e) => setMensaje(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50 transition-colors duration-150"
+                      />
+                    </div>
+                  </>
+                )}
 
                 {/* Schedule (optional) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-text-secondary">
-                    Programar para <span className="text-text-muted font-normal">(opcional — vacío = inmediato)</span>
+                    Programar para <span className="text-text-muted font-normal">(opcional — vacío = inmediato al lanzar)</span>
                   </label>
                   <Input
                     type="datetime-local"
@@ -420,7 +595,7 @@ export default function CampanasPage() {
                 )}
               </div>
 
-              <div className="px-6 pb-5 flex gap-3 justify-end">
+              <div className="px-6 pb-5 flex gap-3 justify-end sticky bottom-0 bg-card-bg/95 backdrop-blur-sm pt-3 border-t border-border">
                 <Button variant="outline" onClick={() => { setShowModal(false); resetForm() }} disabled={creating}>
                   Cancelar
                 </Button>

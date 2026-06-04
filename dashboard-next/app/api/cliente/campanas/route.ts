@@ -37,20 +37,26 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { titulo, mensaje, target_segment, canal, programada_para } = body
+    const { titulo, mensaje, target_segment, canal, programada_para, template_name, template_variables, template_language } = body
 
-    if (!titulo?.trim() || !mensaje?.trim()) {
-      return NextResponse.json({ success: false, error: 'Título y mensaje son requeridos' }, { status: 400 })
+    if (!titulo?.trim()) {
+      return NextResponse.json({ success: false, error: 'El título es requerido' }, { status: 400 })
+    }
+    if (!template_name?.trim() && !mensaje?.trim()) {
+      return NextResponse.json({ success: false, error: 'Debes especificar un template o un mensaje de texto' }, { status: 400 })
     }
 
     const campaign = {
       cliente_id: session.cliente_id,
       title: titulo.trim(),
-      message: mensaje.trim(),
+      message: mensaje?.trim() || '',
       target_segment: target_segment || 'all',
       channel: canal || 'whatsapp',
       scheduled_for: programada_para || new Date().toISOString(),
       status: 'draft',
+      template_name: template_name?.trim() || null,
+      template_variables: template_variables || [],
+      template_language: template_language || 'es',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
