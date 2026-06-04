@@ -37,104 +37,154 @@ interface Lead {
   created_at: string
 }
 
-const STATE_META: Record<LeadState, { label: string; cls: string; dot: string }> = {
-  urgente:    { label: 'URGENTE',    cls: 'bg-error/15 text-error border-error/20 font-bold',        dot: 'bg-error' },
-  caliente:   { label: 'CALIENTE',   cls: 'bg-error/10 text-error border-error/10',                  dot: 'bg-orange-400' },
-  interesado: { label: 'INTERESADO', cls: 'bg-warning/10 text-warning border-warning/10',            dot: 'bg-warning' },
-  prospecto:  { label: 'PROSPECTO',  cls: 'bg-info/10 text-info border-info/10',                     dot: 'bg-info' },
-  curioso:    { label: 'CURIOSO',    cls: 'bg-surface text-text-muted border-border',                dot: 'bg-text-muted' },
+/* ── Config ─────────────────────────────────────── */
+const STATE_META: Record<LeadState, { label: string; color: string; bg: string; border: string; dot: string }> = {
+  urgente:    { label: 'URGENTE',    color: '#F87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.22)', dot: '#F87171' },
+  caliente:   { label: 'CALIENTE',   color: '#FB923C', bg: 'rgba(251,146,60,0.10)',  border: 'rgba(251,146,60,0.20)',  dot: '#FB923C' },
+  interesado: { label: 'INTERESADO', color: '#FBBF24', bg: 'rgba(251,191,36,0.10)',  border: 'rgba(251,191,36,0.20)',  dot: '#FBBF24' },
+  prospecto:  { label: 'PROSPECTO',  color: '#60A5FA', bg: 'rgba(96,165,250,0.10)',  border: 'rgba(96,165,250,0.20)',  dot: '#60A5FA' },
+  curioso:    { label: 'CURIOSO',    color: 'rgba(255,255,255,0.35)', bg: 'rgba(255,255,255,0.06)', border: 'rgba(255,255,255,0.10)', dot: 'rgba(255,255,255,0.30)' },
 }
 
 const STATE_ORDER: LeadState[] = ['urgente', 'caliente', 'interesado', 'prospecto', 'curioso']
 
+const AVATAR_PALETTE = [
+  { bg: 'rgba(56,189,248,0.12)',  color: '#38BDF8', border: 'rgba(56,189,248,0.22)' },
+  { bg: 'rgba(34,211,160,0.12)',  color: '#22D3A0', border: 'rgba(34,211,160,0.22)' },
+  { bg: 'rgba(129,140,248,0.12)', color: '#818CF8', border: 'rgba(129,140,248,0.22)' },
+  { bg: 'rgba(251,191,36,0.12)',  color: '#FBBF24', border: 'rgba(251,191,36,0.22)' },
+  { bg: 'rgba(248,113,113,0.12)', color: '#F87171', border: 'rgba(248,113,113,0.22)' },
+]
+
+function pickPalette(seed: string) {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) & 0xffffffff
+  return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length]
+}
+
+/* ── Helpers ────────────────────────────────────── */
 function getDisplayName(lead: Lead): string {
-  const name = lead.name || lead.nombre
-  if (name && name.trim()) return name.trim()
-  return 'Sin nombre'
+  const n = lead.name || lead.nombre
+  return n?.trim() || 'Sin nombre'
 }
 
 function getInitials(lead: Lead): string {
-  const name = lead.name || lead.nombre
-  if (name && name.trim()) {
-    return name.trim().split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
-  }
-  return '#'
+  const n = lead.name || lead.nombre
+  if (n?.trim()) return n.trim().split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
+  return '?'
 }
 
 function getWhatsAppLink(phone: string | undefined): string | null {
   if (!phone) return null
   const digits = phone.replace(/\D/g, '')
-  if (!digits) return null
-  return `https://wa.me/${digits}`
+  return digits ? `https://wa.me/${digits}` : null
 }
 
+/* ── Score bar ──────────────────────────────────── */
 function ScoreBar({ score }: { score: number }) {
   const pct = (score / 10) * 100
   const color =
-    score >= 9 ? 'bg-error' :
-    score >= 7 ? 'bg-orange-400' :
-    score >= 5 ? 'bg-warning' :
-    score >= 3 ? 'bg-info' : 'bg-text-muted'
+    score >= 9 ? '#F87171' :
+    score >= 7 ? '#FB923C' :
+    score >= 5 ? '#FBBF24' :
+    score >= 3 ? '#60A5FA' : 'rgba(255,255,255,0.20)'
+  const glow =
+    score >= 9 ? 'rgba(248,113,113,0.4)' :
+    score >= 7 ? 'rgba(251,146,60,0.4)' :
+    score >= 5 ? 'rgba(251,191,36,0.3)' : 'transparent'
 
   return (
     <div className="flex items-center gap-2.5 min-w-0">
-      <div className="flex-1 h-1.5 rounded-full bg-surface overflow-hidden">
+      <div
+        className="flex-1 h-1.5 rounded-full overflow-hidden"
+        style={{ background: 'rgba(255,255,255,0.06)' }}
+      >
         <div
-          className={['h-full rounded-full transition-all duration-700', color].join(' ')}
-          style={{ width: `${pct}%` }}
+          className="h-full rounded-full score-bar-fill"
+          style={{
+            width: `${pct}%`,
+            background: color,
+            boxShadow: `0 0 8px ${glow}`,
+          }}
         />
       </div>
-      <span className="text-xs font-semibold tabular-nums text-text-primary w-8 text-right shrink-0">
+      <span className="text-xs font-bold tabular-nums w-8 text-right shrink-0" style={{ color }}>
         {score}/10
       </span>
     </div>
   )
 }
 
+/* ── State badge ────────────────────────────────── */
 function StateBadge({ state }: { state: LeadState | undefined }) {
-  const meta = STATE_META[state ?? 'curioso']
+  const m = STATE_META[state ?? 'curioso']
   return (
-    <span className={['inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border', meta.cls].join(' ')}>
-      <span className={['h-1.5 w-1.5 rounded-full shrink-0', meta.dot].join(' ')} />
-      {meta.label}
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold"
+      style={{ color: m.color, background: m.bg, border: `1px solid ${m.border}` }}
+    >
+      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: m.dot }} />
+      {m.label}
     </span>
   )
 }
 
-function LeadAvatar({ lead }: { lead: Lead }) {
-  const state = lead.state || lead.estado
-  const meta = STATE_META[state ?? 'curioso']
+/* ── Lead avatar ────────────────────────────────── */
+function LeadAvatar({ lead, size = 'md' }: { lead: Lead; size?: 'sm' | 'md' }) {
+  const { bg, color, border } = pickPalette(lead.id)
+  const sz = size === 'sm' ? 'h-8 w-8 text-[11px]' : 'h-9 w-9 text-xs'
   return (
-    <div className={[
-      'h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
-      'border',
-      meta.cls,
-    ].join(' ')}>
+    <div
+      className={[sz, 'rounded-full flex items-center justify-center font-bold shrink-0 select-none'].join(' ')}
+      style={{ background: bg, color, border: `1px solid ${border}` }}
+    >
       {getInitials(lead)}
     </div>
   )
 }
 
-function StatCard({ icon: Icon, label, value, sub }: {
+/* ── Stat mini-card ─────────────────────────────── */
+function StatMini({ icon: Icon, label, value, sub }: {
   icon: React.ElementType
   label: string
   value: string | number
   sub?: string
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card-bg px-4 py-3.5 flex items-center gap-3">
-      <div className="h-8 w-8 rounded-lg bg-surface flex items-center justify-center shrink-0">
-        <Icon className="h-4 w-4 text-text-muted" />
+    <div
+      className="rounded-xl px-4 py-3.5 flex items-center gap-3"
+      style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(9,21,33,0.6)' }}
+    >
+      <div
+        className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
+        style={{ background: 'rgba(255,255,255,0.05)' }}
+      >
+        <Icon className="h-4 w-4 text-white/35" strokeWidth={1.75} />
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-text-muted">{label}</p>
-        <p className="text-lg font-bold text-text-primary tabular-nums leading-tight">{value}</p>
-        {sub && <p className="text-xs text-text-muted">{sub}</p>}
+        <p className="text-[10px] text-white/30 font-medium">{label}</p>
+        <p className="text-lg font-bold text-white/85 tabular-nums leading-tight">{value}</p>
+        {sub && <p className="text-[10px] text-white/25">{sub}</p>}
       </div>
     </div>
   )
 }
 
+/* ── Skeleton rows ──────────────────────────────── */
+function SkeletonTableRow() {
+  return (
+    <div className="flex items-center gap-4 px-5 py-4">
+      <div className="skeleton h-9 w-9 rounded-full shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div className="skeleton h-3 w-28 rounded" />
+        <div className="skeleton h-2.5 w-20 rounded" />
+      </div>
+      <div className="skeleton h-4 w-16 rounded" />
+    </div>
+  )
+}
+
+/* ── Page ───────────────────────────────────────── */
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -151,14 +201,13 @@ export default function LeadsPage() {
       const json = await res.json()
       setLeads(json.data || [])
     } catch {
-      /* silent — UI shows empty state */
+      // silent — empty state shown
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadLeads()
   }, [loadLeads])
 
@@ -178,7 +227,10 @@ export default function LeadsPage() {
 
   const stats = useMemo(() => {
     const total = leads.length
-    const urgentes = leads.filter((l) => (l.state || l.estado) === 'urgente' || (l.state || l.estado) === 'caliente').length
+    const urgentes = leads.filter((l) => {
+      const s = l.state || l.estado
+      return s === 'urgente' || s === 'caliente'
+    }).length
     const avgScore = total > 0 ? (leads.reduce((s, l) => s + l.score, 0) / total).toFixed(1) : '0'
     const withInteraction = leads.filter((l) => l.interaction_count > 0).length
     return { total, urgentes, avgScore, withInteraction }
@@ -195,10 +247,11 @@ export default function LeadsPage() {
     let result = leads
     if (search.trim()) {
       const q = search.toLowerCase()
-      result = result.filter((l) =>
-        getDisplayName(l).toLowerCase().includes(q) ||
-        (l.email || '').toLowerCase().includes(q) ||
-        (l.phone || l.telefono || '').includes(q),
+      result = result.filter(
+        (l) =>
+          getDisplayName(l).toLowerCase().includes(q) ||
+          (l.email || '').toLowerCase().includes(q) ||
+          (l.phone || l.telefono || '').includes(q),
       )
     }
     if (filterState !== 'todos') {
@@ -219,62 +272,66 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="stagger-1">
-        <h1 className="text-3xl font-bold text-text-primary tracking-tight">Leads</h1>
-        <p className="text-text-secondary mt-1.5 text-sm">
+        <h1 className="text-2xl font-bold text-white/88 tracking-tight">Leads</h1>
+        <p className="text-white/35 mt-1 text-sm">
           Calificación automática con inteligencia artificial
         </p>
       </div>
 
-      {/* Stats */}
+      {/* Stats row */}
       {!loading && leads.length > 0 && (
         <div className="stagger-2 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard icon={Users} label="Total leads" value={stats.total} />
-          <StatCard icon={Zap} label="Alta prioridad" value={stats.urgentes} sub="urgentes + calientes" />
-          <StatCard icon={TrendingUp} label="Score promedio" value={stats.avgScore} sub="sobre 10" />
-          <StatCard icon={MessageCircle} label="Con interacción" value={stats.withInteraction} />
+          <StatMini icon={Users}         label="Total leads"     value={stats.total} />
+          <StatMini icon={Zap}           label="Alta prioridad"  value={stats.urgentes}        sub="urgente + caliente" />
+          <StatMini icon={TrendingUp}    label="Score promedio"  value={stats.avgScore}         sub="sobre 10" />
+          <StatMini icon={MessageCircle} label="Con interacción" value={stats.withInteraction} />
         </div>
       )}
 
-      {/* State filter pills */}
+      {/* Filters row */}
       <div className="stagger-3 flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
+        <div className="relative flex-1 min-w-44">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/25 pointer-events-none" strokeWidth={1.75} />
           <Input
             placeholder="Buscar por nombre o teléfono..."
-            className="pl-9"
+            className="pl-10"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
+          {/* All filter */}
           <button
             onClick={() => setFilterState('todos')}
-            className={[
-              'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150',
-              filterState === 'todos'
-                ? 'bg-accent text-accent-foreground border-accent'
-                : 'bg-card-bg text-text-secondary border-border hover:border-border-light',
-            ].join(' ')}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer"
+            style={filterState === 'todos' ? {
+              background: 'var(--accent)', color: '#060D13', border: '1px solid var(--accent)',
+            } : {
+              background: 'rgba(9,21,33,0.6)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)',
+            }}
           >
             Todos
-            <span className="ml-1.5 tabular-nums opacity-70">{leads.length}</span>
+            <span className="ml-1.5 tabular-nums opacity-60">{leads.length}</span>
           </button>
           {STATE_ORDER.map((s) => {
-            const meta = STATE_META[s]
+            const m = STATE_META[s]
             const active = filterState === s
             return (
               <button
                 key={s}
                 onClick={() => setFilterState(active ? 'todos' : s)}
-                className={[
-                  'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 flex items-center gap-1.5',
-                  active ? meta.cls : 'bg-card-bg text-text-secondary border-border hover:border-border-light',
-                ].join(' ')}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer"
+                style={active ? {
+                  color: m.color, background: m.bg, border: `1px solid ${m.border}`,
+                } : {
+                  color: 'rgba(255,255,255,0.40)', background: 'rgba(9,21,33,0.6)', border: '1px solid rgba(255,255,255,0.07)',
+                }}
               >
-                <span className={['h-1.5 w-1.5 rounded-full', meta.dot].join(' ')} />
-                {meta.label}
-                <span className="tabular-nums opacity-70">{stateCounts[s] || 0}</span>
+                <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: m.dot }} />
+                {m.label}
+                <span className="tabular-nums opacity-55">{stateCounts[s] || 0}</span>
               </button>
             )
           })}
@@ -282,50 +339,59 @@ export default function LeadsPage() {
       </div>
 
       {/* Table card */}
-      <div className="stagger-4 rounded-xl border border-border bg-card-bg overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
-          <p className="text-sm font-medium text-text-primary">Leads calificados</p>
-          <p className="text-xs text-text-muted">{filtrados.length} encontrados</p>
+      <div
+        className="stagger-4 rounded-2xl overflow-hidden"
+        style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(9,21,33,0.5)' }}
+      >
+        <div
+          className="px-5 py-3 flex items-center justify-between border-b"
+          style={{ borderColor: 'rgba(255,255,255,0.05)' }}
+        >
+          <p className="text-sm font-medium text-white/55">Leads calificados</p>
+          <p className="text-xs font-mono text-white/28">{filtrados.length}</p>
         </div>
 
         {loading ? (
-          <div className="divide-y divide-border">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="px-5 py-4 flex gap-4 animate-pulse">
-                <div className="h-8 w-8 rounded-full bg-surface shrink-0" />
-                <div className="flex-1 space-y-2 py-0.5">
-                  <div className="h-3.5 w-32 rounded bg-surface" />
-                  <div className="h-3 w-24 rounded bg-surface" />
-                </div>
-                <div className="h-5 w-20 rounded bg-surface self-center" />
-              </div>
-            ))}
-          </div>
+          <div>{[1, 2, 3].map((i) => <SkeletonTableRow key={i} />)}</div>
         ) : filtrados.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 text-center">
-            <TrendingUp className="h-10 w-10 text-text-muted mb-3" />
-            <p className="text-text-secondary text-sm font-medium">No hay leads</p>
-            <p className="text-text-muted text-xs mt-1 max-w-xs">
-              Los leads aparecerán aquí conforme tu agente califique contactos
-            </p>
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <div
+              className="h-12 w-12 rounded-2xl flex items-center justify-center"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+            >
+              <TrendingUp className="h-5 w-5 text-white/20" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-white/45 text-sm font-medium">No hay leads</p>
+              <p className="text-white/22 text-xs mt-0.5 max-w-xs">
+                {search ? 'Prueba con otro término de búsqueda' : 'Aparecerán conforme tu agente califique contactos'}
+              </p>
+            </div>
           </div>
         ) : (
           <>
             {/* Mobile cards */}
-            <ul className="md:hidden divide-y divide-border">
-              {filtrados.map((lead) => {
+            <ul className="md:hidden">
+              {filtrados.map((lead, idx) => {
                 const state = lead.state || lead.estado
                 const phone = lead.phone || lead.telefono
                 const waLink = getWhatsAppLink(phone)
                 return (
-                  <li key={lead.id} className="p-4 space-y-3">
+                  <li
+                    key={lead.id}
+                    className="p-4 space-y-3"
+                    style={{
+                      borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                      animation: `fadeInUp 280ms cubic-bezier(0.23,1,0.32,1) ${idx * 30}ms both`,
+                    }}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <LeadAvatar lead={lead} />
                         <div className="min-w-0">
-                          <p className="font-medium text-text-primary text-sm truncate">{getDisplayName(lead)}</p>
+                          <p className="font-semibold text-white/80 text-sm truncate">{getDisplayName(lead)}</p>
                           {phone && (
-                            <p className="text-xs text-text-muted flex items-center gap-1">
+                            <p className="text-xs text-white/30 flex items-center gap-1 mt-0.5 font-mono">
                               <Phone className="h-3 w-3 shrink-0" />
                               {phone}
                             </p>
@@ -341,14 +407,15 @@ export default function LeadsPage() {
                           href={waLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 text-xs flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-success/20 bg-success/10 text-success hover:bg-success/20 transition-colors duration-150"
+                          className="flex-1 text-xs flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors duration-150 cursor-pointer"
+                          style={{ color: '#22D3A0', background: 'rgba(34,211,160,0.10)', border: '1px solid rgba(34,211,160,0.20)' }}
                         >
-                          <MessageCircle className="h-3 w-3" />
+                          <MessageCircle className="h-3.5 w-3.5" strokeWidth={1.75} />
                           WhatsApp
                         </a>
                       )}
                       <Button size="sm" variant="outline" onClick={() => openSignals(lead)} className="flex-1 text-xs">
-                        <Zap className="h-3 w-3" />
+                        <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />
                         Señales
                       </Button>
                     </div>
@@ -361,25 +428,38 @@ export default function LeadsPage() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border">
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     {['Lead', 'Teléfono', 'Interacciones', 'Último contacto', 'Score', 'Estado', ''].map((h) => (
-                      <th key={h} className="text-left py-3 px-5 text-xs font-semibold text-text-muted uppercase tracking-wider whitespace-nowrap">
+                      <th
+                        key={h}
+                        className="text-left py-3 px-5 text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap select-none"
+                        style={{ color: 'rgba(255,255,255,0.28)' }}
+                      >
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {filtrados.map((lead) => {
+                <tbody>
+                  {filtrados.map((lead, idx) => {
                     const state = lead.state || lead.estado
                     const phone = lead.phone || lead.telefono
                     const waLink = getWhatsAppLink(phone)
                     return (
-                      <tr key={lead.id} className="hover:bg-surface/40 transition-colors duration-150 group">
+                      <tr
+                        key={lead.id}
+                        className="group transition-colors duration-150"
+                        style={{
+                          borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                          animation: `fadeInUp 280ms cubic-bezier(0.23,1,0.32,1) ${idx * 25}ms both`,
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = '' }}
+                      >
                         <td className="py-3.5 px-5">
                           <div className="flex items-center gap-2.5">
-                            <LeadAvatar lead={lead} />
-                            <span className="font-medium text-text-primary group-hover:text-accent transition-colors duration-150 truncate max-w-35">
+                            <LeadAvatar lead={lead} size="sm" />
+                            <span className="font-semibold text-white/78 group-hover:text-white/92 transition-colors duration-150 truncate max-w-36">
                               {getDisplayName(lead)}
                             </span>
                           </div>
@@ -387,41 +467,45 @@ export default function LeadsPage() {
                         <td className="py-3.5 px-5">
                           {phone ? (
                             <div className="flex items-center gap-2">
-                              <span className="text-text-secondary tabular-nums">{phone}</span>
+                              <span className="text-white/40 tabular-nums text-xs font-mono">{phone}</span>
                               {waLink && (
                                 <a
                                   href={waLink}
                                   target="_blank"
                                   rel="noopener noreferrer"
+                                  className="opacity-0 group-hover:opacity-100 h-6 w-6 flex items-center justify-center rounded-lg transition-all duration-150 cursor-pointer"
+                                  style={{ color: '#22D3A0', background: 'rgba(34,211,160,0.10)' }}
                                   title="Abrir en WhatsApp"
-                                  className="opacity-0 group-hover:opacity-100 h-6 w-6 flex items-center justify-center rounded-md bg-success/10 text-success hover:bg-success/20 transition-all duration-150"
                                 >
-                                  <MessageCircle className="h-3.5 w-3.5" />
+                                  <MessageCircle className="h-3.5 w-3.5" strokeWidth={1.75} />
                                 </a>
                               )}
                             </div>
                           ) : (
-                            <span className="text-text-muted">—</span>
+                            <span className="text-white/20 text-xs">—</span>
                           )}
                         </td>
                         <td className="py-3.5 px-5">
                           {lead.interaction_count > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface border border-border text-xs text-text-secondary tabular-nums">
-                              <MessageCircle className="h-3 w-3" />
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium tabular-nums"
+                              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}
+                            >
+                              <MessageCircle className="h-3 w-3" strokeWidth={1.75} />
                               {lead.interaction_count}
                             </span>
                           ) : (
-                            <span className="text-text-muted text-xs">—</span>
+                            <span className="text-white/20 text-xs">—</span>
                           )}
                         </td>
                         <td className="py-3.5 px-5">
                           {lead.last_interaction ? (
-                            <span className="flex items-center gap-1 text-xs text-text-secondary">
-                              <Clock className="h-3 w-3 shrink-0 text-text-muted" />
+                            <span className="flex items-center gap-1 text-xs text-white/35">
+                              <Clock className="h-3 w-3 shrink-0 text-white/20" strokeWidth={1.75} />
                               {formatTimestamp(lead.last_interaction)}
                             </span>
                           ) : (
-                            <span className="text-text-muted text-xs">—</span>
+                            <span className="text-white/20 text-xs">—</span>
                           )}
                         </td>
                         <td className="py-3.5 px-5 w-40">
@@ -435,9 +519,9 @@ export default function LeadsPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => openSignals(lead)}
-                            className="text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap"
+                            className="text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap cursor-pointer"
                           >
-                            <Zap className="h-3 w-3" />
+                            <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />
                             Señales
                           </Button>
                         </td>
@@ -455,98 +539,114 @@ export default function LeadsPage() {
       {selectedLead && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-black/65 backdrop-blur-sm"
             onClick={closeSignals}
           />
           <aside
-            className="fixed right-0 top-0 z-50 h-full w-full max-w-md flex flex-col glass shadow-2xl"
-            style={{ animation: 'slideInRight 250ms cubic-bezier(0.32,0.72,0,1) both' }}
+            className="fixed right-0 top-0 z-50 h-full w-full max-w-sm flex flex-col"
+            style={{
+              animation: 'slide-in-right 260ms cubic-bezier(0.32,0.72,0,1) both',
+              background: 'rgba(6,13,19,0.96)',
+              backdropFilter: 'blur(24px) saturate(160%)',
+              borderLeft: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.04), -32px 0 80px rgba(0,0,0,0.6)',
+            }}
           >
-            <style>{`
-              @keyframes slideInRight {
-                from { transform: translateX(100%); opacity: 0.4; }
-                to   { transform: translateX(0);    opacity: 1; }
-              }
-              @keyframes fadeInUp {
-                from { opacity:0; transform:translateY(6px); }
-                to   { opacity:1; transform:translateY(0); }
-              }
-            `}</style>
-
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+            {/* Drawer header */}
+            <div
+              className="flex items-center justify-between px-5 py-4 shrink-0"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+            >
               <div className="flex items-center gap-3 min-w-0">
-                <LeadAvatar lead={selectedLead} />
+                <LeadAvatar lead={selectedLead} size="sm" />
                 <div className="min-w-0">
-                  <h2 className="text-base font-semibold text-text-primary truncate">{getDisplayName(selectedLead)}</h2>
-                  <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
+                  <h2 className="text-sm font-semibold text-white/85 truncate">{getDisplayName(selectedLead)}</h2>
+                  <p className="text-[10px] text-white/30 mt-0.5 flex items-center gap-1">
+                    <TrendingUp className="h-3 w-3" strokeWidth={1.75} />
                     Historial de scoring
                   </p>
                 </div>
               </div>
               <button
                 onClick={closeSignals}
-                className="h-8 w-8 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface transition-all duration-150 active:scale-[0.97] cursor-pointer shrink-0"
+                className="h-8 w-8 flex items-center justify-center rounded-xl text-white/40 hover:text-white/70 hover:bg-white/5 transition-all duration-150 active:scale-[0.96] cursor-pointer shrink-0"
+                aria-label="Cerrar"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" strokeWidth={1.75} />
               </button>
             </div>
 
             {/* Lead mini-stats */}
-            <div className="px-6 py-3 border-b border-border shrink-0 flex gap-4">
-              <div className="text-center">
-                <p className="text-xs text-text-muted">Score</p>
-                <p className="text-lg font-bold text-text-primary tabular-nums">{selectedLead.score}/10</p>
-              </div>
-              <div className="w-px bg-border" />
-              <div className="text-center">
-                <p className="text-xs text-text-muted">Mensajes</p>
-                <p className="text-lg font-bold text-text-primary tabular-nums">{selectedLead.interaction_count || 0}</p>
-              </div>
-              <div className="w-px bg-border" />
-              <div className="text-center">
-                <p className="text-xs text-text-muted">Estado</p>
-                <div className="mt-0.5">
-                  <StateBadge state={selectedLead.state || selectedLead.estado} />
+            <div
+              className="px-5 py-3 shrink-0 grid grid-cols-3 gap-3"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+            >
+              {[
+                { label: 'Score', value: `${selectedLead.score}/10` },
+                { label: 'Mensajes', value: selectedLead.interaction_count || 0 },
+                { label: 'Estado', value: (selectedLead.state || selectedLead.estado || 'curioso').toUpperCase() },
+              ].map(({ label, value }) => (
+                <div key={label} className="text-center">
+                  <p className="text-[10px] text-white/28">{label}</p>
+                  <p className="text-sm font-bold text-white/80 tabular-nums mt-0.5">{value}</p>
                 </div>
-              </div>
+              ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+            {/* Signal timeline */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
               {signalsLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <span className="h-6 w-6 rounded-full border-2 border-border border-t-accent animate-spin" />
+                  <span
+                    className="h-6 w-6 rounded-full border-2 animate-spin"
+                    style={{ borderColor: 'rgba(255,255,255,0.08)', borderTopColor: 'var(--accent)' }}
+                  />
                 </div>
               ) : signals.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Zap className="h-8 w-8 text-text-muted mb-3" />
-                  <p className="text-text-secondary text-sm">Sin historial de señales</p>
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                  <div
+                    className="h-11 w-11 rounded-xl flex items-center justify-center"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                  >
+                    <Zap className="h-5 w-5 text-white/20" strokeWidth={1.5} />
+                  </div>
+                  <p className="text-white/35 text-sm">Sin historial de señales</p>
                 </div>
               ) : (
                 signals.map((event, idx) => (
                   <div
                     key={event.id}
-                    className="rounded-xl border border-border bg-card-bg p-4 space-y-2.5"
-                    style={{ animation: `fadeInUp 280ms cubic-bezier(0.23,1,0.32,1) ${idx * 40}ms both` }}
+                    className="rounded-xl p-4 space-y-2.5"
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      animation: `fadeInUp 260ms cubic-bezier(0.23,1,0.32,1) ${idx * 40}ms both`,
+                    }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-text-primary tabular-nums">
+                        <p className="text-sm font-bold text-white/80 tabular-nums">
                           {event.score_before.toFixed(1)} → {event.score_after.toFixed(1)}
                         </p>
-                        <p className={[
-                          'text-xs font-medium',
-                          event.delta > 0 ? 'text-success' : event.delta < 0 ? 'text-error' : 'text-text-muted',
-                        ].join(' ')}>
+                        <p
+                          className="text-xs font-semibold mt-0.5"
+                          style={{
+                            color: event.delta > 0 ? '#22D3A0' : event.delta < 0 ? '#F87171' : 'rgba(255,255,255,0.35)',
+                          }}
+                        >
                           {event.delta > 0 ? '↑' : event.delta < 0 ? '↓' : '='} {Math.abs(event.delta).toFixed(1)} pts
                         </p>
                       </div>
-                      <span className={[
-                        'px-2 py-0.5 rounded-md text-xs font-medium border',
-                        event.delta > 0 ? 'bg-success/10 text-success border-success/20' :
-                        event.delta < 0 ? 'bg-error/10 text-error border-error/20' :
-                                          'bg-surface text-text-muted border-border',
-                      ].join(' ')}>
+                      <span
+                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold shrink-0"
+                        style={event.delta > 0 ? {
+                          color: '#22D3A0', background: 'rgba(34,211,160,0.10)', border: '1px solid rgba(34,211,160,0.20)',
+                        } : event.delta < 0 ? {
+                          color: '#F87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.20)',
+                        } : {
+                          color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+                        }}
+                      >
                         {event.signal_type || 'n/a'}
                       </span>
                     </div>
@@ -554,18 +654,22 @@ export default function LeadsPage() {
                     {event.signal_keywords?.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {event.signal_keywords.map((kw, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded-md text-xs bg-accent/8 text-accent border border-accent/15">
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-medium"
+                            style={{ color: 'var(--accent)', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.15)' }}
+                          >
                             {kw}
                           </span>
                         ))}
                       </div>
                     )}
 
-                    <p className="text-xs text-text-secondary italic leading-relaxed">
+                    <p className="text-xs text-white/35 italic leading-relaxed">
                       &quot;{event.message_excerpt}&quot;
                     </p>
 
-                    <p className="text-xs text-text-muted">{formatTimestamp(event.created_at)}</p>
+                    <p className="text-[10px] text-white/22">{formatTimestamp(event.created_at)}</p>
                   </div>
                 ))
               )}

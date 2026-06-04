@@ -7,89 +7,149 @@ import {
 import { getMetrics, getClientesRecientes } from '@/lib/data/metrics'
 import { Button } from '@/components/ui/button'
 
+/* ── Stat card ──────────────────────────────────── */
 function StatCard({
   label,
   value,
   sub,
   icon: Icon,
-  iconBg,
   iconColor,
   badge,
   badgePositive,
+  accentColor,
+  delay = 0,
 }: {
   label: string
   value: string | number
   sub: string
   icon: React.ElementType
-  iconBg: string
   iconColor: string
   badge?: string
   badgePositive?: boolean
+  accentColor: string
+  delay?: number
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card-bg p-5 transition-all duration-200 hover:border-border-light hover:shadow-[0_0_0_1px_rgba(56,189,248,0.06),0_8px_32px_rgba(0,0,0,0.4)]">
-      <div className="flex items-start justify-between mb-4">
-        <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">{label}</p>
-        <span className={['flex h-8 w-8 items-center justify-center rounded-lg', iconBg].join(' ')}>
-          <Icon className={['h-4 w-4', iconColor].join(' ')} />
-        </span>
-      </div>
-      <p className="text-3xl font-bold text-text-primary leading-none">{value}</p>
-      <div className="flex items-center gap-2 mt-2">
-        <p className="text-xs text-text-muted">{sub}</p>
-        {badge !== undefined && (
-          <span className={[
-            'flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded',
-            badgePositive
-              ? 'text-success bg-success/10'
-              : badgePositive === false
-                ? 'text-error bg-error/10'
-                : 'text-text-muted bg-surface',
-          ].join(' ')}>
-            {badgePositive === true && <ArrowUpRight className="h-3 w-3" />}
-            {badgePositive === false && <ArrowDownRight className="h-3 w-3" />}
-            {badgePositive === undefined && <Minus className="h-3 w-3" />}
-            {badge}
+    <div
+      className="card-hover card-accent-hover relative rounded-2xl overflow-hidden p-5 group"
+      style={{
+        background: 'rgba(9,21,33,0.6)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        animation: `fadeInUp 340ms cubic-bezier(0.23,1,0.32,1) ${delay}ms both`,
+      }}
+    >
+      <div
+        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+        style={{ background: `radial-gradient(ellipse 80% 60% at 50% 0%, ${accentColor}, transparent)` }}
+      />
+      <div className="relative">
+        <div className="flex items-start justify-between mb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] select-none" style={{ color: 'rgba(255,255,255,0.32)' }}>
+            {label}
+          </p>
+          <span
+            className="flex h-7 w-7 items-center justify-center rounded-lg shrink-0"
+            style={{ background: `${iconColor}18`, border: `1px solid ${iconColor}28` }}
+          >
+            <Icon className="h-3.5 w-3.5" style={{ color: iconColor }} strokeWidth={2} />
           </span>
-        )}
+        </div>
+        <p
+          className="text-3xl font-bold leading-none tabular-nums"
+          style={{ color: 'rgba(255,255,255,0.90)', animation: `count-in 500ms cubic-bezier(0.23,1,0.32,1) ${delay + 80}ms both` }}
+        >
+          {value}
+        </p>
+        <div className="flex items-center gap-2 mt-2.5">
+          <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.28)' }}>{sub}</p>
+          {badge !== undefined && (
+            <span
+              className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={badgePositive === true ? {
+                color: '#22D3A0', background: 'rgba(34,211,160,0.10)',
+              } : badgePositive === false ? {
+                color: '#F87171', background: 'rgba(248,113,113,0.10)',
+              } : {
+                color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.06)',
+              }}
+            >
+              {badgePositive === true && <ArrowUpRight className="h-2.5 w-2.5" strokeWidth={2.5} />}
+              {badgePositive === false && <ArrowDownRight className="h-2.5 w-2.5" strokeWidth={2.5} />}
+              {badgePositive === undefined && <Minus className="h-2.5 w-2.5" strokeWidth={2.5} />}
+              {badge}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-function PlanBar({ label, count, mrr, porcentaje, color }: {
+/* ── Plan bar ───────────────────────────────────── */
+function PlanBar({ label, count, mrr, porcentaje, color, barColor, delay = 0 }: {
   label: string
   count: number
   mrr: number
   porcentaje: number
   color: string
+  barColor: string
+  delay?: number
 }) {
-  const formatUSD = (v: number) =>
+  const fmt = (v: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(v)
 
   return (
-    <div className="space-y-1.5">
+    <div
+      className="space-y-1.5"
+      style={{ animation: `fadeInUp 300ms cubic-bezier(0.23,1,0.32,1) ${delay}ms both` }}
+    >
       <div className="flex items-center justify-between text-xs">
-        <span className="text-text-secondary font-medium">{label}</span>
-        <span className="text-text-muted">{count} cliente{count !== 1 ? 's' : ''} · {formatUSD(mrr)}/mes</span>
+        <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.60)' }}>{label}</span>
+        <span style={{ color: 'rgba(255,255,255,0.30)' }}>
+          {count} cliente{count !== 1 ? 's' : ''} · {fmt(mrr)}/mes
+        </span>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-surface overflow-hidden">
+      <div
+        className="h-1.5 w-full rounded-full overflow-hidden"
+        style={{ background: 'rgba(255,255,255,0.06)' }}
+      >
         <div
-          className={['h-full rounded-full transition-all duration-700', color].join(' ')}
-          style={{ width: `${porcentaje}%` }}
+          className="h-full rounded-full score-bar-fill"
+          style={{
+            width: `${porcentaje}%`,
+            background: barColor,
+            boxShadow: `0 0 8px ${barColor}60`,
+          }}
         />
       </div>
-      <p className="text-xs text-text-muted text-right">{porcentaje}%</p>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold" style={{ color }}>
+          {porcentaje}%
+        </span>
+      </div>
     </div>
   )
 }
 
-const PLAN_COLORS: Record<string, string> = {
-  basico: 'bg-accent-indigo',
-  profesional: 'bg-accent',
-  empresarial: 'bg-success',
+const PLAN_CONFIG: Record<string, { color: string; barColor: string }> = {
+  basico:      { color: '#818CF8', barColor: '#818CF8' },
+  profesional: { color: '#38BDF8', barColor: '#38BDF8' },
+  empresarial: { color: '#22D3A0', barColor: '#22D3A0' },
 }
 
+/* ── Section label ──────────────────────────────── */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h2
+      className="text-[10px] font-bold uppercase tracking-[0.16em] mb-3 select-none"
+      style={{ color: 'rgba(255,255,255,0.28)' }}
+    >
+      {children}
+    </h2>
+  )
+}
+
+/* ── Page ───────────────────────────────────────── */
 export default async function AdminDashboard() {
   const [metrics, clientesRecientes] = await Promise.all([
     getMetrics(),
@@ -105,192 +165,265 @@ export default async function AdminDashboard() {
   const growthBadge = metrics.crecimientoClientes === 0
     ? { text: 'Sin cambio', positive: undefined }
     : metrics.crecimientoClientes > 0
-      ? { text: `+${metrics.crecimientoClientes}% vs mes anterior`, positive: true }
-      : { text: `${metrics.crecimientoClientes}% vs mes anterior`, positive: false }
-
-  const churnPositive = metrics.churnRate === 0 ? undefined : false
+      ? { text: `+${metrics.crecimientoClientes}%`, positive: true }
+      : { text: `${metrics.crecimientoClientes}%`, positive: false }
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl md:text-4xl font-bold text-text-primary tracking-tight">Dashboard</h1>
-        <p className="text-text-secondary mt-1.5 text-sm">Panel de administración global</p>
+      {/* Header */}
+      <div className="stagger-1">
+        <p
+          className="text-[10px] font-semibold uppercase tracking-[0.16em] mb-1.5"
+          style={{ color: 'rgba(255,255,255,0.28)' }}
+        >
+          Super Admin
+        </p>
+        <h1 className="text-2xl font-bold text-white/90 tracking-tight">Panel global</h1>
+        <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          Métricas de toda la plataforma
+        </p>
       </div>
 
-      {/* Fila 1: Revenue */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold text-text-muted uppercase tracking-widest">Revenue</h2>
+      {/* Revenue metrics */}
+      <section className="stagger-2">
+        <SectionLabel>Revenue</SectionLabel>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard
             label="MRR"
             value={formatCurrency(metrics.mrr)}
-            sub="Ingresos mensuales recurrentes"
+            sub="Ingresos mensuales"
             icon={TrendingUp}
-            iconBg="bg-success/10"
-            iconColor="text-success"
+            iconColor="#22D3A0"
+            accentColor="rgba(34,211,160,0.07)"
+            delay={60}
           />
           <StatCard
             label="ARR"
             value={formatCurrency(metrics.arr)}
             sub="Ingresos anuales proyectados"
             icon={DollarSign}
-            iconBg="bg-success/10"
-            iconColor="text-success"
+            iconColor="#22D3A0"
+            accentColor="rgba(34,211,160,0.06)"
+            delay={100}
           />
           <StatCard
             label="MRR Nuevo"
             value={formatCurrency(metrics.mrrNuevoEsteMes)}
-            sub="De nuevos clientes este mes"
+            sub="Nuevos clientes este mes"
             icon={ArrowUpRight}
-            iconBg="bg-accent/10"
-            iconColor="text-accent"
+            iconColor="#38BDF8"
+            accentColor="rgba(56,189,248,0.06)"
             badge={metrics.mrrNuevoEsteMes > 0 ? 'Este mes' : undefined}
             badgePositive={metrics.mrrNuevoEsteMes > 0 ? true : undefined}
+            delay={140}
           />
           <StatCard
             label="ARPU"
             value={formatCurrency(metrics.arpu)}
-            sub="Ingreso promedio por cliente"
+            sub="Ingreso por cliente"
             icon={BarChart3}
-            iconBg="bg-accent-indigo/10"
-            iconColor="text-accent-indigo"
+            iconColor="#818CF8"
+            accentColor="rgba(129,140,248,0.06)"
+            delay={180}
           />
         </div>
       </section>
 
-      {/* Fila 2: Clientes */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold text-text-muted uppercase tracking-widest">Clientes</h2>
+      {/* Client metrics */}
+      <section className="stagger-3">
+        <SectionLabel>Clientes</SectionLabel>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard
-            label="Total Clientes"
+            label="Total"
             value={metrics.totalClientes}
             sub="Todos los clientes"
             icon={Users}
-            iconBg="bg-accent/10"
-            iconColor="text-accent"
+            iconColor="#38BDF8"
+            accentColor="rgba(56,189,248,0.06)"
+            delay={60}
           />
           <StatCard
             label="Activos"
             value={metrics.clientesActivos}
             sub="Con suscripción activa"
             icon={UserCheck}
-            iconBg="bg-success/10"
-            iconColor="text-success"
+            iconColor="#22D3A0"
+            accentColor="rgba(34,211,160,0.06)"
+            delay={100}
           />
           <StatCard
-            label="Nuevos este mes"
+            label="Nuevos"
             value={metrics.clientesNuevosEsteMes}
-            sub="Clientes registrados"
+            sub="Este mes"
             icon={TrendingUp}
-            iconBg="bg-accent/10"
-            iconColor="text-accent"
+            iconColor="#38BDF8"
+            accentColor="rgba(56,189,248,0.06)"
             badge={growthBadge.text}
             badgePositive={growthBadge.positive}
+            delay={140}
           />
           <StatCard
-            label="Churn Rate"
+            label="Churn"
             value={`${metrics.churnRate}%`}
-            sub={`${metrics.clientesPausados} cliente${metrics.clientesPausados !== 1 ? 's' : ''} pausado${metrics.clientesPausados !== 1 ? 's' : ''}`}
+            sub={`${metrics.clientesPausados} pausado${metrics.clientesPausados !== 1 ? 's' : ''}`}
             icon={TrendingDown}
-            iconBg={metrics.churnRate > 10 ? 'bg-error/10' : 'bg-warning/10'}
-            iconColor={metrics.churnRate > 10 ? 'text-error' : 'text-warning'}
+            iconColor={metrics.churnRate > 10 ? '#F87171' : '#FBBF24'}
+            accentColor={metrics.churnRate > 10 ? 'rgba(248,113,113,0.06)' : 'rgba(251,191,36,0.06)'}
             badge={metrics.churnRate === 0 ? 'Sin churn' : undefined}
-            badgePositive={churnPositive}
+            delay={180}
           />
         </div>
       </section>
 
-      {/* Fila 3: Operaciones + Distribución */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Mensajes hoy */}
-        <div className="rounded-xl border border-border bg-card-bg p-5">
-          <div className="flex items-start justify-between mb-4">
-            <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">Mensajes hoy</p>
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-indigo/10">
-              <MessageSquare className="h-4 w-4 text-accent-indigo" />
-            </span>
+      {/* Operations + Plan distribution */}
+      <div className="stagger-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Messages today */}
+        <div
+          className="card-hover card-accent-hover rounded-2xl p-5 overflow-hidden group"
+          style={{ background: 'rgba(9,21,33,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <div
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(129,140,248,0.07), transparent)' }}
+          />
+          <div className="relative">
+            <div className="flex items-start justify-between mb-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'rgba(255,255,255,0.32)' }}>
+                Mensajes hoy
+              </p>
+              <span
+                className="flex h-7 w-7 items-center justify-center rounded-lg shrink-0"
+                style={{ background: 'rgba(129,140,248,0.12)', border: '1px solid rgba(129,140,248,0.22)' }}
+              >
+                <MessageSquare className="h-3.5 w-3.5" style={{ color: '#818CF8' }} strokeWidth={2} />
+              </span>
+            </div>
+            <p className="text-3xl font-bold tabular-nums leading-none" style={{ color: 'rgba(255,255,255,0.90)' }}>
+              {metrics.mensajesHoy}
+            </p>
+            <p className="text-[11px] mt-2.5" style={{ color: 'rgba(255,255,255,0.28)' }}>
+              En todos los clientes
+            </p>
           </div>
-          <p className="text-3xl font-bold text-text-primary leading-none">{metrics.mensajesHoy}</p>
-          <p className="text-xs text-text-muted mt-2">En todos los clientes</p>
         </div>
 
-        {/* Distribución por plan */}
-        <div className="lg:col-span-2 rounded-xl border border-border bg-card-bg p-5">
-          <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-5">
+        {/* Plan distribution */}
+        <div
+          className="lg:col-span-2 rounded-2xl p-5"
+          style={{ background: 'rgba(9,21,33,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] mb-5" style={{ color: 'rgba(255,255,255,0.32)' }}>
             Distribución por plan
           </p>
           {metrics.distribucionPlanes.length === 0 || metrics.clientesActivos === 0 ? (
-            <p className="text-sm text-text-muted">Sin datos</p>
+            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.28)' }}>Sin datos de planes</p>
           ) : (
-            <div className="space-y-4">
-              {metrics.distribucionPlanes.map((p) => (
-                <PlanBar
-                  key={p.plan}
-                  label={p.label}
-                  count={p.count}
-                  mrr={p.mrr}
-                  porcentaje={p.porcentaje}
-                  color={PLAN_COLORS[p.plan] || 'bg-accent'}
-                />
-              ))}
+            <div className="space-y-5">
+              {metrics.distribucionPlanes.map((p, i) => {
+                const cfg = PLAN_CONFIG[p.plan] || { color: '#38BDF8', barColor: '#38BDF8' }
+                return (
+                  <PlanBar
+                    key={p.plan}
+                    label={p.label}
+                    count={p.count}
+                    mrr={p.mrr}
+                    porcentaje={p.porcentaje}
+                    color={cfg.color}
+                    barColor={cfg.barColor}
+                    delay={i * 60}
+                  />
+                )
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* Tabla clientes recientes */}
-      <div>
-        <div className="flex items-center justify-between mb-3 gap-3">
-          <h2 className="text-lg font-semibold text-text-primary">Clientes recientes</h2>
+      {/* Recent clients table */}
+      <div className="stagger-5">
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <h2 className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.70)' }}>
+            Clientes recientes
+          </h2>
           <Link href="/admin/clientes/nuevo">
-            <Button size="sm" className="text-xs gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
+            <Button size="sm" className="text-xs gap-1.5 cursor-pointer">
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
               Nuevo cliente
             </Button>
           </Link>
         </div>
 
-        <div className="rounded-xl border border-border bg-card-bg overflow-hidden">
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(9,21,33,0.5)' }}
+        >
           {clientesRecientes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <Users className="h-10 w-10 text-text-muted mb-3" />
-              <p className="text-text-secondary text-sm font-medium">No hay clientes aún</p>
-              <p className="text-text-muted text-xs mt-1">Crea tu primer cliente para empezar</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+              <div
+                className="h-12 w-12 rounded-2xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+              >
+                <Users className="h-5 w-5 text-white/20" strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-white/45 text-sm font-medium">Sin clientes aún</p>
+                <p className="text-white/22 text-xs mt-0.5">Crea tu primer cliente para empezar</p>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border">
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     {['Nombre', 'Email', 'Plan', 'Estado', 'Fecha'].map((h) => (
-                      <th key={h} className="text-left py-3 px-5 text-xs font-semibold text-text-muted uppercase tracking-wider">
+                      <th
+                        key={h}
+                        className="text-left py-3 px-5 text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap select-none"
+                        style={{ color: 'rgba(255,255,255,0.28)' }}
+                      >
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {clientesRecientes.map((cliente) => (
-                    <tr key={cliente.id} className="hover:bg-surface/40 transition-colors duration-150 group">
-                      <td className="py-3.5 px-5 font-medium text-text-primary group-hover:text-accent transition-colors duration-150">
-                        <Link href={`/admin/clientes/${cliente.id}`}>
+                <tbody>
+                  {clientesRecientes.map((cliente, idx) => (
+                    <tr
+                      key={cliente.id}
+                      className="group transition-colors duration-150"
+                      style={{ borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = '' }}
+                    >
+                      <td className="py-3.5 px-5 font-semibold" style={{ color: 'rgba(255,255,255,0.78)' }}>
+                        <Link
+                          href={`/admin/clientes/${cliente.id}`}
+                          className="group-hover:text-accent transition-colors duration-150 cursor-pointer"
+                        >
                           {cliente.nombre}
                         </Link>
                       </td>
-                      <td className="py-3.5 px-5 text-text-secondary">{cliente.email}</td>
-                      <td className="py-3.5 px-5 text-text-secondary capitalize">{cliente.plan}</td>
+                      <td className="py-3.5 px-5 text-xs font-mono" style={{ color: 'rgba(255,255,255,0.38)' }}>
+                        {cliente.email}
+                      </td>
+                      <td className="py-3.5 px-5 text-xs capitalize" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                        {cliente.plan}
+                      </td>
                       <td className="py-3.5 px-5">
-                        <span className={[
-                          'px-2 py-0.5 rounded-md text-xs font-medium border',
-                          cliente.estado === 'activo'
-                            ? 'bg-success/10 text-success border-success/15'
-                            : 'bg-warning/10 text-warning border-warning/15',
-                        ].join(' ')}>
+                        <span
+                          className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                          style={cliente.estado === 'activo' ? {
+                            color: '#22D3A0', background: 'rgba(34,211,160,0.10)', border: '1px solid rgba(34,211,160,0.18)',
+                          } : {
+                            color: '#FBBF24', background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.18)',
+                          }}
+                        >
                           {cliente.estado}
                         </span>
                       </td>
-                      <td className="py-3.5 px-5 text-text-muted text-xs">{formatDate(cliente.created_at)}</td>
+                      <td className="py-3.5 px-5 text-[11px] font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                        {formatDate(cliente.created_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
