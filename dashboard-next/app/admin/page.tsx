@@ -390,10 +390,8 @@ export default async function AdminDashboard() {
                   {clientesRecientes.map((cliente, idx) => (
                     <tr
                       key={cliente.id}
-                      className="group transition-colors duration-150"
+                      className="group transition-colors duration-150 hover:bg-white/[0.02]"
                       style={{ borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = '' }}
                     >
                       <td className="py-3.5 px-5 font-semibold" style={{ color: 'rgba(255,255,255,0.78)' }}>
                         <Link

@@ -382,10 +382,8 @@ export default async function ClienteDashboard() {
                   return (
                     <li
                       key={conv.id}
-                      className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-150 sm:px-4"
+                      className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-150 hover:bg-white/[0.02] sm:px-4"
                       style={{ borderColor: 'rgba(255,255,255,0.04)' }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLLIElement).style.background = 'rgba(255,255,255,0.02)' }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLLIElement).style.background = '' }}
                     >
                       <Avatar name={displayName || conv.usuario_id} seed={conv.usuario_id} />
                       <div className="min-w-0 flex-1">
@@ -428,10 +426,8 @@ export default async function ClienteDashboard() {
                 {topLeads.map((lead, i) => (
                   <li
                     key={lead.id}
-                    className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-150 sm:px-4"
+                    className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-150 hover:bg-white/[0.02] sm:px-4"
                     style={{ borderColor: 'rgba(255,255,255,0.04)' }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLLIElement).style.background = 'rgba(255,255,255,0.02)' }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLLIElement).style.background = '' }}
                   >
                     <span
                       className="w-5 text-center text-[11px] font-bold shrink-0 select-none"
