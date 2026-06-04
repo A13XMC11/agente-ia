@@ -38,6 +38,8 @@ interface ClienteReciente {
   plan: string
   estado: string
   created_at: string
+  next_billing_date?: string | null
+  subscription_status?: string | null
 }
 
 function calcMrr(clientes: { plan: string }[]): number {
@@ -177,7 +179,22 @@ export async function getClientesRecientes(): Promise<ClienteReciente[]> {
       .order('created_at', { ascending: false })
       .limit(5)
 
-    return data || []
+    const clientes = data || []
+    if (clientes.length === 0) return clientes
+
+    const ids = clientes.map((c) => c.id)
+    const { data: subs } = await supabase
+      .from('subscription')
+      .select('cliente_id, next_billing_date, status')
+      .in('cliente_id', ids)
+
+    const subMap = new Map((subs || []).map((s) => [s.cliente_id, s]))
+
+    return clientes.map((c) => ({
+      ...c,
+      next_billing_date: subMap.get(c.id)?.next_billing_date ?? null,
+      subscription_status: subMap.get(c.id)?.status ?? null,
+    }))
   } catch (error) {
     console.error('Error fetching recent clients:', error)
     return []

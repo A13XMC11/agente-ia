@@ -1,6 +1,6 @@
 import {
   MessageSquare, TrendingUp, Calendar, Star,
-  Clock, ArrowUpRight, Bot, Zap,
+  Clock, ArrowUpRight, Bot, Zap, CreditCard, AlertTriangle,
 } from 'lucide-react'
 import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
@@ -83,6 +83,20 @@ async function getTopLeads(clienteId: string): Promise<Lead[]> {
   return data || []
 }
 
+interface BillingInfo {
+  next_billing_date: string | null
+  status: string | null
+}
+
+async function getBillingInfo(clienteId: string): Promise<BillingInfo | null> {
+  const { data } = await supabase
+    .from('subscription')
+    .select('next_billing_date, status')
+    .eq('cliente_id', clienteId)
+    .maybeSingle()
+  return data ?? null
+}
+
 /* ── Helpers ────────────────────────────────────── */
 
 function getInitials(name: string): string {
@@ -100,6 +114,11 @@ function timeAgo(dateStr: string): string {
   if (days === 1) return 'ayer'
   if (days < 7) return `${days}d`
   return new Date(dateStr).toLocaleDateString('es-EC', { day: 'numeric', month: 'short' })
+}
+
+function daysUntil(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null
+  return Math.max(0, Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000))
 }
 
 const AVATAR_PALETTE = [
@@ -313,11 +332,16 @@ export default async function ClienteDashboard() {
   const session = await getServerSession()
   if (!session?.cliente_id) redirect('/login')
 
-  const [metrics, conversacionesRecientes, topLeads] = await Promise.all([
+  const [metrics, conversacionesRecientes, topLeads, billing] = await Promise.all([
     getMetrics(session.cliente_id),
     getConversacionesRecientes(session.cliente_id),
     getTopLeads(session.cliente_id),
+    getBillingInfo(session.cliente_id),
   ])
+
+  const daysUntilBilling = billing?.status !== 'cancelled'
+    ? daysUntil(billing?.next_billing_date)
+    : null
 
   const today = new Date().toLocaleDateString('es-EC', {
     weekday: 'long', day: 'numeric', month: 'long',
@@ -346,6 +370,56 @@ export default async function ClienteDashboard() {
           <span className="text-xs font-semibold text-accent">IA activa</span>
         </div>
       </div>
+
+      {/* Billing countdown banner */}
+      {daysUntilBilling !== null && (
+        <div
+          className="stagger-2 flex min-w-0 items-center gap-3 rounded-2xl px-4 py-3"
+          style={daysUntilBilling <= 3
+            ? { background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.16)' }
+            : daysUntilBilling <= 7
+            ? { background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.14)' }
+            : { background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.12)' }
+          }
+        >
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+            style={daysUntilBilling <= 3
+              ? { background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.20)' }
+              : daysUntilBilling <= 7
+              ? { background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.20)' }
+              : { background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.18)' }
+            }
+          >
+            {daysUntilBilling <= 3
+              ? <AlertTriangle className="h-3.5 w-3.5" style={{ color: '#F87171' }} strokeWidth={2} />
+              : <CreditCard className="h-3.5 w-3.5" style={{ color: daysUntilBilling <= 7 ? '#FBBF24' : '#38BDF8' }} strokeWidth={2} />
+            }
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium leading-none" style={{ color: 'rgba(255,255,255,0.80)' }}>
+              {daysUntilBilling === 0
+                ? 'Tu próximo pago es hoy'
+                : `Próximo pago en ${daysUntilBilling} día${daysUntilBilling !== 1 ? 's' : ''}`}
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.30)' }}>
+              {new Date(billing!.next_billing_date!).toLocaleDateString('es-EC', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+          </div>
+          <Link
+            href="/cliente/billing"
+            className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors duration-150"
+            style={daysUntilBilling <= 3
+              ? { color: '#F87171', background: 'rgba(248,113,113,0.10)' }
+              : daysUntilBilling <= 7
+              ? { color: '#FBBF24', background: 'rgba(251,191,36,0.10)' }
+              : { color: '#38BDF8', background: 'rgba(56,189,248,0.08)' }
+            }
+          >
+            Ver billing
+          </Link>
+        </div>
+      )}
 
       {/* Metric cards — 2×2 on mobile, 4-col on desktop */}
       <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2 md:gap-4 lg:grid-cols-4">

@@ -8,6 +8,30 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Cliente } from '@/lib/data/clientes-server'
 
+function daysUntil(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null
+  return Math.max(0, Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000))
+}
+
+function BillingCountdown({ nextBillingDate, status }: { nextBillingDate?: string | null; status?: string | null }) {
+  if (status === 'cancelled') {
+    return <span className="text-text-muted text-xs">—</span>
+  }
+  const days = daysUntil(nextBillingDate)
+  if (days === null) return <span className="text-text-muted text-xs">—</span>
+
+  const color =
+    days <= 3 ? 'bg-error/10 text-error border-error/20' :
+    days <= 7 ? 'bg-warning/10 text-warning border-warning/20' :
+    'bg-surface text-text-secondary border-border'
+
+  return (
+    <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${color}`}>
+      {days === 0 ? 'Hoy' : `${days}d`}
+    </span>
+  )
+}
+
 const PLAN_PRECIOS: Record<string, number> = {
   basico: 149,
   profesional: 249,
@@ -102,6 +126,7 @@ export function ClientesView({ clientes }: { clientes: Cliente[] }) {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Industria</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Plan</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Estado</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Próximo pago</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Creado</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Acciones</th>
                   </tr>
@@ -131,6 +156,12 @@ export function ClientesView({ clientes }: { clientes: Cliente[] }) {
                         >
                           {cliente.estado}
                         </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <BillingCountdown
+                          nextBillingDate={cliente.next_billing_date}
+                          status={cliente.subscription_status}
+                        />
                       </td>
                       <td className="py-3 px-4 text-text-secondary text-sm">
                         {formatDate(cliente.created_at)}

@@ -7,6 +7,11 @@ import {
 import { getMetrics, getClientesRecientes } from '@/lib/data/metrics'
 import { Button } from '@/components/ui/button'
 
+function daysUntil(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null
+  return Math.max(0, Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000))
+}
+
 /* ── Stat card ──────────────────────────────────── */
 function StatCard({
   label,
@@ -375,7 +380,7 @@ export default async function AdminDashboard() {
               <table className="min-w-[680px] w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    {['Nombre', 'Email', 'Plan', 'Estado', 'Fecha'].map((h) => (
+                    {['Nombre', 'Email', 'Plan', 'Estado', 'Próximo cobro', 'Fecha'].map((h) => (
                       <th
                         key={h}
                         className="text-left py-3 px-5 text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap select-none"
@@ -418,6 +423,25 @@ export default async function AdminDashboard() {
                         >
                           {cliente.estado}
                         </span>
+                      </td>
+                      <td className="py-3.5 px-5">
+                        {(() => {
+                          if (cliente.subscription_status === 'cancelled') {
+                            return <span style={{ color: 'rgba(255,255,255,0.20)', fontSize: '11px' }}>—</span>
+                          }
+                          const days = daysUntil(cliente.next_billing_date)
+                          if (days === null) return <span style={{ color: 'rgba(255,255,255,0.20)', fontSize: '11px' }}>—</span>
+                          const color = days <= 3 ? '#F87171' : days <= 7 ? '#FBBF24' : 'rgba(255,255,255,0.38)'
+                          const bg = days <= 3 ? 'rgba(248,113,113,0.10)' : days <= 7 ? 'rgba(251,191,36,0.10)' : 'rgba(255,255,255,0.06)'
+                          return (
+                            <span
+                              className="px-2 py-0.5 rounded-md text-[10px] font-bold tabular-nums"
+                              style={{ color, background: bg }}
+                            >
+                              {days === 0 ? 'Hoy' : `${days}d`}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="py-3.5 px-5 text-[11px] font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
                         {formatDate(cliente.created_at)}
