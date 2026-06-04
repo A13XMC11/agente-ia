@@ -7,7 +7,7 @@ import { useState } from 'react'
 
 export default function SignInPage() {
   const router = useRouter()
-  const { signIn, setActive } = useSignIn()
+  const { signIn } = useSignIn()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,39 +19,52 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!signIn || !setActive) return
+    if (!signIn) return
 
     setErrorMsg('')
     setLoading(true)
 
     try {
       if (needsMFA) {
-        const result = await signIn.attemptSecondFactor({
-          strategy: 'totp',
-          code: totpCode,
-        })
-        if (result.status === 'complete') {
-          await setActive({ session: result.createdSessionId })
+        const { error } = await signIn.mfa.verifyTOTP({ code: totpCode })
+        if (error) {
+          setErrorMsg(error.longMessage ?? error.message ?? 'Código incorrecto, intenta de nuevo.')
+          return
+        }
+        if (signIn.status === 'complete') {
+          const { error: finalizeError } = await signIn.finalize()
+          if (finalizeError) {
+            setErrorMsg(finalizeError.longMessage ?? finalizeError.message ?? 'Error al finalizar sesión')
+            return
+          }
           router.push('/api/auth/sync')
-        } else {
-          setErrorMsg('Código incorrecto, intenta de nuevo.')
         }
         return
       }
 
-      const result = await signIn.create({
-        identifier: email,
-        strategy: 'password',
-        password,
-      })
+      const { error: createError } = await signIn.create({ identifier: email })
+      if (createError) {
+        setErrorMsg(createError.longMessage ?? createError.message ?? 'Credenciales incorrectas')
+        return
+      }
 
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId })
+      const { error: passwordError } = await signIn.password({ password })
+      if (passwordError) {
+        setErrorMsg(passwordError.longMessage ?? passwordError.message ?? 'Credenciales incorrectas')
+        return
+      }
+
+      if (signIn.status === 'complete') {
+        const { error: finalizeError } = await signIn.finalize()
+        if (finalizeError) {
+          setErrorMsg(finalizeError.longMessage ?? finalizeError.message ?? 'Error al finalizar sesión')
+          return
+        }
         router.push('/api/auth/sync')
-      } else if (result.status === 'needs_second_factor') {
+      } else if (signIn.status === 'needs_second_factor') {
         setNeedsMFA(true)
       } else {
-        setErrorMsg(`Estado inesperado: ${result.status}`)
+        setErrorMsg(`Estado inesperado: ${signIn.status}`)
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
