@@ -2,7 +2,13 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const isProtectedRoute = createRouteMatcher(['/admin(.*)', '/cliente(.*)'])
+const isProtectedRoute = createRouteMatcher([
+  '/admin(.*)',
+  '/cliente(.*)',
+  '/api/admin(.*)',
+  '/api/cliente(.*)',
+  '/api/clientes(.*)',
+])
 const isAdminOnlyRoute = createRouteMatcher([
   '/admin(.*)',
   '/api/admin(.*)',
