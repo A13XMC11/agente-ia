@@ -24,8 +24,12 @@ export default function SignInPage() {
     setLoading(true)
 
     try {
-      const result = await signIn.create({
-        identifier: email,
+      // Step 1: identify the user
+      await signIn.create({ identifier: email })
+
+      // Step 2: attempt password as first factor
+      const result = await signIn.attemptFirstFactor({
+        strategy: 'password',
         password,
       })
 
@@ -33,7 +37,7 @@ export default function SignInPage() {
         await setActive({ session: result.createdSessionId })
         router.push('/api/auth/sync')
       } else {
-        setErrorMsg('No se pudo completar el inicio de sesión')
+        setErrorMsg(`No se pudo completar el inicio de sesión (estado: ${result.status})`)
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
