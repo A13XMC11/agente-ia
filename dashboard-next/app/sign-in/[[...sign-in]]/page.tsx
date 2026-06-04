@@ -5,19 +5,21 @@ import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, Shield } from 'lucide
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+type Step = 'credentials' | 'mfa'
+
 export default function SignInPage() {
   const router = useRouter()
   const { signIn } = useSignIn()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [totpCode, setTotpCode] = useState('')
-  const [needsMFA, setNeedsMFA] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
+  const [step, setStep] = useState<Step>('credentials')
   const [errorMsg, setErrorMsg] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleCredentials(e: React.FormEvent) {
     e.preventDefault()
     if (!signIn) return
 
@@ -25,32 +27,13 @@ export default function SignInPage() {
     setLoading(true)
 
     try {
-      if (needsMFA) {
-        const { error } = await signIn.mfa.verifyTOTP({ code: totpCode })
-        if (error) {
-          setErrorMsg(error.longMessage ?? error.message ?? 'Código incorrecto, intenta de nuevo.')
-          return
-        }
-        if (signIn.status === 'complete') {
-          const { error: finalizeError } = await signIn.finalize()
-          if (finalizeError) {
-            setErrorMsg(finalizeError.longMessage ?? finalizeError.message ?? 'Error al finalizar sesión')
-            return
-          }
-          router.push('/api/auth/sync')
-        }
-        return
-      }
+      const { error } = await signIn.password({
+        identifier: email,
+        password,
+      })
 
-      const { error: createError } = await signIn.create({ identifier: email })
-      if (createError) {
-        setErrorMsg(createError.longMessage ?? createError.message ?? 'Credenciales incorrectas')
-        return
-      }
-
-      const { error: passwordError } = await signIn.password({ password })
-      if (passwordError) {
-        setErrorMsg(passwordError.longMessage ?? passwordError.message ?? 'Credenciales incorrectas')
+      if (error) {
+        setErrorMsg(error.longMessage ?? error.message ?? 'Credenciales incorrectas')
         return
       }
 
@@ -62,17 +45,61 @@ export default function SignInPage() {
         }
         router.push('/api/auth/sync')
       } else if (signIn.status === 'needs_second_factor') {
-        setNeedsMFA(true)
+        const { error: codeError } = await signIn.mfa.sendEmailCode()
+        if (codeError) {
+          setErrorMsg(codeError.longMessage ?? codeError.message ?? 'No se pudo enviar el código de verificación')
+          return
+        }
+        setStep('mfa')
       } else {
         setErrorMsg(`Estado inesperado: ${signIn.status}`)
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
-      const msg =
+      setErrorMsg(
         clerkError?.errors?.[0]?.longMessage ??
         clerkError?.errors?.[0]?.message ??
         'Credenciales incorrectas'
-      setErrorMsg(msg)
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault()
+    if (!signIn) return
+
+    setErrorMsg('')
+    setLoading(true)
+
+    try {
+      const { error } = await signIn.mfa.verifyEmailCode({
+        code: otpCode,
+      })
+
+      if (error) {
+        setErrorMsg(error.longMessage ?? error.message ?? 'Código incorrecto, intenta de nuevo.')
+        return
+      }
+
+      if (signIn.status === 'complete') {
+        const { error: finalizeError } = await signIn.finalize()
+        if (finalizeError) {
+          setErrorMsg(finalizeError.longMessage ?? finalizeError.message ?? 'Error al finalizar sesión')
+          return
+        }
+        router.push('/api/auth/sync')
+      } else {
+        setErrorMsg(`Estado inesperado: ${signIn.status}`)
+      }
+    } catch (err: unknown) {
+      const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
+      setErrorMsg(
+        clerkError?.errors?.[0]?.longMessage ??
+        clerkError?.errors?.[0]?.message ??
+        'Código incorrecto, intenta de nuevo.'
+      )
     } finally {
       setLoading(false)
     }
@@ -201,24 +228,147 @@ export default function SignInPage() {
                   Acceso seguro
                 </p>
                 <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
-                  Entra a Agente IA
+                  {step === 'mfa' ? 'Verifica tu identidad' : 'Entra a Agente IA'}
                 </h1>
                 <p className="max-w-[20rem] text-sm leading-6 text-text-secondary">
-                  Gestiona conversaciones, clientes y canales desde tu panel.
+                  {step === 'mfa'
+                    ? `Enviamos un código de 6 dígitos a ${email}. Ingrésalo para continuar.`
+                    : 'Gestiona conversaciones, clientes y canales desde tu panel.'}
                 </p>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} noValidate className="space-y-5">
-              {needsMFA ? (
+            {step === 'credentials' ? (
+              <form onSubmit={handleCredentials} noValidate className="space-y-5">
                 <div className="space-y-2">
                   <label
-                    htmlFor="totp"
+                    htmlFor="email"
                     className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
                   >
-                    Código de autenticación
+                    Correo electrónico
                   </label>
-                  <p className="text-xs text-text-muted">Ingresa el código de 6 dígitos de tu app de autenticación.</p>
+                  <div
+                    className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
+                    style={{
+                      border: '1px solid var(--border-light)',
+                      background: 'rgba(2,6,23,0.28)',
+                    }}
+                  >
+                    <Mail className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
+                    <input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="tu@empresa.com"
+                      className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="password"
+                    className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
+                  >
+                    Contraseña
+                  </label>
+                  <div
+                    className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
+                    style={{
+                      border: '1px solid var(--border-light)',
+                      background: 'rgba(2,6,23,0.28)',
+                    }}
+                  >
+                    <Lock className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
+                    <input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors duration-200 hover:bg-white/5 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" strokeWidth={1.8} />
+                      ) : (
+                        <Eye className="h-4 w-4" strokeWidth={1.8} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {errorMsg && (
+                  <div
+                    className="flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm"
+                    style={{
+                      background: 'rgba(248,113,113,0.08)',
+                      border: '1px solid rgba(248,113,113,0.2)',
+                      color: 'var(--error)',
+                    }}
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.9} />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading || !email || !password}
+                  className="group flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  style={{
+                    background: loading || !email || !password ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
+                    color: loading || !email || !password ? 'rgba(56,189,248,0.5)' : '#060D13',
+                    boxShadow: loading || !email || !password ? 'none' : '0 0 20px rgba(56,189,248,0.28)',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && email && password) {
+                      e.currentTarget.style.background = 'var(--accent-hover)'
+                      e.currentTarget.style.boxShadow = '0 0 28px rgba(56,189,248,0.4)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading && email && password) {
+                      e.currentTarget.style.background = 'var(--accent)'
+                      e.currentTarget.style.boxShadow = '0 0 20px rgba(56,189,248,0.28)'
+                    }
+                  }}
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Ingresando...
+                    </span>
+                  ) : (
+                    <>
+                      Ingresar
+                      <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp} noValidate className="space-y-5">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="otp"
+                    className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
+                  >
+                    Código de verificación
+                  </label>
                   <div
                     className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
                     style={{
@@ -228,143 +378,81 @@ export default function SignInPage() {
                   >
                     <Shield className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
                     <input
-                      id="totp"
+                      id="otp"
                       type="text"
                       inputMode="numeric"
                       autoComplete="one-time-code"
                       required
                       autoFocus
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="000000"
                       className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted tracking-widest"
                     />
                   </div>
                 </div>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="email"
-                      className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
-                    >
-                      Correo electrónico
-                    </label>
-                    <div
-                      className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
-                      style={{
-                        border: '1px solid var(--border-light)',
-                        background: 'rgba(2,6,23,0.28)',
-                      }}
-                    >
-                      <Mail className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
-                      <input
-                        id="email"
-                        type="email"
-                        autoComplete="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="tu@empresa.com"
-                        className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-                      />
-                    </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="password"
-                      className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
-                    >
-                      Contraseña
-                    </label>
-                    <div
-                      className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
-                      style={{
-                        border: '1px solid var(--border-light)',
-                        background: 'rgba(2,6,23,0.28)',
-                      }}
-                    >
-                      <Lock className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
-                      <input
-                        id="password"
-                        type={showPassword ? 'text' : 'password'}
-                        autoComplete="current-password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors duration-200 hover:bg-white/5 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" strokeWidth={1.8} />
-                        ) : (
-                          <Eye className="h-4 w-4" strokeWidth={1.8} />
-                        )}
-                      </button>
-                    </div>
+                {errorMsg && (
+                  <div
+                    className="flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm"
+                    style={{
+                      background: 'rgba(248,113,113,0.08)',
+                      border: '1px solid rgba(248,113,113,0.2)',
+                      color: 'var(--error)',
+                    }}
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.9} />
+                    <span>{errorMsg}</span>
                   </div>
-                </>
-              )}
+                )}
 
-              {errorMsg && (
-                <div
-                  className="flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm"
+                <button
+                  type="submit"
+                  disabled={loading || otpCode.length !== 6}
+                  className="group flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   style={{
-                    background: 'rgba(248,113,113,0.08)',
-                    border: '1px solid rgba(248,113,113,0.2)',
-                    color: 'var(--error)',
+                    background: loading || otpCode.length !== 6 ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
+                    color: loading || otpCode.length !== 6 ? 'rgba(56,189,248,0.5)' : '#060D13',
+                    boxShadow: loading || otpCode.length !== 6 ? 'none' : '0 0 20px rgba(56,189,248,0.28)',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && otpCode.length === 6) {
+                      e.currentTarget.style.background = 'var(--accent-hover)'
+                      e.currentTarget.style.boxShadow = '0 0 28px rgba(56,189,248,0.4)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading && otpCode.length === 6) {
+                      e.currentTarget.style.background = 'var(--accent)'
+                      e.currentTarget.style.boxShadow = '0 0 20px rgba(56,189,248,0.28)'
+                    }
                   }}
                 >
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.9} />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Verificando...
+                    </span>
+                  ) : (
+                    <>
+                      Verificar código
+                      <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
+                    </>
+                  )}
+                </button>
 
-              <button
-                type="submit"
-                disabled={loading || (needsMFA ? totpCode.length !== 6 : (!email || !password))}
-                className="group flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                style={{
-                  background: loading || (needsMFA ? totpCode.length !== 6 : (!email || !password)) ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
-                  color: loading || (needsMFA ? totpCode.length !== 6 : (!email || !password)) ? 'rgba(56,189,248,0.5)' : '#060D13',
-                  boxShadow: loading || (needsMFA ? totpCode.length !== 6 : (!email || !password)) ? 'none' : '0 0 20px rgba(56,189,248,0.28)',
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading && (needsMFA ? totpCode.length === 6 : (email && password))) {
-                    e.currentTarget.style.background = 'var(--accent-hover)'
-                    e.currentTarget.style.boxShadow = '0 0 28px rgba(56,189,248,0.4)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading && (needsMFA ? totpCode.length === 6 : (email && password))) {
-                    e.currentTarget.style.background = 'var(--accent)'
-                    e.currentTarget.style.boxShadow = '0 0 20px rgba(56,189,248,0.28)'
-                  }
-                }}
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Ingresando...
-                  </span>
-                ) : (
-                  <>
-                    {needsMFA ? 'Verificar código' : 'Ingresar'}
-                    <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
-                  </>
-                )}
-              </button>
-            </form>
+                <button
+                  type="button"
+                  onClick={() => { setStep('credentials'); setOtpCode(''); setErrorMsg('') }}
+                  className="w-full text-center text-xs text-text-muted hover:text-text-secondary transition-colors duration-200 cursor-pointer"
+                >
+                  ← Volver a ingresar credenciales
+                </button>
+              </form>
+            )}
 
             <div className="mt-6 flex items-center gap-3 rounded-xl px-4 py-3 text-xs text-text-secondary" style={{ background: 'rgba(255,255,255,0.035)' }}>
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
