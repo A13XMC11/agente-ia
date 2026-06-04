@@ -7,46 +7,51 @@ import { useState } from 'react'
 
 export default function SignInPage() {
   const router = useRouter()
-  const { signIn } = useSignIn()
+  const { signIn, setActive } = useSignIn()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [needsMFA, setNeedsMFA] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!signIn) return
+    if (!signIn || !setActive) return
 
     setErrorMsg('')
     setLoading(true)
 
     try {
-      // Step 1: identify the user
-      const { error: createError } = await signIn.create({ identifier: email })
-      if (createError) {
-        setErrorMsg(createError.longMessage ?? createError.message ?? 'Credenciales incorrectas')
-        return
-      }
-
-      // Step 2: submit password
-      const { error: passwordError } = await signIn.password({ password })
-      if (passwordError) {
-        setErrorMsg(passwordError.longMessage ?? passwordError.message ?? 'Credenciales incorrectas')
-        return
-      }
-
-      if (signIn.status === 'complete') {
-        // Step 3: finalize sets the active session
-        const { error: finalizeError } = await signIn.finalize()
-        if (finalizeError) {
-          setErrorMsg(finalizeError.longMessage ?? finalizeError.message ?? 'Error al finalizar sesión')
-          return
+      if (needsMFA) {
+        const result = await signIn.attemptSecondFactor({
+          strategy: 'totp',
+          code: totpCode,
+        })
+        if (result.status === 'complete') {
+          await setActive({ session: result.createdSessionId })
+          router.push('/api/auth/sync')
+        } else {
+          setErrorMsg('Código incorrecto, intenta de nuevo.')
         }
+        return
+      }
+
+      const result = await signIn.create({
+        identifier: email,
+        strategy: 'password',
+        password,
+      })
+
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId })
         router.push('/api/auth/sync')
+      } else if (result.status === 'needs_second_factor') {
+        setNeedsMFA(true)
       } else {
-        setErrorMsg(`No se pudo completar el inicio de sesión (estado: ${signIn.status})`)
+        setErrorMsg(`Estado inesperado: ${result.status}`)
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
@@ -65,17 +70,23 @@ export default function SignInPage() {
 
       {/* ── Left panel: illustration ── */}
       <div
-        className="hidden lg:flex lg:w-1/2 xl:w-3/5 relative flex-col items-center justify-between overflow-hidden h-full"
+        className="relative hidden min-h-[100dvh] overflow-hidden lg:flex lg:w-1/2 xl:w-3/5"
         style={{
           background: 'linear-gradient(135deg, #060D13 0%, #0F1E2D 60%, #0a1929 100%)',
         }}
       >
+        <img
+          src="/lanlabs_home.png"
+          alt="Agente IA — canales de comunicación"
+          className="absolute inset-0 h-full w-full select-none object-cover"
+          draggable={false}
+        />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(56,189,248,0.08) 0%, transparent 70%)',
+              'linear-gradient(180deg, rgba(6,13,19,0.05) 0%, rgba(6,13,19,0.18) 52%, rgba(6,13,19,0.78) 100%), radial-gradient(ellipse 70% 60% at 50% 50%, rgba(56,189,248,0.08) 0%, transparent 70%)',
           }}
         />
         <div
@@ -88,15 +99,8 @@ export default function SignInPage() {
           }}
         />
 
-        <div className="relative z-10 flex flex-col items-center justify-center h-full w-full px-8 pb-6 text-center">
-          <img
-            src="/lanlabs_home.png"
-            alt="Agente IA — canales de comunicación"
-            className="select-none drop-shadow-2xl"
-            style={{ height: '70vh', width: 'auto', objectFit: 'contain' }}
-            draggable={false}
-          />
-          <div className="mt-6 space-y-2">
+        <div className="relative z-10 mt-auto flex w-full flex-col items-center px-8 pb-8 text-center xl:pb-10">
+          <div className="space-y-2">
             <h2 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               Tu agente IA, siempre activo
             </h2>
@@ -193,73 +197,108 @@ export default function SignInPage() {
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
-              <div className="space-y-2">
-                <label
-                  htmlFor="email"
-                  className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
-                >
-                  Correo electrónico
-                </label>
-                <div
-                  className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
-                  style={{
-                    border: '1px solid var(--border-light)',
-                    background: 'rgba(2,6,23,0.28)',
-                  }}
-                >
-                  <Mail className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
-                  <input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tu@empresa.com"
-                    className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label
-                  htmlFor="password"
-                  className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
-                >
-                  Contraseña
-                </label>
-                <div
-                  className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
-                  style={{
-                    border: '1px solid var(--border-light)',
-                    background: 'rgba(2,6,23,0.28)',
-                  }}
-                >
-                  <Lock className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
-                  <input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors duration-200 hover:bg-white/5 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              {needsMFA ? (
+                <div className="space-y-2">
+                  <label
+                    htmlFor="totp"
+                    className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" strokeWidth={1.8} />
-                    ) : (
-                      <Eye className="h-4 w-4" strokeWidth={1.8} />
-                    )}
-                  </button>
+                    Código de autenticación
+                  </label>
+                  <p className="text-xs text-text-muted">Ingresa el código de 6 dígitos de tu app de autenticación.</p>
+                  <div
+                    className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
+                    style={{
+                      border: '1px solid var(--border-light)',
+                      background: 'rgba(2,6,23,0.28)',
+                    }}
+                  >
+                    <Shield className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
+                    <input
+                      id="totp"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      required
+                      autoFocus
+                      value={totpCode}
+                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted tracking-widest"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="email"
+                      className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
+                    >
+                      Correo electrónico
+                    </label>
+                    <div
+                      className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
+                      style={{
+                        border: '1px solid var(--border-light)',
+                        background: 'rgba(2,6,23,0.28)',
+                      }}
+                    >
+                      <Mail className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
+                      <input
+                        id="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="tu@empresa.com"
+                        className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="password"
+                      className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
+                    >
+                      Contraseña
+                    </label>
+                    <div
+                      className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
+                      style={{
+                        border: '1px solid var(--border-light)',
+                        background: 'rgba(2,6,23,0.28)',
+                      }}
+                    >
+                      <Lock className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
+                      <input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors duration-200 hover:bg-white/5 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" strokeWidth={1.8} />
+                        ) : (
+                          <Eye className="h-4 w-4" strokeWidth={1.8} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {errorMsg && (
                 <div
@@ -277,21 +316,21 @@ export default function SignInPage() {
 
               <button
                 type="submit"
-                disabled={loading || !email || !password}
+                disabled={loading || (needsMFA ? totpCode.length !== 6 : (!email || !password))}
                 className="group flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 style={{
-                  background: loading || !email || !password ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
-                  color: loading || !email || !password ? 'rgba(56,189,248,0.5)' : '#060D13',
-                  boxShadow: loading || !email || !password ? 'none' : '0 0 20px rgba(56,189,248,0.28)',
+                  background: loading || (needsMFA ? totpCode.length !== 6 : (!email || !password)) ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
+                  color: loading || (needsMFA ? totpCode.length !== 6 : (!email || !password)) ? 'rgba(56,189,248,0.5)' : '#060D13',
+                  boxShadow: loading || (needsMFA ? totpCode.length !== 6 : (!email || !password)) ? 'none' : '0 0 20px rgba(56,189,248,0.28)',
                 }}
                 onMouseEnter={(e) => {
-                  if (!loading && email && password) {
+                  if (!loading && (needsMFA ? totpCode.length === 6 : (email && password))) {
                     e.currentTarget.style.background = 'var(--accent-hover)'
                     e.currentTarget.style.boxShadow = '0 0 28px rgba(56,189,248,0.4)'
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!loading && email && password) {
+                  if (!loading && (needsMFA ? totpCode.length === 6 : (email && password))) {
                     e.currentTarget.style.background = 'var(--accent)'
                     e.currentTarget.style.boxShadow = '0 0 20px rgba(56,189,248,0.28)'
                   }
@@ -307,7 +346,7 @@ export default function SignInPage() {
                   </span>
                 ) : (
                   <>
-                    Ingresar
+                    {needsMFA ? 'Verificar código' : 'Ingresar'}
                     <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
                   </>
                 )}
