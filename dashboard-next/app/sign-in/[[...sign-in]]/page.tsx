@@ -16,11 +16,12 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!signIn) return
+
     setErrorMsg('')
     setLoading(true)
 
     try {
-      // Clerk v7 Future API: one call authenticates identifier + password
       const { error: authError } = await signIn.password({ emailAddress: email, password })
 
       if (authError) {
@@ -30,7 +31,6 @@ export default function SignInPage() {
       }
 
       if (signIn.status === 'complete') {
-        // finalize() converts the complete sign-in into an active browser session
         await signIn.finalize()
         router.push('/api/auth/sync')
       } else {
@@ -58,7 +58,6 @@ export default function SignInPage() {
           background: 'linear-gradient(135deg, #060D13 0%, #0F1E2D 60%, #0a1929 100%)',
         }}
       >
-        {/* Ambient glow behind image */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
@@ -67,7 +66,6 @@ export default function SignInPage() {
               'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(56,189,248,0.08) 0%, transparent 70%)',
           }}
         />
-        {/* Grid texture */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.025]"
@@ -78,7 +76,6 @@ export default function SignInPage() {
           }}
         />
 
-        {/* Illustration — fills full height */}
         <div className="relative z-10 flex flex-col items-center justify-center h-full w-full px-8 pb-6 text-center">
           <img
             src="/lanlabs_home.png"
@@ -95,7 +92,6 @@ export default function SignInPage() {
               WhatsApp, Instagram, Facebook y más — todo desde un solo panel.
             </p>
           </div>
-          {/* Accent dots decoration */}
           <div className="flex gap-2 mt-5">
             {[0, 1, 2].map((i) => (
               <span
@@ -114,7 +110,6 @@ export default function SignInPage() {
 
       {/* ── Right panel: form ── */}
       <div className="flex flex-1 items-center justify-center relative overflow-hidden px-6">
-        {/* Top ambient glow */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
@@ -123,7 +118,6 @@ export default function SignInPage() {
               'radial-gradient(ellipse 60% 50% at 50% -10%, rgba(56,189,248,0.10) 0%, transparent 70%)',
           }}
         />
-        {/* Bottom indigo glow */}
         <div
           aria-hidden
           className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 w-96 h-64"
@@ -134,7 +128,6 @@ export default function SignInPage() {
         />
 
         <div className="relative w-full max-w-sm">
-          {/* Brand */}
           <div className="text-center mb-8 stagger-1">
             <div
               className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-4"
@@ -165,7 +158,6 @@ export default function SignInPage() {
             </p>
           </div>
 
-          {/* Form card */}
           <div
             className="glass rounded-2xl p-7 stagger-2"
             style={{
@@ -174,7 +166,6 @@ export default function SignInPage() {
             }}
           >
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
-              {/* Email field */}
               <div className="space-y-2">
                 <label
                   htmlFor="email"
@@ -199,8 +190,7 @@ export default function SignInPage() {
                   }}
                   onFocus={(e) => {
                     e.currentTarget.style.borderColor = 'rgba(56,189,248,0.5)'
-                    e.currentTarget.style.boxShadow =
-                      '0 0 0 3px rgba(56,189,248,0.08)'
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56,189,248,0.08)'
                   }}
                   onBlur={(e) => {
                     e.currentTarget.style.borderColor = ''
@@ -209,7 +199,6 @@ export default function SignInPage() {
                 />
               </div>
 
-              {/* Password field */}
               <div className="space-y-2">
                 <label
                   htmlFor="password"
@@ -235,8 +224,7 @@ export default function SignInPage() {
                     }}
                     onFocus={(e) => {
                       e.currentTarget.style.borderColor = 'rgba(56,189,248,0.5)'
-                      e.currentTarget.style.boxShadow =
-                        '0 0 0 3px rgba(56,189,248,0.08)'
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56,189,248,0.08)'
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = ''
@@ -248,40 +236,18 @@ export default function SignInPage() {
                     onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
                     style={{ color: 'var(--text-muted)' }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = 'var(--text-secondary)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = 'var(--text-muted)'
-                    }}
-                    aria-label={
-                      showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
-                    }
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-secondary)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                   >
                     {showPassword ? (
-                      <svg
-                        className="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.75"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
                         <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
                         <line x1="1" y1="1" x2="23" y2="23" />
                       </svg>
                     ) : (
-                      <svg
-                        className="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.75"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                         <circle cx="12" cy="12" r="3" />
                       </svg>
@@ -290,7 +256,6 @@ export default function SignInPage() {
                 </div>
               </div>
 
-              {/* Error message */}
               {errorMsg && (
                 <div
                   className="flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm"
@@ -300,15 +265,7 @@ export default function SignInPage() {
                     color: 'var(--error)',
                   }}
                 >
-                  <svg
-                    className="w-4 h-4 mt-0.5 shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                  <svg className="w-4 h-4 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -317,60 +274,33 @@ export default function SignInPage() {
                 </div>
               )}
 
-              {/* Submit button */}
               <button
                 type="submit"
                 disabled={loading || !email || !password}
                 className="w-full rounded-xl py-3 text-sm font-semibold transition-all duration-150 disabled:cursor-not-allowed"
                 style={{
-                  background:
-                    loading || !email || !password
-                      ? 'rgba(56,189,248,0.25)'
-                      : 'var(--accent)',
-                  color:
-                    loading || !email || !password
-                      ? 'rgba(56,189,248,0.5)'
-                      : '#060D13',
-                  boxShadow:
-                    loading || !email || !password
-                      ? 'none'
-                      : '0 0 20px rgba(56,189,248,0.28)',
+                  background: loading || !email || !password ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
+                  color: loading || !email || !password ? 'rgba(56,189,248,0.5)' : '#060D13',
+                  boxShadow: loading || !email || !password ? 'none' : '0 0 20px rgba(56,189,248,0.28)',
                 }}
                 onMouseEnter={(e) => {
                   if (!loading && email && password) {
                     e.currentTarget.style.background = 'var(--accent-hover)'
-                    e.currentTarget.style.boxShadow =
-                      '0 0 28px rgba(56,189,248,0.4)'
+                    e.currentTarget.style.boxShadow = '0 0 28px rgba(56,189,248,0.4)'
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!loading && email && password) {
                     e.currentTarget.style.background = 'var(--accent)'
-                    e.currentTarget.style.boxShadow =
-                      '0 0 20px rgba(56,189,248,0.28)'
+                    e.currentTarget.style.boxShadow = '0 0 20px rgba(56,189,248,0.28)'
                   }
                 }}
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
-                    <svg
-                      className="w-4 h-4 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
                     Ingresando...
                   </span>
@@ -381,7 +311,6 @@ export default function SignInPage() {
             </form>
           </div>
 
-          {/* Footer */}
           <p
             className="text-center text-xs mt-6 stagger-3"
             style={{ color: 'var(--text-muted)' }}

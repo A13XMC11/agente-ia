@@ -6,11 +6,6 @@ const nextConfig: NextConfig = {
   // Gzip compression for all responses
   compress: true,
 
-  // Turbopack configuration for Vercel
-  turbopack: {
-    root: process.env.TURBO_ROOT || '.',
-  },
-
   // Tree-shake large packages at build time — reduces JS bundle per route
   experimental: {
     optimizePackageImports: [
