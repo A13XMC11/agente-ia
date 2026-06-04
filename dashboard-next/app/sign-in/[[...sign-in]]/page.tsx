@@ -24,19 +24,13 @@ export default function SignInPage() {
     setLoading(true)
 
     try {
-      const { error } = await signIn.create({
+      const result = await signIn.create({
         identifier: email,
         password,
       })
 
-      if (error) {
-        const clerkErr = error as { longMessage?: string; message: string }
-        setErrorMsg(clerkErr.longMessage ?? clerkErr.message ?? 'Credenciales incorrectas')
-        return
-      }
-
-      if (signIn.status === 'complete') {
-        await setActive({ session: signIn.createdSessionId })
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId })
         router.push('/api/auth/sync')
       } else {
         setErrorMsg('No se pudo completar el inicio de sesión')
