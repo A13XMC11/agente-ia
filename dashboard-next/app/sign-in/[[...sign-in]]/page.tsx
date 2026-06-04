@@ -25,10 +25,10 @@ export default function SignInPage() {
 
     try {
       // Step 1: identify the user
-      await signIn.create({ identifier: email })
+      const created = await signIn.create({ identifier: email })
 
       // Step 2: attempt password as first factor
-      const result = await signIn.attemptFirstFactor({
+      const result = await created.attemptFirstFactor({
         strategy: 'password',
         password,
       })
