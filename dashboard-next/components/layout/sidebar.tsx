@@ -3,8 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useRouter } from 'next/navigation'
-import { useClerk } from '@clerk/nextjs'
 import {
   LayoutDashboard,
   Users,
@@ -12,7 +10,6 @@ import {
   TrendingUp,
   Calendar,
   Settings,
-  LogOut,
   CreditCard,
   Bot,
   BarChart2,
@@ -30,14 +27,7 @@ interface SidebarProps {
 
 export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) => {
   const pathname = usePathname()
-  const router = useRouter()
-  const { signOut } = useClerk()
   const isAdmin = role === 'super_admin'
-
-  const handleSignOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    await signOut({ redirectUrl: '/sign-in' })
-  }
 
   const adminLinks = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -116,22 +106,6 @@ export const Sidebar = ({ role, clienteName, isOpen, onClose }: SidebarProps) =>
               )
             })}
           </nav>
-
-          {/* Logout */}
-          <div className="border-t border-border p-3">
-            <button
-              onClick={handleSignOut}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer',
-                'text-text-muted hover:text-error hover:bg-error/8',
-                'transition-all duration-150',
-                'active:scale-[0.97]',
-              )}
-            >
-              <LogOut className="h-4 w-4 shrink-0" />
-              <span>Cerrar sesión</span>
-            </button>
-          </div>
         </div>
       </aside>
 

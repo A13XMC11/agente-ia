@@ -1,6 +1,7 @@
 'use client'
 
 import { useSignIn } from '@clerk/nextjs'
+import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, Shield } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
@@ -127,87 +128,103 @@ export default function SignInPage() {
           }}
         />
 
-        <div className="relative w-full max-w-sm">
-          <div className="text-center mb-8 stagger-1">
-            <div
-              className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-4"
-              style={{
-                background: 'rgba(56,189,248,0.1)',
-                border: '1px solid rgba(56,189,248,0.22)',
-              }}
-            >
-              <svg
-                className="w-6 h-6"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ color: 'var(--accent)' }}
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-semibold text-text-primary tracking-tight">
-              Agente IA
-            </h1>
-            <p className="mt-1 text-sm text-text-secondary">
-              Inicia sesión en tu panel
-            </p>
-          </div>
+        <div className="relative w-full max-w-[420px]">
+          <div
+            aria-hidden
+            className="absolute -inset-x-6 -inset-y-8 rounded-[2rem] opacity-80 blur-3xl"
+            style={{
+              background:
+                'radial-gradient(ellipse 65% 45% at 50% 0%, rgba(56,189,248,0.14), transparent 70%)',
+            }}
+          />
 
           <div
-            className="glass rounded-2xl p-7 stagger-2"
+            className="glass relative overflow-hidden rounded-2xl p-8 stagger-2"
             style={{
+              background:
+                'linear-gradient(180deg, rgba(15,30,45,0.86) 0%, rgba(9,21,33,0.72) 100%)',
               boxShadow:
-                '0 0 0 1px rgba(56,189,248,0.07), 0 24px 48px rgba(0,0,0,0.4)',
+                '0 0 0 1px rgba(255,255,255,0.08), 0 28px 70px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.06)',
             }}
           >
+            <div
+              aria-hidden
+              className="absolute inset-x-0 top-0 h-px"
+              style={{
+                background:
+                  'linear-gradient(90deg, transparent, rgba(56,189,248,0.62), transparent)',
+              }}
+            />
+
+            <div className="mb-8 stagger-1">
+              <div
+                className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-xl"
+                style={{
+                  background: 'rgba(56,189,248,0.10)',
+                  border: '1px solid rgba(56,189,248,0.22)',
+                  color: 'var(--accent)',
+                }}
+              >
+                <Shield className="h-5 w-5" strokeWidth={1.9} />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">
+                  Acceso seguro
+                </p>
+                <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
+                  Entra a Agente IA
+                </h1>
+                <p className="max-w-[20rem] text-sm leading-6 text-text-secondary">
+                  Gestiona conversaciones, clientes y canales desde tu panel.
+                </p>
+              </div>
+            </div>
+
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
               <div className="space-y-2">
                 <label
                   htmlFor="email"
-                  className="block text-xs font-medium tracking-widest uppercase"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
                 >
                   Correo electrónico
                 </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@empresa.com"
-                  className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-150"
+                <div
+                  className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
                   style={{
-                    background: 'rgba(255,255,255,0.04)',
                     border: '1px solid var(--border-light)',
-                    color: 'var(--text-primary)',
+                    background: 'rgba(2,6,23,0.28)',
                   }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = 'rgba(56,189,248,0.5)'
-                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56,189,248,0.08)'
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = ''
-                    e.currentTarget.style.boxShadow = ''
-                  }}
-                />
+                >
+                  <Mail className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="tu@empresa.com"
+                    className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
                 <label
                   htmlFor="password"
-                  className="block text-xs font-medium tracking-widest uppercase"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary"
                 >
                   Contraseña
                 </label>
-                <div className="relative">
+                <div
+                  className="group flex items-center gap-3 rounded-xl px-3.5 transition-all duration-200 focus-within:ring-3 focus-within:ring-accent-glow"
+                  style={{
+                    border: '1px solid var(--border-light)',
+                    background: 'rgba(2,6,23,0.28)',
+                  }}
+                >
+                  <Lock className="h-4 w-4 shrink-0 text-text-muted transition-colors duration-200 group-focus-within:text-accent" strokeWidth={1.8} />
                   <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
@@ -216,41 +233,18 @@ export default function SignInPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full rounded-xl px-4 py-3 pr-11 text-sm outline-none transition-all duration-150"
-                    style={{
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid var(--border-light)',
-                      color: 'var(--text-primary)',
-                    }}
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(56,189,248,0.5)'
-                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56,189,248,0.08)'
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = ''
-                      e.currentTarget.style.boxShadow = ''
-                    }}
+                    className="h-12 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                    style={{ color: 'var(--text-muted)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-secondary)' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors duration-200 hover:bg-white/5 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                   >
                     {showPassword ? (
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                        <line x1="1" y1="1" x2="23" y2="23" />
-                      </svg>
+                      <EyeOff className="h-4 w-4" strokeWidth={1.8} />
                     ) : (
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
+                      <Eye className="h-4 w-4" strokeWidth={1.8} />
                     )}
                   </button>
                 </div>
@@ -265,11 +259,7 @@ export default function SignInPage() {
                     color: 'var(--error)',
                   }}
                 >
-                  <svg className="w-4 h-4 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.9} />
                   <span>{errorMsg}</span>
                 </div>
               )}
@@ -277,7 +267,7 @@ export default function SignInPage() {
               <button
                 type="submit"
                 disabled={loading || !email || !password}
-                className="w-full rounded-xl py-3 text-sm font-semibold transition-all duration-150 disabled:cursor-not-allowed"
+                className="group flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 style={{
                   background: loading || !email || !password ? 'rgba(56,189,248,0.25)' : 'var(--accent)',
                   color: loading || !email || !password ? 'rgba(56,189,248,0.5)' : '#060D13',
@@ -298,21 +288,29 @@ export default function SignInPage() {
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
                     Ingresando...
                   </span>
                 ) : (
-                  'Ingresar'
+                  <>
+                    Ingresar
+                    <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
+                  </>
                 )}
               </button>
             </form>
+
+            <div className="mt-6 flex items-center gap-3 rounded-xl px-4 py-3 text-xs text-text-secondary" style={{ background: 'rgba(255,255,255,0.035)' }}>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+              Sesión protegida por Clerk y acceso por rol.
+            </div>
           </div>
 
           <p
-            className="text-center text-xs mt-6 stagger-3"
+            className="mt-6 text-center text-xs stagger-3"
             style={{ color: 'var(--text-muted)' }}
           >
             ¿Problemas para ingresar?{' '}
