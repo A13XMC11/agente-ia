@@ -68,7 +68,6 @@ Responde este correo o escríbenos a soporte@lanlabsec.com
 async function createClerkUser(email: string, password: string, clienteId: string, nombre: string): Promise<void> {
   const clerk = await clerkClient()
 
-  // Create user in Clerk with the temporary password
   let clerkUserId: string
   try {
     const parts = nombre.trim().split(' ')
@@ -84,7 +83,6 @@ async function createClerkUser(email: string, password: string, clienteId: strin
     throw new Error(`Clerk user creation failed: ${clerkErr?.errors?.[0]?.message ?? 'Unknown error'}`)
   }
 
-  // Create record in usuarios table so JWT gets rol + cliente_id
   const { error: usuarioError } = await supabase.from('usuarios').insert({
     id: randomUUID(),
     cliente_id: clienteId,
@@ -97,7 +95,6 @@ async function createClerkUser(email: string, password: string, clienteId: strin
   })
 
   if (usuarioError) {
-    // Clean up Clerk user to keep state consistent
     await clerk.users.deleteUser(clerkUserId).catch(() => {})
     throw new Error(`Usuario record creation failed: ${usuarioError.message}`)
   }

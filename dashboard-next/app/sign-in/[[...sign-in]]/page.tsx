@@ -1,6 +1,6 @@
 'use client'
 
-import { useSignIn } from '@clerk/nextjs'
+import { useSignIn, useClerk } from '@clerk/nextjs'
 import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, Shield } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
@@ -8,6 +8,7 @@ import { useState } from 'react'
 export default function SignInPage() {
   const router = useRouter()
   const { signIn } = useSignIn()
+  const { setActive } = useClerk()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -23,16 +24,19 @@ export default function SignInPage() {
     setLoading(true)
 
     try {
-      const { error: authError } = await signIn.password({ emailAddress: email, password })
+      const { error } = await signIn.create({
+        identifier: email,
+        password,
+      })
 
-      if (authError) {
-        const clerkErr = authError as { message: string; longMessage?: string }
+      if (error) {
+        const clerkErr = error as { longMessage?: string; message: string }
         setErrorMsg(clerkErr.longMessage ?? clerkErr.message ?? 'Credenciales incorrectas')
         return
       }
 
       if (signIn.status === 'complete') {
-        await signIn.finalize()
+        await setActive({ session: signIn.createdSessionId })
         router.push('/api/auth/sync')
       } else {
         setErrorMsg('No se pudo completar el inicio de sesión')
