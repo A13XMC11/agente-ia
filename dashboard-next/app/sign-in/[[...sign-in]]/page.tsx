@@ -1,15 +1,22 @@
 'use client'
 
-import { useSignIn } from '@clerk/nextjs'
+import { useAuth, useSignIn } from '@clerk/nextjs'
 import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, Shield } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 type Step = 'credentials' | 'mfa'
 
 export default function SignInPage() {
   const router = useRouter()
+  const { isSignedIn } = useAuth()
   const { signIn } = useSignIn()
+
+  useEffect(() => {
+    if (isSignedIn) {
+      router.push('/api/auth/sync')
+    }
+  }, [isSignedIn, router])
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
