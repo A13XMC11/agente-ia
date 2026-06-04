@@ -50,7 +50,7 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="h-screen flex bg-background overflow-hidden">
+    <div className="flex min-h-[100dvh] overflow-hidden bg-background">
 
       {/* ── Left panel: illustration ── */}
       <div

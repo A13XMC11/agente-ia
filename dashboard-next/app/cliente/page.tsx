@@ -190,7 +190,7 @@ function StatCard({
   const accent = CARD_ACCENTS[accentIdx]
   return (
     <div
-      className="card-hover card-accent-hover relative rounded-2xl overflow-hidden p-5 group"
+      className="card-hover card-accent-hover relative min-w-0 overflow-hidden rounded-2xl p-4 sm:p-5 group"
       style={{
         background: 'rgba(9,21,33,0.6)',
         border: '1px solid rgba(255,255,255,0.06)',
@@ -215,7 +215,7 @@ function StatCard({
           </span>
         </div>
         <p
-          className="text-4xl font-bold leading-none tabular-nums"
+          className="text-3xl font-bold leading-none tabular-nums sm:text-4xl"
           style={{ color: 'rgba(255,255,255,0.92)', animation: `count-in 500ms cubic-bezier(0.23,1,0.32,1) ${delay + 80}ms both` }}
         >
           {value}
@@ -262,7 +262,7 @@ function SectionHeader({
 /* ── Empty state ────────────────────────────────── */
 function EmptyState({ icon: Icon, text }: { icon: React.ElementType; text: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 gap-3 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center sm:py-14">
       <div
         className="h-11 w-11 rounded-xl flex items-center justify-center"
         style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
@@ -278,7 +278,7 @@ function EmptyState({ icon: Icon, text }: { icon: React.ElementType; text: strin
 function AgentStatus() {
   return (
     <div
-      className="rounded-2xl p-4 flex items-center gap-4 stagger-5"
+      className="stagger-5 flex min-w-0 flex-col gap-3 rounded-2xl p-4 min-[430px]:flex-row min-[430px]:items-center min-[430px]:gap-4"
       style={{
         background: 'rgba(34,211,160,0.05)',
         border: '1px solid rgba(34,211,160,0.12)',
@@ -294,7 +294,7 @@ function AgentStatus() {
         <p className="text-sm font-medium text-white/80 leading-none">Agente IA activo</p>
         <p className="text-[11px] text-white/30 mt-0.5">Respondiendo en todos los canales</p>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex shrink-0 items-center gap-1.5">
         <span className="relative flex h-2 w-2">
           <span
             className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75"
@@ -324,10 +324,10 @@ export default async function ClienteDashboard() {
   })
 
   return (
-    <div className="space-y-7">
+    <div className="min-w-0 space-y-7">
       {/* Page header */}
-      <div className="stagger-1 flex items-start justify-between gap-4">
-        <div>
+      <div className="stagger-1 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-white/30 mb-1.5 capitalize">
             {today}
           </p>
@@ -348,7 +348,7 @@ export default async function ClienteDashboard() {
       </div>
 
       {/* Metric cards — 2×2 on mobile, 4-col on desktop */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2 md:gap-4 lg:grid-cols-4">
         <StatCard label="Chats hoy"       value={metrics.conversacionesHoy}  sub="Conversaciones activas"  icon={MessageSquare} accentIdx={0} delay={60} />
         <StatCard label="Leads nuevos"    value={metrics.leadsNuevos}         sub="Captados hoy"            icon={TrendingUp}    accentIdx={1} delay={120} />
         <StatCard label="Citas"           value={metrics.citasProgramadas}    sub="Próximas programadas"    icon={Calendar}      accentIdx={2} delay={180} />
@@ -369,7 +369,7 @@ export default async function ClienteDashboard() {
             linkLabel="Ver todas"
           />
           <div
-            className="rounded-2xl overflow-hidden"
+            className="min-w-0 overflow-hidden rounded-2xl"
             style={{ border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(9,21,33,0.4)' }}
           >
             {conversacionesRecientes.length === 0 ? (
@@ -382,7 +382,7 @@ export default async function ClienteDashboard() {
                   return (
                     <li
                       key={conv.id}
-                      className="flex items-center gap-3 px-4 py-3 transition-colors duration-150"
+                      className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-150 sm:px-4"
                       style={{ borderColor: 'rgba(255,255,255,0.04)' }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLLIElement).style.background = 'rgba(255,255,255,0.02)' }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLLIElement).style.background = '' }}
@@ -394,7 +394,7 @@ export default async function ClienteDashboard() {
                           <p className="text-[10px] text-white/28 mt-0.5 font-mono">score {conv.lead_score}/10</p>
                         )}
                       </div>
-                      <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
                         <CanalBadge canal={conv.canal} />
                         <span className="flex items-center gap-1 text-[10px] text-white/22">
                           <Clock className="h-2.5 w-2.5" strokeWidth={1.75} />
@@ -418,7 +418,7 @@ export default async function ClienteDashboard() {
             linkLabel="Ver todos"
           />
           <div
-            className="rounded-2xl overflow-hidden"
+            className="min-w-0 overflow-hidden rounded-2xl"
             style={{ border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(9,21,33,0.4)' }}
           >
             {topLeads.length === 0 ? (
@@ -428,7 +428,7 @@ export default async function ClienteDashboard() {
                 {topLeads.map((lead, i) => (
                   <li
                     key={lead.id}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors duration-150"
+                    className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-150 sm:px-4"
                     style={{ borderColor: 'rgba(255,255,255,0.04)' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLLIElement).style.background = 'rgba(255,255,255,0.02)' }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLLIElement).style.background = '' }}

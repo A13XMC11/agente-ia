@@ -66,6 +66,7 @@
 html {
   color-scheme: dark;
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
@@ -76,10 +77,23 @@ body {
   letter-spacing: 0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 * {
   @apply border-border;
+  box-sizing: border-box;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+table {
+  border-collapse: collapse;
 }
 
 /* ─── Scrollbar ──────────────────────────────────── */
@@ -285,6 +299,34 @@ body {
 /* ─── Score bar base ─────────────────────────────── */
 .score-bar-fill {
   transition: width 700ms var(--ease-out-expo);
+}
+
+/* ─── Responsive Safety Net ─────────────────────── */
+@media (max-width: 767px) {
+  .card-hover:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .card-accent-hover::after {
+    opacity: 0.35;
+  }
+
+  .stagger-1, .stagger-2, .stagger-3,
+  .stagger-4, .stagger-5, .stagger-6, .stagger-7 {
+    animation-duration: 240ms;
+  }
+}
+
+@media (max-width: 420px) {
+  body {
+    letter-spacing: 0;
+  }
+
+  .nav-section-label {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
 }
 
 /* ─── Reduced Motion ─────────────────────────────── */

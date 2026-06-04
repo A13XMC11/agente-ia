@@ -141,7 +141,7 @@ export const Sidebar = ({
     <>
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen w-64 flex flex-col',
+          'fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(16rem,calc(100vw-2rem))] flex-col',
           'transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
           'border-r border-border bg-background',
           'md:translate-x-0',

@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { CreditCard, CheckCircle, XCircle, Clock } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { formatTimestamp } from '@/lib/date-format'
 
 interface Pago {
@@ -56,14 +56,12 @@ export default function PagosPage() {
   const [procesando, setProcesando] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
 
-  useEffect(() => { loadPagos() }, [])
-
   function showToast(message: string, type: Toast['type']) {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3500)
   }
 
-  async function loadPagos() {
+  const loadPagos = useCallback(async () => {
     try {
       const res = await fetch('/api/cliente/pagos')
       if (!res.ok) throw new Error('Failed')
@@ -73,7 +71,12 @@ export default function PagosPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadPagos()
+  }, [loadPagos])
 
   async function handleAccion(id: string, accion: 'aprobar' | 'rechazar') {
     setProcesando(id)
@@ -213,8 +216,8 @@ export default function PagosPage() {
             </ul>
 
             {/* Desktop */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="hidden overflow-x-auto overscroll-x-contain md:block">
+              <table className="min-w-[900px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
                     {['Monto', 'Método', 'Bancos', 'Transacción', 'Fecha', 'Estado', ''].map((h) => (

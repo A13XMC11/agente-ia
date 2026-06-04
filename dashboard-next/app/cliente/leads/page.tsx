@@ -208,6 +208,7 @@ export default function LeadsPage() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadLeads()
   }, [loadLeads])
 
@@ -271,7 +272,7 @@ export default function LeadsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       {/* Header */}
       <div className="stagger-1">
         <h1 className="text-2xl font-bold text-white/88 tracking-tight">Leads</h1>
@@ -282,7 +283,7 @@ export default function LeadsPage() {
 
       {/* Stats row */}
       {!loading && leads.length > 0 && (
-        <div className="stagger-2 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="stagger-2 grid grid-cols-1 gap-3 min-[430px]:grid-cols-2 lg:grid-cols-4">
           <StatMini icon={Users}         label="Total leads"     value={stats.total} />
           <StatMini icon={Zap}           label="Alta prioridad"  value={stats.urgentes}        sub="urgente + caliente" />
           <StatMini icon={TrendingUp}    label="Score promedio"  value={stats.avgScore}         sub="sobre 10" />
@@ -291,8 +292,8 @@ export default function LeadsPage() {
       )}
 
       {/* Filters row */}
-      <div className="stagger-3 flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-44">
+      <div className="stagger-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full min-w-0 flex-1 sm:min-w-44">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/25 pointer-events-none" strokeWidth={1.75} />
           <Input
             placeholder="Buscar por nombre o teléfono..."
@@ -301,11 +302,11 @@ export default function LeadsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex w-full gap-1.5 overflow-x-auto pb-1 sm:w-auto sm:flex-wrap sm:overflow-visible sm:pb-0">
           {/* All filter */}
           <button
             onClick={() => setFilterState('todos')}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer"
+            className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 cursor-pointer"
             style={filterState === 'todos' ? {
               background: 'var(--accent)', color: '#060D13', border: '1px solid var(--accent)',
             } : {
@@ -322,7 +323,7 @@ export default function LeadsPage() {
               <button
                 key={s}
                 onClick={() => setFilterState(active ? 'todos' : s)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer"
+                className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150"
                 style={active ? {
                   color: m.color, background: m.bg, border: `1px solid ${m.border}`,
                 } : {
@@ -344,7 +345,7 @@ export default function LeadsPage() {
         style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(9,21,33,0.5)' }}
       >
         <div
-          className="px-5 py-3 flex items-center justify-between border-b"
+          className="flex items-center justify-between border-b px-4 py-3 sm:px-5"
           style={{ borderColor: 'rgba(255,255,255,0.05)' }}
         >
           <p className="text-sm font-medium text-white/55">Leads calificados</p>
@@ -379,14 +380,14 @@ export default function LeadsPage() {
                 return (
                   <li
                     key={lead.id}
-                    className="p-4 space-y-3"
+                    className="space-y-3 p-4"
                     style={{
                       borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
                       animation: `fadeInUp 280ms cubic-bezier(0.23,1,0.32,1) ${idx * 30}ms both`,
                     }}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
                         <LeadAvatar lead={lead} />
                         <div className="min-w-0">
                           <p className="font-semibold text-white/80 text-sm truncate">{getDisplayName(lead)}</p>
@@ -401,13 +402,13 @@ export default function LeadsPage() {
                       <StateBadge state={state} />
                     </div>
                     <ScoreBar score={lead.score} />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 min-[430px]:flex-row">
                       {waLink && (
                         <a
                           href={waLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 text-xs flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors duration-150 cursor-pointer"
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors duration-150"
                           style={{ color: '#22D3A0', background: 'rgba(34,211,160,0.10)', border: '1px solid rgba(34,211,160,0.20)' }}
                         >
                           <MessageCircle className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -425,8 +426,8 @@ export default function LeadsPage() {
             </ul>
 
             {/* Desktop table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="hidden overflow-x-auto overscroll-x-contain md:block">
+              <table className="min-w-[900px] w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     {['Lead', 'Teléfono', 'Interacciones', 'Último contacto', 'Score', 'Estado', ''].map((h) => (
@@ -543,7 +544,7 @@ export default function LeadsPage() {
             onClick={closeSignals}
           />
           <aside
-            className="fixed right-0 top-0 z-50 h-full w-full max-w-sm flex flex-col"
+            className="fixed right-0 top-0 z-50 flex h-[100dvh] w-full max-w-[min(24rem,100vw)] flex-col"
             style={{
               animation: 'slide-in-right 260ms cubic-bezier(0.32,0.72,0,1) both',
               background: 'rgba(6,13,19,0.96)',
@@ -554,10 +555,10 @@ export default function LeadsPage() {
           >
             {/* Drawer header */}
             <div
-              className="flex items-center justify-between px-5 py-4 shrink-0"
+              className="flex shrink-0 items-center justify-between px-4 py-4 sm:px-5"
               style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex min-w-0 items-center gap-3">
                 <LeadAvatar lead={selectedLead} size="sm" />
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-white/85 truncate">{getDisplayName(selectedLead)}</h2>
@@ -578,7 +579,7 @@ export default function LeadsPage() {
 
             {/* Lead mini-stats */}
             <div
-              className="px-5 py-3 shrink-0 grid grid-cols-3 gap-3"
+              className="grid shrink-0 grid-cols-3 gap-2 px-4 py-3 sm:gap-3 sm:px-5"
               style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
             >
               {[
@@ -594,7 +595,7 @@ export default function LeadsPage() {
             </div>
 
             {/* Signal timeline */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-5">
               {signalsLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <span

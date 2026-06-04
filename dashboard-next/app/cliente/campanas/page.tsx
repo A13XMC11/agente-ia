@@ -172,7 +172,7 @@ export default function CampanasPage() {
 
       {/* Stats */}
       {!loading && campanas.length > 0 && (
-        <div className="stagger-2 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="stagger-2 grid grid-cols-1 gap-3 min-[430px]:grid-cols-2 sm:grid-cols-4">
           <StatCard icon={Megaphone}    label="Total"       value={stats.total} />
           <StatCard icon={CheckCircle2} label="Enviadas"    value={stats.enviadas} />
           <StatCard icon={Clock}        label="Programadas" value={stats.programadas} />
@@ -367,7 +367,7 @@ export default function CampanasPage() {
                 {/* Segment */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-text-secondary">Audiencia</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {(Object.entries(SEGMENT_LABELS) as [Segment, string][]).map(([val, label]) => (
                       <button
                         key={val}

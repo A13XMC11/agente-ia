@@ -1,4 +1,5 @@
 import { BarChart2, MessageSquare, TrendingUp, Calendar, CreditCard } from 'lucide-react'
+import type React from 'react'
 import { getServerSession } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
@@ -171,10 +172,10 @@ function DonutChart({ segments }: { segments: CanalStat[] }) {
   const CIRC = 2 * Math.PI * R
   const STROKE_W = 14
 
-  let dashOffset = 0
-  const arcs = segments.map((seg) => {
+  const arcs = segments.reduce<Array<typeof segments[number] & { el: React.ReactNode; pct: number }>>((acc, seg) => {
     const pct = total > 0 ? seg.value / total : 0
     const dash = pct * CIRC
+    const dashOffset = acc.reduce((sum, item) => sum + item.pct * CIRC, 0)
     const el = (
       <circle
         key={seg.label}
@@ -188,9 +189,9 @@ function DonutChart({ segments }: { segments: CanalStat[] }) {
         strokeLinecap="butt"
       />
     )
-    dashOffset += dash
-    return { el, ...seg, pct }
-  })
+    acc.push({ el, ...seg, pct })
+    return acc
+  }, [])
 
   return (
     <div className="flex items-center gap-5">
@@ -349,7 +350,7 @@ export default async function AnalyticsPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 stagger-2">
+      <div className="stagger-2 grid grid-cols-1 gap-3 min-[430px]:grid-cols-2 md:grid-cols-4 md:gap-4">
         {kpiCards.map(card => <KpiCard key={card.label} {...card} />)}
       </div>
 

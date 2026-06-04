@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   ShoppingBag, Plus, Pencil, Trash2, Upload, RefreshCw,
   Package, AlertTriangle, DollarSign, ToggleLeft, ToggleRight,
-  Link, Webhook, FolderOpen, Check, X, ChevronDown, Info,
+  Link, Webhook, FolderOpen, Check, X, Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -115,7 +115,7 @@ function ProductModal({
           </button>
         </div>
         <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="col-span-2">
               <label className="block text-xs text-text-muted mb-1">Nombre *</label>
               <Input value={form.nombre} onChange={set('nombre')} placeholder="Ej: Plan Profesional" />
@@ -238,6 +238,7 @@ export default function CatalogoPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProducts()
     fetchSyncConfig()
   }, [])
@@ -396,7 +397,7 @@ export default function CatalogoPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2 md:grid-cols-4">
         <StatCard icon={Package} label="Total productos" value={products.length} />
         <StatCard icon={ToggleRight} label="Activos" value={activos} />
         <StatCard icon={AlertTriangle} label="Sin stock" value={sinStock} sub="stock = 0" />
@@ -435,7 +436,8 @@ export default function CatalogoPage() {
               <p className="text-text-muted text-xs mt-1">Agrega productos manualmente o impórtalos desde CSV</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto overscroll-x-contain">
+            <table className="min-w-[720px] w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-text-muted text-xs">
                   <th className="text-left px-4 py-3 font-medium">Producto</th>
@@ -503,6 +505,7 @@ export default function CatalogoPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

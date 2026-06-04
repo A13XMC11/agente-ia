@@ -50,9 +50,9 @@ export const Header = ({ title, onMenuClick }: HeaderProps) => {
   return (
     <header
       className={[
-        'fixed left-0 right-0 top-0 z-30 h-16',
+        'fixed left-0 right-0 top-0 z-30 h-16 min-w-0',
         'border-b border-border',
-        'flex items-center gap-3 px-4 md:pl-[calc(16rem+1.5rem)] md:pr-6',
+        'flex items-center gap-3 px-3 sm:px-4 md:pl-[calc(16rem+1.5rem)] md:pr-6',
       ].join(' ')}
       style={{
         background: 'rgba(6,13,19,0.85)',
@@ -75,7 +75,7 @@ export const Header = ({ title, onMenuClick }: HeaderProps) => {
       </button>
 
       {/* Breadcrumb + title */}
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {parentTitle && (
           <>
             <span className="text-[13px] text-text-muted font-medium hidden sm:block select-none">

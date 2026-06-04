@@ -122,7 +122,7 @@ function EstadoDot({ estado }: { estado: string }) {
 /* ── Skeleton row ───────────────────────────────── */
 function SkeletonRow() {
   return (
-    <div className="flex items-center gap-3.5 px-5 py-4">
+    <div className="flex items-center gap-3.5 px-4 py-4 sm:px-5">
       <div className="skeleton h-10 w-10 rounded-full shrink-0" />
       <div className="flex-1 space-y-2">
         <div className="skeleton h-3 w-32 rounded" />
@@ -172,6 +172,7 @@ export default function ConversacionesPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConversaciones()
   }, [loadConversaciones])
 
@@ -194,7 +195,7 @@ export default function ConversacionesPage() {
   if (selectedId && (chatData || chatLoading)) {
     const conv = chatData?.conversation
     return (
-      <div className="flex flex-col h-[calc(100dvh-4rem)] -mt-5 md:-mt-8 -mx-5 md:-mx-8 pt-5 md:pt-8 px-5 md:px-8"
+      <div className="flex h-[calc(100dvh-4rem)] min-w-0 flex-col -mx-4 -mt-5 px-4 pt-5 sm:-mx-5 sm:px-5 md:-mx-8 md:-mt-8 md:px-8 md:pt-8"
            style={{ animation: 'scale-in 220ms cubic-bezier(0.23,1,0.32,1) both' }}>
         {/* Chat header */}
         <div
@@ -216,7 +217,7 @@ export default function ConversacionesPage() {
                 <p className="font-semibold text-white/85 text-sm truncate leading-none">
                   {getDisplayName(conv)}
                 </p>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2">
                   {conv.usuario_telefono && (
                     <span className="text-[11px] text-white/30 flex items-center gap-1 font-mono">
                       <Phone className="h-3 w-3" strokeWidth={1.5} />
@@ -228,7 +229,7 @@ export default function ConversacionesPage() {
               <CanalBadge canal={conv.canal} />
             </>
           ) : (
-            <div className="flex-1 flex items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="skeleton h-8 w-8 rounded-full" />
               <div className="skeleton h-4 w-32 rounded" />
             </div>
@@ -260,7 +261,7 @@ export default function ConversacionesPage() {
               return (
                 <div key={msg.id} className={['flex', isUser ? 'justify-start' : 'justify-end'].join(' ')}>
                   <div
-                    className="max-w-[75%] px-3.5 py-2.5 rounded-2xl"
+                    className="max-w-[88%] rounded-2xl px-3.5 py-2.5 sm:max-w-[75%]"
                     style={isUser ? {
                       background: 'rgba(255,255,255,0.06)',
                       border: '1px solid rgba(255,255,255,0.07)',
@@ -293,7 +294,7 @@ export default function ConversacionesPage() {
 
   /* ── List view ──────────────────────────────── */
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <div className="stagger-1">
         <h1 className="text-2xl font-bold text-white/88 tracking-tight">Conversaciones</h1>
         <p className="text-white/35 mt-1 text-sm">
@@ -318,7 +319,7 @@ export default function ConversacionesPage() {
         style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(9,21,33,0.5)' }}
       >
         <div
-          className="px-5 py-3 flex items-center justify-between border-b"
+          className="flex items-center justify-between border-b px-4 py-3 sm:px-5"
           style={{ borderColor: 'rgba(255,255,255,0.05)' }}
         >
           <p className="text-sm font-medium text-white/55">Conversaciones</p>
@@ -360,23 +361,23 @@ export default function ConversacionesPage() {
                 >
                   <button
                     onClick={() => { setSelectedId(conv.id); loadChatData(conv.id) }}
-                    className="w-full text-left px-5 py-4 transition-colors duration-150 group cursor-pointer"
+                    className="w-full cursor-pointer px-4 py-4 text-left transition-colors duration-150 group sm:px-5"
                     style={{ background: 'transparent' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.02)' }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
                   >
-                    <div className="flex items-start gap-3.5">
+                    <div className="flex min-w-0 items-start gap-3.5">
                       <ConvAvatar seed={conv.usuario_id} name={name} />
                       <div className="flex-1 min-w-0 pt-0.5">
-                        <div className="flex items-center gap-2 mb-0.5">
+                        <div className="mb-0.5 flex min-w-0 items-center gap-2">
                           <p className="font-semibold text-white/78 text-sm truncate group-hover:text-white/92 transition-colors duration-150">
                             {name}
                           </p>
                         </div>
-                        <p className="text-xs text-white/30 truncate max-w-xs">
+                        <p className="max-w-full truncate text-xs text-white/30 sm:max-w-xs">
                           {conv.ultimo_mensaje || 'Sin mensajes'}
                         </p>
-                        <div className="flex items-center gap-2 mt-1.5">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
                           <CanalBadge canal={conv.canal} />
                           <EstadoDot estado={conv.estado} />
                         </div>

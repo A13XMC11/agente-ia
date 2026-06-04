@@ -31,7 +31,7 @@ function StatCard({
 }) {
   return (
     <div
-      className="card-hover card-accent-hover relative rounded-2xl overflow-hidden p-5 group"
+      className="card-hover card-accent-hover relative min-w-0 overflow-hidden rounded-2xl p-4 sm:p-5 group"
       style={{
         background: 'rgba(9,21,33,0.6)',
         border: '1px solid rgba(255,255,255,0.06)',
@@ -55,7 +55,7 @@ function StatCard({
           </span>
         </div>
         <p
-          className="text-3xl font-bold leading-none tabular-nums"
+          className="text-2xl font-bold leading-none tabular-nums sm:text-3xl"
           style={{ color: 'rgba(255,255,255,0.90)', animation: `count-in 500ms cubic-bezier(0.23,1,0.32,1) ${delay + 80}ms both` }}
         >
           {value}
@@ -187,7 +187,7 @@ export default async function AdminDashboard() {
       {/* Revenue metrics */}
       <section className="stagger-2">
         <SectionLabel>Revenue</SectionLabel>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 min-[430px]:grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard
             label="MRR"
             value={formatCurrency(metrics.mrr)}
@@ -232,7 +232,7 @@ export default async function AdminDashboard() {
       {/* Client metrics */}
       <section className="stagger-3">
         <SectionLabel>Clientes</SectionLabel>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 min-[430px]:grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard
             label="Total"
             value={metrics.totalClientes}
@@ -279,7 +279,7 @@ export default async function AdminDashboard() {
       <div className="stagger-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Messages today */}
         <div
-          className="card-hover card-accent-hover rounded-2xl p-5 overflow-hidden group"
+          className="card-hover card-accent-hover min-w-0 rounded-2xl p-4 overflow-hidden group sm:p-5"
           style={{ background: 'rgba(9,21,33,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
         >
           <div
@@ -298,7 +298,7 @@ export default async function AdminDashboard() {
                 <MessageSquare className="h-3.5 w-3.5" style={{ color: '#818CF8' }} strokeWidth={2} />
               </span>
             </div>
-            <p className="text-3xl font-bold tabular-nums leading-none" style={{ color: 'rgba(255,255,255,0.90)' }}>
+            <p className="text-2xl font-bold tabular-nums leading-none sm:text-3xl" style={{ color: 'rgba(255,255,255,0.90)' }}>
               {metrics.mensajesHoy}
             </p>
             <p className="text-[11px] mt-2.5" style={{ color: 'rgba(255,255,255,0.28)' }}>
@@ -309,7 +309,7 @@ export default async function AdminDashboard() {
 
         {/* Plan distribution */}
         <div
-          className="lg:col-span-2 rounded-2xl p-5"
+          className="min-w-0 rounded-2xl p-4 sm:p-5 lg:col-span-2"
           style={{ background: 'rgba(9,21,33,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
         >
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] mb-5" style={{ color: 'rgba(255,255,255,0.32)' }}>
@@ -345,7 +345,7 @@ export default async function AdminDashboard() {
           <h2 className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.70)' }}>
             Clientes recientes
           </h2>
-          <Link href="/admin/clientes/nuevo">
+          <Link href="/admin/clientes/nuevo" className="shrink-0">
             <Button size="sm" className="text-xs gap-1.5 cursor-pointer">
               <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
               Nuevo cliente
@@ -371,8 +371,8 @@ export default async function AdminDashboard() {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overscroll-x-contain">
+              <table className="min-w-[680px] w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     {['Nombre', 'Email', 'Plan', 'Estado', 'Fecha'].map((h) => (

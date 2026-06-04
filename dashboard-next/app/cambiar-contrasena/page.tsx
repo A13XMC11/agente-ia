@@ -75,7 +75,7 @@ function CambiarContrasenaForm() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-background">
         <svg className="w-6 h-6 animate-spin" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--accent)' }}>
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -93,7 +93,7 @@ function CambiarContrasenaForm() {
   const canSubmit = !loading && currentPassword && newPassword && confirmPassword
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-background">
+    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-background px-4 py-8">
       {/* Top ambient glow */}
       <div
         aria-hidden
@@ -123,7 +123,7 @@ function CambiarContrasenaForm() {
         }}
       />
 
-      <div className="relative w-full max-w-sm mx-4">
+      <div className="relative w-full max-w-sm">
         {/* Brand */}
         <div className="text-center mb-8">
           <div
