@@ -3,7 +3,7 @@
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { TrendingUp, Zap, X, Search, Phone, MessageCircle, Clock, Users } from 'lucide-react'
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatTimestamp } from '@/lib/date-format'
 
 type LeadState = 'curioso' | 'prospecto' | 'interesado' | 'caliente' | 'urgente'
@@ -50,8 +50,6 @@ const STATE_ORDER: LeadState[] = ['urgente', 'caliente', 'interesado', 'prospect
 function getDisplayName(lead: Lead): string {
   const name = lead.name || lead.nombre
   if (name && name.trim()) return name.trim()
-  const phone = lead.phone || lead.telefono
-  if (phone) return `+${phone.replace(/\D/g, '')}`
   return 'Sin nombre'
 }
 
@@ -146,9 +144,7 @@ export default function LeadsPage() {
   const [signals, setSignals] = useState<SignalEvent[]>([])
   const [signalsLoading, setSignalsLoading] = useState(false)
 
-  useEffect(() => { loadLeads() }, [])
-
-  async function loadLeads() {
+  const loadLeads = useCallback(async () => {
     try {
       const res = await fetch('/api/cliente/leads')
       if (!res.ok) throw new Error('Failed')
@@ -159,7 +155,12 @@ export default function LeadsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadLeads()
+  }, [loadLeads])
 
   async function loadSignals(leadId: string) {
     setSignalsLoading(true)

@@ -937,6 +937,7 @@ class AgentEngine:
                     telefono=arguments.get("telefono"),
                     empresa=arguments.get("empresa"),
                     tags=arguments.get("tags"),
+                    conversacion_id=self._current_conversation_id,
                 )
                 return json.dumps(result, ensure_ascii=False)
 

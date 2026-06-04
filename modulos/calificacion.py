@@ -19,6 +19,17 @@ import os
 
 logger = logging.getLogger(__name__)
 
+
+def _looks_like_channel_id(value: str) -> bool:
+    value = value or ""
+    return any(ch.isdigit() for ch in value) and not any(ch.isalpha() for ch in value)
+
+
+def _has_real_name(value: Optional[str], usuario_id: str = "") -> bool:
+    name = (value or "").strip()
+    return bool(name) and name != usuario_id and not _looks_like_channel_id(name)
+
+
 # Scoring signals (immutable keyword tuples with point values)
 URGENCY_KEYWORDS = (
     "urgente",
@@ -376,6 +387,51 @@ class CalificacionModule:
         )
         self.scoring_engine = LeadScoringEngine()
 
+    def _get_nombre_from_conversation(
+        self,
+        client_id: str,
+        usuario_id: str,
+        conversation_id: Optional[str] = None,
+    ) -> str:
+        try:
+            conv_query = self.supabase.table("conversaciones").select("usuario_nombre")
+            if conversation_id:
+                conv_query = conv_query.eq("id", conversation_id)
+            else:
+                conv_query = conv_query.eq("cliente_id", client_id).eq("usuario_telefono", usuario_id)
+
+            conv_resp = conv_query.limit(1).execute()
+            if conv_resp.data:
+                nombre = conv_resp.data[0].get("usuario_nombre", "") or ""
+                if _has_real_name(nombre, usuario_id):
+                    return nombre.strip()
+        except Exception:
+            pass
+        return ""
+
+    def _sync_conversation_name(
+        self,
+        client_id: str,
+        usuario_id: str,
+        nombre: str,
+        conversation_id: Optional[str] = None,
+    ) -> None:
+        if not _has_real_name(nombre, usuario_id):
+            return
+
+        try:
+            query = self.supabase.table("conversaciones").update({
+                "usuario_nombre": nombre.strip(),
+                "updated_at": datetime.utcnow().isoformat(),
+            })
+            if conversation_id:
+                query = query.eq("id", conversation_id)
+            else:
+                query = query.eq("cliente_id", client_id).eq("usuario_telefono", usuario_id)
+            query.execute()
+        except Exception:
+            pass
+
     async def guardar_lead(
         self,
         client_id: str,
@@ -411,10 +467,25 @@ class CalificacionModule:
                 "cliente_id", client_id
             ).eq("telefono", usuario_id).execute()
 
+            nombre_final = nombre
+            if not _has_real_name(nombre_final, usuario_id):
+                nombre_final = self._get_nombre_from_conversation(
+                    client_id,
+                    usuario_id,
+                    conversacion_id,
+                ) or nombre_final
+
+            self._sync_conversation_name(
+                client_id,
+                usuario_id,
+                nombre_final,
+                conversacion_id,
+            )
+
             lead_data = {
                 "cliente_id": client_id,
                 "telefono": usuario_id,
-                "nombre": nombre,
+                "nombre": nombre_final,
                 "email": email,
                 "canal": "whatsapp",
             }
@@ -429,7 +500,7 @@ class CalificacionModule:
                 logger.info(f"Lead actualizado exitosamente: {lead_id}")
 
                 logger.info(
-                    f"Lead updated: {usuario_id} ({nombre})",
+                    f"Lead updated: {usuario_id} ({nombre_final})",
                     extra={"client_id": client_id},
                 )
 
@@ -437,7 +508,7 @@ class CalificacionModule:
                     "success": True,
                     "lead_id": lead_id,
                     "action": "updated",
-                    "message": f"Lead {nombre} actualizado",
+                    "message": f"Lead {nombre_final} actualizado",
                 }
             else:
                 # Create new lead
@@ -459,12 +530,12 @@ class CalificacionModule:
                 except Exception as e:
                     logger.error(f"=== INSERT FALLIDO: {str(e)} ===")
                     logger.error(f"ERROR CRITICO al crear lead: {e}")
-                    logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}, nombre={nombre}")
+                    logger.error(f"Datos intentados: cliente_id={client_id}, telefono={usuario_id}, nombre={nombre_final}")
                     logger.error(f"Lead data: {new_lead}")
                     raise
 
                 logger.info(
-                    f"Lead created: {usuario_id} ({nombre})",
+                    f"Lead created: {usuario_id} ({nombre_final})",
                     extra={"client_id": client_id},
                 )
 
@@ -472,7 +543,7 @@ class CalificacionModule:
                     "success": True,
                     "lead_id": new_lead["id"],
                     "action": "created",
-                    "message": f"Lead {nombre} guardado",
+                    "message": f"Lead {nombre_final} guardado",
                 }
 
         except Exception as e:
@@ -884,7 +955,7 @@ class CalificacionModule:
             print(f"[CALIFICACION] buscando lead: cliente_id={client_id} telefono={usuario_id}")
             existing = (
                 self.supabase.table("leads")
-                .select("id, score")
+                .select("id, score, nombre")
                 .eq("cliente_id", client_id)
                 .eq("telefono", usuario_id)
                 .limit(1)
@@ -922,10 +993,20 @@ class CalificacionModule:
                 delta = new_score - old_score
 
                 print(f"[CALIFICACION] lead encontrado id={lead_id} score {old_score}->{new_score} estado={new_state}")
-                update_resp = self.supabase.table("leads").update({
+                update_data = {
                     "score": int(new_score),
                     "estado": new_state
-                }).eq("id", lead_id).execute()
+                }
+                if not _has_real_name(existing.data[0].get("nombre"), usuario_id):
+                    nombre_lead = self._get_nombre_from_conversation(
+                        client_id,
+                        usuario_id,
+                        conversation_id,
+                    )
+                    if nombre_lead:
+                        update_data["nombre"] = nombre_lead
+
+                update_resp = self.supabase.table("leads").update(update_data).eq("id", lead_id).execute()
                 print(f"[CALIFICACION] lead actualizado: {update_resp.data}")
             else:
                 # Crear nuevo lead - INSERT directo
@@ -946,19 +1027,11 @@ class CalificacionModule:
 
                 delta = new_score
 
-                # Obtener nombre del usuario desde conversaciones
-                nombre_lead = ""
-                try:
-                    conv_query = self.supabase.table("conversaciones").select("usuario_nombre")
-                    if conversation_id:
-                        conv_query = conv_query.eq("id", conversation_id)
-                    else:
-                        conv_query = conv_query.eq("cliente_id", client_id).eq("usuario_telefono", usuario_id)
-                    conv_resp = conv_query.limit(1).execute()
-                    if conv_resp.data:
-                        nombre_lead = conv_resp.data[0].get("usuario_nombre", "") or ""
-                except Exception:
-                    pass
+                nombre_lead = self._get_nombre_from_conversation(
+                    client_id,
+                    usuario_id,
+                    conversation_id,
+                )
 
                 insert_data = {
                     "id": lead_id,

@@ -2,7 +2,7 @@
 
 import { Input } from '@/components/ui/input'
 import { MessageSquare, ArrowLeft, Search } from 'lucide-react'
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface Conversacion {
   id: string
@@ -56,9 +56,12 @@ function formatTime(dateString: string) {
   return new Date(dateString).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 }
 
+function getConversationDisplayName(conversation: Pick<Conversacion, 'usuario_nombre'>) {
+  return conversation.usuario_nombre?.trim() || 'Cliente sin nombre'
+}
+
 export default function ConversacionesPage() {
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([])
-  const [filtradas, setFiltradas] = useState<Conversacion[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -66,26 +69,17 @@ export default function ConversacionesPage() {
   const [chatLoading, setChatLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    loadConversaciones()
-  }, [])
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatData?.messages])
-
-  async function loadConversaciones() {
+  const loadConversaciones = useCallback(async () => {
     try {
       const res = await fetch('/api/cliente/conversaciones')
       if (!res.ok) throw new Error('Failed')
       const data = await res.json()
       setConversaciones(data.data || [])
-      setFiltradas(data.data || [])
     } catch {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   async function loadChatData(convId: string) {
     setChatLoading(true)
@@ -101,14 +95,21 @@ export default function ConversacionesPage() {
   }
 
   useEffect(() => {
-    if (!search.trim()) { setFiltradas(conversaciones); return }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadConversaciones()
+  }, [loadConversaciones])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatData?.messages])
+
+  const filtradas = useMemo(() => {
+    if (!search.trim()) return conversaciones
     const q = search.toLowerCase()
-    setFiltradas(
-      conversaciones.filter((c) =>
+    return conversaciones.filter((c) =>
         c.usuario_id.toLowerCase().includes(q) ||
         c.usuario_nombre?.toLowerCase().includes(q) ||
         c.ultimo_mensaje.toLowerCase().includes(q),
-      ),
     )
   }, [search, conversaciones])
 
@@ -126,7 +127,7 @@ export default function ConversacionesPage() {
           </button>
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-text-primary truncate">
-              {chatData.conversation.usuario_nombre || chatData.conversation.usuario_id}
+              {getConversationDisplayName(chatData.conversation)}
             </p>
             <p className="text-xs text-text-muted truncate">
               {chatData.conversation.canal.toUpperCase()} · {chatData.conversation.usuario_telefono}
@@ -235,7 +236,7 @@ export default function ConversacionesPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-text-primary text-sm group-hover:text-accent transition-colors duration-150">
-                        {conv.usuario_nombre || conv.usuario_id}
+                        {getConversationDisplayName(conv)}
                       </p>
                       <p className="text-xs text-text-muted mt-0.5 truncate max-w-xs">
                         {conv.ultimo_mensaje}

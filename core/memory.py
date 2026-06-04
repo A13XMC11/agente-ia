@@ -15,6 +15,21 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 
+def _looks_like_channel_id(value: str) -> bool:
+    value = value or ""
+    return any(ch.isdigit() for ch in value) and not any(ch.isalpha() for ch in value)
+
+
+def _is_better_display_name(candidate: str, current: str, user_id: str) -> bool:
+    candidate = (candidate or "").strip()
+    current = (current or "").strip()
+    if not candidate or candidate == current:
+        return False
+    if candidate == user_id or _looks_like_channel_id(candidate):
+        return False
+    return not current or current == user_id or _looks_like_channel_id(current)
+
+
 class MemoryManager:
     """
     Manages conversation history and context in Supabase.
@@ -66,11 +81,31 @@ class MemoryManager:
             ).order("fecha_inicio", desc=True).limit(1).execute()
 
             if response.data:
+                conversation = response.data[0]
+                update_data: dict[str, str] = {}
+                if _is_better_display_name(
+                    usuario_nombre,
+                    conversation.get("usuario_nombre", ""),
+                    user_id,
+                ):
+                    update_data["usuario_nombre"] = usuario_nombre.strip()
+                    conversation["usuario_nombre"] = usuario_nombre.strip()
+
+                if usuario_telefono and not conversation.get("usuario_telefono"):
+                    update_data["usuario_telefono"] = usuario_telefono
+                    conversation["usuario_telefono"] = usuario_telefono
+
+                if update_data:
+                    update_data["updated_at"] = datetime.utcnow().isoformat()
+                    self.supabase.table("conversaciones").update(update_data).eq(
+                        "id", conversation["id"]
+                    ).execute()
+
                 logger.debug(
                     f"Found existing conversation",
                     extra={"client_id": client_id, "user_id": user_id},
                 )
-                return response.data[0]
+                return conversation
 
             # Create new conversation
             conversation = {

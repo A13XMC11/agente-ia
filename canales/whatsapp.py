@@ -186,9 +186,21 @@ class WhatsAppHandler:
 
                 print(f"✅ DEBUG: Client identified = {client_id}")
 
+                contacts_by_id = {
+                    str(contact.get("wa_id", "")): contact
+                    for contact in value.get("contacts", [])
+                    if contact.get("wa_id")
+                }
+
                 messages = value.get("messages", [])
                 for message in messages:
-                    await self._handle_message(client_id, phone_number_id, message)
+                    sender_id = message.get("from", "")
+                    await self._handle_message(
+                        client_id,
+                        phone_number_id,
+                        message,
+                        contact=contacts_by_id.get(sender_id),
+                    )
 
                 statuses = value.get("statuses", [])
                 for status in statuses:
@@ -202,6 +214,7 @@ class WhatsAppHandler:
         client_id: str,
         phone_number_id: str,
         message: dict[str, Any],
+        contact: Optional[dict[str, Any]] = None,
     ) -> None:
         """
         Handle inbound message from WhatsApp.
@@ -214,6 +227,7 @@ class WhatsAppHandler:
         try:
             print(f"\n\n>>> WHATSAPP MESSAGE RECEIVED <<<")
             sender_id = message.get("from", "")
+            usuario_nombre = (contact or {}).get("profile", {}).get("name", "") or ""
             print(f">>> sender_id={sender_id}, client_id={client_id}")
 
             logger.info(
@@ -292,6 +306,7 @@ class WhatsAppHandler:
                                 {
                                     "value": {
                                         "messages": [message],
+                                        "contacts": [contact] if contact else [],
                                         "metadata": {
                                             "phone_number_id": phone_number_id,
                                         },
@@ -326,7 +341,14 @@ class WhatsAppHandler:
                 existing.cancel()
 
             task = asyncio.create_task(
-                self._debounced_process(client_id, phone_number_id, sender_id, debounce_key, token)
+                self._debounced_process(
+                    client_id,
+                    phone_number_id,
+                    sender_id,
+                    debounce_key,
+                    token,
+                    usuario_nombre=usuario_nombre,
+                )
             )
             self._pending_tasks[debounce_key] = task
             print(f">>> debounce task scheduled for {sender_id} (delay={self._debounce_delay}s)")
@@ -341,6 +363,7 @@ class WhatsAppHandler:
         sender_id: str,
         debounce_key: str,
         token: str,
+        usuario_nombre: str = "",
     ) -> None:
         """
         Called after the debounce delay expires.
@@ -384,6 +407,7 @@ class WhatsAppHandler:
                         client_id,
                         sender_id,
                         "whatsapp",
+                        usuario_nombre=usuario_nombre,
                         usuario_telefono=sender_id,
                     )
                     conversation_id = conversation["id"]
@@ -425,6 +449,7 @@ class WhatsAppHandler:
                     "media_url": media_url,
                     "media_type": media_type,
                     "conversation_id": conversation_id,
+                    "usuario_nombre": usuario_nombre,
                 },
                 memory_context,
             )

@@ -86,6 +86,7 @@ class MessageNormalizer:
             changes = entry.get("changes", [{}])[0]
             value = changes.get("value", {})
             messages = value.get("messages", [])
+            contacts = value.get("contacts", [])
 
             if not messages:
                 logger.warning("No messages in WhatsApp payload")
@@ -134,6 +135,13 @@ class MessageNormalizer:
                 "message_id": msg.get("id"),
                 "phone_number_id": value.get("metadata", {}).get("phone_number_id"),
             }
+            contact = next(
+                (c for c in contacts if c.get("wa_id") == sender_id),
+                contacts[0] if contacts else {},
+            )
+            contact_name = contact.get("profile", {}).get("name")
+            if contact_name:
+                metadata["usuario_nombre"] = contact_name
 
             # Add transcription metadata if audio was transcribed
             if message_type == "audio" and msg.get("transcription"):
