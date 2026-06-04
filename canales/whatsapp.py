@@ -533,7 +533,7 @@ class WhatsAppHandler:
             audio_file.name = "audio.ogg"
 
             response = await self.openai_client.audio.transcriptions.create(
-                model="whisper-1",
+                model=os.getenv("OPENAI_AUDIO_MODEL", "whisper-1"),
                 file=audio_file,
                 language="es",
             )

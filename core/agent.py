@@ -221,7 +221,10 @@ class AgentEngine:
             raise ValueError("OPENAI_API_KEY environment variable not set")
 
         self.client = AsyncOpenAI(api_key=api_key)
-        self.model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        self.model = (
+            client_config.get("openai_model")
+            or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        )
         self._tools_cache = None
 
         self.supabase = supabase_client
@@ -234,7 +237,8 @@ class AgentEngine:
             calendar_id=client_config.get("google_calendar_id"),
         ) if _svc else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
-        self.cobros = CobrosModule(supabase_client, self.client, alertas_module=self.alertas) if supabase_client else None
+        _vision_model = client_config.get("openai_vision_model") or os.environ.get("OPENAI_VISION_MODEL")
+        self.cobros = CobrosModule(supabase_client, self.client, alertas_module=self.alertas, vision_model=_vision_model) if supabase_client else None
         self.links_pago = LinksPagoModule(supabase_client) if supabase_client else None
         self.ventas = SalesModule(supabase_client, links_pago_module=self.links_pago, alertas_module=self.alertas) if supabase_client else None
 

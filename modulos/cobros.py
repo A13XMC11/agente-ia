@@ -34,6 +34,7 @@ class CobrosModule:
         redis_client: Any = None,
         whatsapp_handler: Any = None,
         alertas_module: Any = None,
+        vision_model: str | None = None,
     ):
         """
         Initialize payment module.
@@ -50,6 +51,7 @@ class CobrosModule:
         self.redis = redis_client
         self.whatsapp = whatsapp_handler
         self.alertas = alertas_module
+        self.vision_model = vision_model or os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")
         self.fraud_threshold = float(
             os.environ.get("PAYMENT_FRAUD_SCORE_THRESHOLD", 0.7)
         )
@@ -217,9 +219,8 @@ class CobrosModule:
             image_data = base64.b64encode(img_resp.content).decode("utf-8")
             mime = img_resp.headers.get("content-type", "image/jpeg")
 
-            # Analyze with GPT-4o Vision (native vision, not deprecated gpt-4-vision-preview)
             vision_response = await self.openai.chat.completions.create(
-                model="gpt-4o",
+                model=self.vision_model,
                 messages=[
                     {
                         "role": "user",
