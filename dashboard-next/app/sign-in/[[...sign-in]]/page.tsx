@@ -1,6 +1,6 @@
 'use client'
 
-import { useSignIn, useClerk } from '@clerk/nextjs'
+import { useSignIn } from '@clerk/nextjs'
 import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, Shield } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
@@ -8,7 +8,6 @@ import { useState } from 'react'
 export default function SignInPage() {
   const router = useRouter()
   const { signIn } = useSignIn()
-  const { setActive } = useClerk()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -25,19 +24,29 @@ export default function SignInPage() {
 
     try {
       // Step 1: identify the user
-      const created = await signIn.create({ identifier: email })
+      const { error: createError } = await signIn.create({ identifier: email })
+      if (createError) {
+        setErrorMsg(createError.longMessage ?? createError.message ?? 'Credenciales incorrectas')
+        return
+      }
 
-      // Step 2: attempt password as first factor
-      const result = await created.attemptFirstFactor({
-        strategy: 'password',
-        password,
-      })
+      // Step 2: submit password
+      const { error: passwordError } = await signIn.password({ password })
+      if (passwordError) {
+        setErrorMsg(passwordError.longMessage ?? passwordError.message ?? 'Credenciales incorrectas')
+        return
+      }
 
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId })
+      if (signIn.status === 'complete') {
+        // Step 3: finalize sets the active session
+        const { error: finalizeError } = await signIn.finalize()
+        if (finalizeError) {
+          setErrorMsg(finalizeError.longMessage ?? finalizeError.message ?? 'Error al finalizar sesión')
+          return
+        }
         router.push('/api/auth/sync')
       } else {
-        setErrorMsg(`No se pudo completar el inicio de sesión (estado: ${result.status})`)
+        setErrorMsg(`No se pudo completar el inicio de sesión (estado: ${signIn.status})`)
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: Array<{ longMessage?: string; message: string }> }
