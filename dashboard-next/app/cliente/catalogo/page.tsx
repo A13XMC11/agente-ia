@@ -693,12 +693,21 @@ export default function CatalogoPage() {
                     <Input
                       value={syncConfig.sheets_url || ''}
                       onChange={e => setSyncConfig(prev => ({ ...prev, sheets_url: e.target.value }))}
-                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      placeholder="https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
                     />
+                    {syncConfig.sheets_url && !/\/spreadsheets\/d\/[a-zA-Z0-9_-]{20,}/.test(syncConfig.sheets_url) && (
+                      <div className="mt-1.5 rounded-lg bg-error/10 border border-error/20 px-3 py-2 flex items-start gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5 text-error mt-0.5 shrink-0" />
+                        <p className="text-xs text-error">
+                          URL inválida. La URL debe tener el formato:<br />
+                          <code className="font-mono">https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv</code>
+                        </p>
+                      </div>
+                    )}
                     <p className="text-xs text-text-muted mt-1.5">
                       La hoja debe estar <strong className="text-text-primary">publicada en la web</strong>:
                       en Google Sheets ve a <em>Archivo → Compartir → Publicar en la web</em>, elige la pestaña, formato <strong className="text-text-primary">CSV</strong> y haz clic en Publicar.
-                      Compartir solo el enlace no es suficiente.
+                      Copia la URL completa que empieza con <code className="bg-surface px-1 rounded font-mono">...d/e/2PACX-...</code>
                     </p>
                   </div>
                   <div>

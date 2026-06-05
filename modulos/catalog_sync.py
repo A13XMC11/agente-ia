@@ -152,16 +152,43 @@ class CatalogSyncModule:
 
         The sheet MUST be published to the web:
           File → Share → Publish to web → select the sheet → CSV → Publish
+
+        Handles two URL variants:
+          1. Published format: /d/e/{2PACX-...}/pub  (from "Publish to web" dialog)
+          2. Regular edit URL: /d/{SPREADSHEET_ID}/edit  (converted to /pub — requires sheet to be published)
+
+        The published key always starts with "2PACX-". If the URL contains /d/e/
+        but no valid key, the sheet was not properly published.
         """
-        match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", url)
-        if not match:
-            raise ValueError(f"URL de Google Sheets no válida: {url}")
-        sheet_id = match.group(1)
         gid_match = re.search(r"gid=(\d+)", url)
         gid = gid_match.group(1) if gid_match else "0"
-        return (
-            f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-            f"/pub?output=csv&gid={gid}"
+
+        # Case 1: Published format /d/e/{PUBLISHED_KEY}/
+        # Published keys start with "2PACX-" and are long alphanumeric strings.
+        pub_match = re.search(r"/spreadsheets/d/e/([a-zA-Z0-9_-]{20,})", url)
+        if pub_match:
+            published_id = pub_match.group(1)
+            return (
+                f"https://docs.google.com/spreadsheets/d/e/{published_id}"
+                f"/pub?output=csv&gid={gid}"
+            )
+
+        # Case 2: Regular spreadsheet edit URL /d/{SPREADSHEET_ID}/
+        # This only works if the sheet has been published to the web.
+        sheet_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]{20,})", url)
+        if sheet_match:
+            sheet_id = sheet_match.group(1)
+            return (
+                f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+                f"/pub?output=csv&gid={gid}"
+            )
+
+        raise ValueError(
+            "URL de Google Sheets no válida. "
+            "Asegúrate de publicar la hoja: Archivo → Compartir → Publicar en la web → "
+            "selecciona la pestaña → formato CSV → Publicar. "
+            "La URL publicada tendrá el formato: "
+            "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
         )
 
     # ── Public API ────────────────────────────────────────────────────────────

@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession()
     if (!session?.cliente_id) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: 'No autorizado. Asegúrate de estar logueado como cliente (no super_admin).' }, { status: 401 })
     }
 
     const formData = await req.formData()
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Archivo requerido' }, { status: 400 })
     }
     if (!file.name.toLowerCase().endsWith('.csv')) {
-      return NextResponse.json({ success: false, error: 'Solo se aceptan archivos CSV' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Solo se aceptan archivos CSV (.csv)' }, { status: 400 })
     }
 
     const text = await file.text()
@@ -95,14 +95,22 @@ export async function POST(req: NextRequest) {
     const products = normalizeRows(rows)
 
     if (products.length === 0) {
-      return NextResponse.json({ success: false, error: 'No se encontraron productos válidos en el archivo' }, { status: 422 })
+      return NextResponse.json({ success: false, error: 'No se encontraron productos válidos. Verifica que el CSV tenga columnas "nombre" y "precio".' }, { status: 422 })
     }
 
     // Fetch existing products for upsert matching
-    const { data: existing } = await supabase
+    const { data: existing, error: fetchError } = await supabase
       .from('product_catalog')
       .select('id, sku, nombre')
       .eq('cliente_id', session.cliente_id)
+
+    if (fetchError) {
+      console.error('[CATALOGO] IMPORT fetch existing error:', fetchError)
+      return NextResponse.json({
+        success: false,
+        error: `Error al acceder a la base de datos: ${fetchError.message}. ¿Ejecutaste la migración create_ventas.sql en Supabase?`,
+      }, { status: 500 })
+    }
 
     const bySku = new Map((existing || []).filter(r => r.sku).map(r => [r.sku!.toLowerCase(), r.id]))
     const byNombre = new Map((existing || []).map(r => [r.nombre.toLowerCase(), r.id]))
@@ -116,18 +124,20 @@ export async function POST(req: NextRequest) {
       const existingId = (skuKey && bySku.get(skuKey)) || byNombre.get(nombreKey)
 
       if (existingId) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('product_catalog')
           .update({ ...product, updated_at: now })
           .eq('id', existingId)
           .eq('cliente_id', session.cliente_id)
+        if (updateError) throw new Error(`Error actualizando "${product.nombre}": ${updateError.message}`)
         updated++
       } else {
-        const { data: inserted } = await supabase
+        const { data: inserted, error: insertError } = await supabase
           .from('product_catalog')
           .insert({ ...product, cliente_id: session.cliente_id, activo: true, created_at: now, updated_at: now })
           .select('id, sku, nombre')
           .single()
+        if (insertError) throw new Error(`Error insertando "${product.nombre}": ${insertError.message}`)
         if (inserted) {
           if (inserted.sku) bySku.set(inserted.sku.toLowerCase(), inserted.id)
           byNombre.set(inserted.nombre.toLowerCase(), inserted.id)
@@ -138,7 +148,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, total_rows: products.length, created, updated })
   } catch (error) {
-    console.error('[CATALOGO] IMPORT error:', error)
-    return NextResponse.json({ success: false, error: 'Error al importar catálogo' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : 'Error desconocido'
+    console.error('[CATALOGO] IMPORT error:', msg)
+    return NextResponse.json({ success: false, error: msg }, { status: 500 })
   }
 }
