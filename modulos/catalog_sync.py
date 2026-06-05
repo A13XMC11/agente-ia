@@ -143,7 +143,16 @@ class CatalogSyncModule:
 
     @staticmethod
     def _sheets_to_csv_url(url: str) -> str:
-        """Convert any Google Sheets URL variant to a CSV export URL."""
+        """
+        Convert any Google Sheets URL variant to a public CSV URL.
+
+        Uses /pub?output=csv instead of /export?format=csv because the export
+        endpoint redirects to a signed googleusercontent.com URL that requires
+        Google session cookies — causing 400 errors in server-side HTTP clients.
+
+        The sheet MUST be published to the web:
+          File → Share → Publish to web → select the sheet → CSV → Publish
+        """
         match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", url)
         if not match:
             raise ValueError(f"URL de Google Sheets no válida: {url}")
@@ -152,7 +161,7 @@ class CatalogSyncModule:
         gid = gid_match.group(1) if gid_match else "0"
         return (
             f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-            f"/export?format=csv&gid={gid}"
+            f"/pub?output=csv&gid={gid}"
         )
 
     # ── Public API ────────────────────────────────────────────────────────────

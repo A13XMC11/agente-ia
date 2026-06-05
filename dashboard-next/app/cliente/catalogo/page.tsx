@@ -696,8 +696,9 @@ export default function CatalogoPage() {
                       placeholder="https://docs.google.com/spreadsheets/d/..."
                     />
                     <p className="text-xs text-text-muted mt-1.5">
-                      La hoja debe tener acceso &quot;cualquier persona con el enlace puede ver&quot;.
-                      Las columnas deben seguir el mismo formato que el CSV.
+                      La hoja debe estar <strong className="text-text-primary">publicada en la web</strong>:
+                      en Google Sheets ve a <em>Archivo → Compartir → Publicar en la web</em>, elige la pestaña, formato <strong className="text-text-primary">CSV</strong> y haz clic en Publicar.
+                      Compartir solo el enlace no es suficiente.
                     </p>
                   </div>
                   <div>
