@@ -956,7 +956,12 @@ class AgentEngine:
                 if not self.ventas:
                     return json.dumps({"error": "Módulo de ventas no disponible"})
                 result = await self.ventas.get_catalog(client_id=client_id)
-                return json.dumps(result, ensure_ascii=False)
+                if not result:
+                    return json.dumps({
+                        "productos": [],
+                        "mensaje": "El catálogo no tiene productos registrados aún. Informa al usuario que los productos están siendo configurados y ofrece ayuda con otras consultas.",
+                    }, ensure_ascii=False)
+                return json.dumps({"productos": result}, ensure_ascii=False)
 
             if tool_name == "enviar_cotizacion":
                 if not self.ventas:
