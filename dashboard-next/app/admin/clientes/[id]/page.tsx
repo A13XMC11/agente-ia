@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { CheckCircle, AlertTriangle, XCircle, Clock, Trash2, ExternalLink } from 'lucide-react'
+import { PromptGenerator } from '@/components/prompt-generator'
 import { Select } from '@/components/ui/select'
 
 interface Cliente {
@@ -631,7 +632,16 @@ export default function ClienteDetalle() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>System Prompt</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>System Prompt</Label>
+                    <PromptGenerator
+                      agenteName={agenteDraft.nombre}
+                      tono={agenteDraft.tono}
+                      idioma={agenteDraft.idioma}
+                      modulosActivos={modulos.filter((m) => m.activo).map((m) => m.id)}
+                      onApply={(prompt) => setAgenteDraft({ ...agenteDraft, system_prompt: prompt })}
+                    />
+                  </div>
                   <Textarea
                     value={agenteDraft.system_prompt}
                     onChange={(e) => setAgenteDraft({ ...agenteDraft, system_prompt: e.target.value })}

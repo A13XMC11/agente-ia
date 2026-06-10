@@ -314,6 +314,113 @@ async def internal_catalog_sync_now(request: Request):
     return result
 
 
+@router.post("/internal/generate-prompt")
+async def internal_generate_prompt(request: Request):
+    """
+    Generate an optimized system prompt for a client's AI agent using GPT-4o.
+    Called by the Next.js dashboard prompt generator UI.
+    """
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise HTTPException(status_code=503, detail="OpenAI not configured")
+
+    body = await request.json()
+
+    empresa = str(body.get("empresa", "")).strip()
+    industria = str(body.get("industria", "")).strip()
+    descripcion = str(body.get("descripcion", "")).strip()
+    servicios = str(body.get("servicios", "")).strip()
+    nombre_agente = str(body.get("nombre_agente", "Asistente")).strip()
+    tono = str(body.get("tono", "Amigable")).strip()
+    idioma = str(body.get("idioma", "Español")).strip()
+    publico_objetivo = str(body.get("publico_objetivo", "")).strip()
+    reglas_especiales = str(body.get("reglas_especiales", "")).strip()
+    modulos = [m for m in body.get("modulos", []) if isinstance(m, str)]
+
+    if not empresa or not industria or not descripcion or not servicios:
+        raise HTTPException(status_code=400, detail="Campos requeridos: empresa, industria, descripcion, servicios")
+
+    module_capabilities = {
+        "ventas": "gestionar el catálogo de productos, crear cotizaciones personalizadas y manejar objeciones de venta",
+        "agendamiento": "reservar y gestionar citas usando Google Calendar, incluyendo verificación de disponibilidad",
+        "cobros": "solicitar y verificar comprobantes de pago e imágenes de transferencias bancarias",
+        "links_pago": "generar y enviar links de pago por Payphone, MercadoPago o PayPal",
+        "calificacion": "evaluar la intención de compra del cliente y asignar un puntaje de 0 a 10",
+        "campanas": "participar en campañas de mensajería masiva del negocio",
+        "analytics": "proporcionar métricas y reportes de rendimiento del negocio",
+        "alertas": "enviar notificaciones urgentes o importantes al dueño del negocio",
+        "seguimientos": "hacer seguimiento automático a leads y clientes que no han respondido",
+    }
+
+    active_caps = [module_capabilities[m] for m in modulos if m in module_capabilities]
+
+    caps_block = (
+        "\n".join(f"- {cap}" for cap in active_caps)
+        if active_caps
+        else "- Responder preguntas sobre el negocio y sus servicios"
+    )
+
+    meta_prompt = f"""Eres un experto en prompt engineering para agentes de IA conversacionales de ventas y atención al cliente en WhatsApp.
+
+Tu tarea es generar el system prompt perfecto para un agente llamado "{nombre_agente}" que atiende a los clientes de "{empresa}".
+
+INFORMACIÓN DEL NEGOCIO:
+- Empresa: {empresa}
+- Sector: {industria}
+- Descripción: {descripcion}
+- Productos/Servicios: {servicios}
+- Público objetivo: {publico_objetivo or "clientes en general"}
+
+CONFIGURACIÓN DEL AGENTE:
+- Nombre: {nombre_agente}
+- Tono: {tono}
+- Idioma: {idioma}
+
+CAPACIDADES HABILITADAS (incluye instrucciones para usarlas):
+{caps_block}
+
+REGLAS ESPECIALES:
+{reglas_especiales or "Ninguna especificada"}
+
+INSTRUCCIONES PARA EL SYSTEM PROMPT A GENERAR:
+1. Empieza definiendo la identidad: quién es el agente, para qué empresa trabaja y cuál es su rol
+2. Establece el tono de comunicación de forma clara y con ejemplos de frases tipo
+3. Por cada capacidad habilitada, da instrucciones precisas de cuándo y cómo usarla
+4. Define qué NO debe hacer el agente (límites claros)
+5. Indica cuándo escalar a un humano y cómo hacerlo
+6. Incluye cómo manejar preguntas fuera del alcance del negocio
+7. Aplica las reglas especiales del cliente si las hay
+8. Escribe el prompt en {idioma}
+9. Máximo 700 palabras, conciso y directo
+
+IMPORTANTE: Genera ÚNICAMENTE el system prompt, sin explicaciones previas ni encabezados extra. El prompt debe comenzar directamente con las instrucciones para el agente."""
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            json={
+                "model": "gpt-4o",
+                "messages": [{"role": "user", "content": meta_prompt}],
+                "max_tokens": 1500,
+                "temperature": 0.7,
+            },
+            headers={
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    if response.status_code != 200:
+        logger.error("generate_prompt_openai_error", status_code=response.status_code)
+        raise HTTPException(status_code=502, detail="Error al generar el prompt")
+
+    result = response.json()
+    generated_prompt = result["choices"][0]["message"]["content"].strip()
+
+    logger.info("prompt_generated", empresa=empresa, modulos=modulos)
+    return {"status": "ok", "prompt": generated_prompt}
+
+
 @router.post("/internal/invalidate-cache/{client_id}")
 async def internal_invalidate_cache(client_id: str):
     """
