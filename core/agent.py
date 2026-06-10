@@ -238,9 +238,9 @@ class AgentEngine:
         ) if _svc else None
         self.calificacion = CalificacionModule(supabase_service_client or supabase_client, self.alertas) if (supabase_service_client or supabase_client) else None
         _vision_model = client_config.get("openai_vision_model") or os.environ.get("OPENAI_VISION_MODEL")
-        self.cobros = CobrosModule(supabase_client, self.client, alertas_module=self.alertas, vision_model=_vision_model) if supabase_client else None
-        self.links_pago = LinksPagoModule(supabase_client) if supabase_client else None
-        self.ventas = SalesModule(supabase_client, links_pago_module=self.links_pago, alertas_module=self.alertas) if supabase_client else None
+        self.cobros = CobrosModule(_svc, self.client, alertas_module=self.alertas, vision_model=_vision_model) if _svc else None
+        self.links_pago = LinksPagoModule(_svc) if _svc else None
+        self.ventas = SalesModule(_svc, links_pago_module=self.links_pago, alertas_module=self.alertas) if _svc else None
 
         # Context for current message (injected per-request by the router)
         self._current_media_url: Optional[str] = None
