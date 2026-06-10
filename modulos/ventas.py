@@ -37,7 +37,16 @@ class SalesModule:
                 .eq("activo", True)
                 .execute()
             )
+            print(f"[CATALOG DEBUG] response.data={response.data!r}")
             print(f"[CATALOG DEBUG] Found {len(response.data or [])} products")
+            # Also query without activo filter to detect client_id mismatch
+            all_resp = (
+                self.supabase.table("product_catalog")
+                .select("id, cliente_id, nombre, activo")
+                .eq("cliente_id", client_id)
+                .execute()
+            )
+            print(f"[CATALOG DEBUG] All products (no activo filter): {all_resp.data!r}")
             return response.data or []
         except Exception as e:
             print(f"[CATALOG DEBUG] Exception: {e}")
