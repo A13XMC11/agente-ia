@@ -29,6 +29,7 @@ class SalesModule:
     async def get_catalog(self, client_id: str) -> list[dict[str, Any]]:
         """Return active products for a client."""
         try:
+            print(f"[CATALOG DEBUG] Fetching catalog for client_id={client_id}")
             response = (
                 self.supabase.table("product_catalog")
                 .select("*")
@@ -36,8 +37,10 @@ class SalesModule:
                 .eq("activo", True)
                 .execute()
             )
+            print(f"[CATALOG DEBUG] Found {len(response.data or [])} products")
             return response.data or []
         except Exception as e:
+            print(f"[CATALOG DEBUG] Exception: {e}")
             logger.error(f"Error fetching catalog: {e}")
             return []
 
