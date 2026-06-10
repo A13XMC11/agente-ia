@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { CheckCircle, AlertTriangle, XCircle, Clock, Trash2, ExternalLink } from 'lucide-react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select } from '@/components/ui/select'
 
 interface Cliente {
   id: string
@@ -807,15 +807,14 @@ export default function ClienteDetalle() {
                 </div>
                 <div className="space-y-1">
                   <Label>Método de pago</Label>
-                  <Select value={billingMethod} onValueChange={(v) => setBillingMethod(v as typeof billingMethod)}>
-                    <SelectTrigger className="w-44">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="payphone">Payphone (app)</SelectItem>
-                      <SelectItem value="transferencia">Transferencia</SelectItem>
-                      <SelectItem value="efectivo">Efectivo</SelectItem>
-                    </SelectContent>
+                  <Select
+                    className="w-44"
+                    value={billingMethod}
+                    onChange={(e) => setBillingMethod(e.target.value as typeof billingMethod)}
+                  >
+                    <option value="payphone">Payphone (app)</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="efectivo">Efectivo</option>
                   </Select>
                 </div>
                 {billingMethod === 'payphone' && (
