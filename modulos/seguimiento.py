@@ -308,7 +308,7 @@ class SeguimientoModule:
                     continue
 
                 if hora_cita > hora_actual:
-                    tiempo_falta = datetime.combine(today, hora_cita) - now
+                    tiempo_falta = datetime.combine(today, hora_cita, tzinfo=timezone.utc) - now
                     if timedelta(minutes=0) <= tiempo_falta <= timedelta(hours=1):
                         nombre = cita.get("nombre_cliente", "Amigo/a")
                         telefono = cita.get("telefono_cliente")

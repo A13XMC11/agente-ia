@@ -17,6 +17,7 @@ import {
   Receipt,
   Megaphone,
   ShoppingBag,
+  Bell,
   LogOut,
   ChevronRight,
 } from 'lucide-react'
@@ -52,6 +53,7 @@ const clientSections = [
     label: 'Crecimiento',
     links: [
       { href: '/cliente/campanas', label: 'Campañas', icon: Megaphone },
+      { href: '/cliente/seguimientos', label: 'Seguimientos', icon: Bell },
       { href: '/cliente/catalogo', label: 'Catálogo', icon: ShoppingBag },
       { href: '/cliente/analytics', label: 'Analytics', icon: BarChart2 },
     ],

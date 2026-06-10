@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 CLIENTE_ID = "cliente-test-001"
 PHONE = "+593999111222"
+INFO = {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
 
 
 def make_supabase(leads=None, conversaciones=None, alertas=None, citas=None):
@@ -106,7 +107,7 @@ class TestSeguimientoNoDuplicado:
 
         with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)) as mock_send:
             with patch.object(module, "_ya_enviado", new=AsyncMock(return_value=True)):
-                enviados = await module._verificar_prospectos_frios(CLIENTE_ID)
+                enviados = await module._verificar_prospectos_frios(CLIENTE_ID, INFO)
 
         assert enviados == 0, "No debe enviar duplicado en ventana de 24h"
         mock_send.assert_not_called()
@@ -128,7 +129,7 @@ class TestSeguimientoNoDuplicado:
         with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)):
             with patch.object(module, "_ya_enviado", new=AsyncMock(return_value=False)):
                 with patch.object(module, "_guardar_alerta_enviada", new=AsyncMock()):
-                    enviados = await module._verificar_prospectos_frios(CLIENTE_ID)
+                    enviados = await module._verificar_prospectos_frios(CLIENTE_ID, INFO)
 
         assert enviados == 1
 
@@ -148,7 +149,7 @@ class TestSeguimientoNoDuplicado:
 
         with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)) as mock_send:
             with patch.object(module, "_ya_enviado", new=AsyncMock(return_value=False)):
-                enviados = await module._verificar_prospectos_frios(CLIENTE_ID)
+                enviados = await module._verificar_prospectos_frios(CLIENTE_ID, INFO)
 
         assert enviados == 0
         mock_send.assert_not_called()
@@ -169,7 +170,7 @@ class TestSeguimientoNoDuplicado:
 
         with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)) as mock_send:
             with patch.object(module, "_ya_enviado", new=AsyncMock(return_value=True)):
-                enviados = await module._verificar_leads_calientes(CLIENTE_ID)
+                enviados = await module._verificar_leads_calientes(CLIENTE_ID, INFO)
 
         assert enviados == 0
         mock_send.assert_not_called()
@@ -188,7 +189,7 @@ class TestSeguimientoNoDuplicado:
         module = SeguimientoModule(supabase_client=sb)
 
         with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)) as mock_send:
-            enviados = await module._verificar_recordatorio_cita_24h(CLIENTE_ID)
+            enviados = await module._verificar_recordatorio_cita_24h(CLIENTE_ID, INFO)
 
         assert enviados == 0
         mock_send.assert_not_called()
@@ -206,7 +207,7 @@ class TestSeguimientoNoDuplicado:
         module = SeguimientoModule(supabase_client=sb)
 
         with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)) as mock_send:
-            enviados = await module._verificar_prospectos_frios(CLIENTE_ID)
+            enviados = await module._verificar_prospectos_frios(CLIENTE_ID, INFO)
 
         assert enviados == 0
         mock_send.assert_not_called()
@@ -221,7 +222,7 @@ class TestSeguimientoNoDuplicado:
         module = SeguimientoModule(supabase_client=sb)
 
         # Should not raise; should return 0
-        result = await module._verificar_prospectos_frios(CLIENTE_ID)
+        result = await module._verificar_prospectos_frios(CLIENTE_ID, INFO)
         assert result == 0
 
     @pytest.mark.asyncio
@@ -242,3 +243,267 @@ class TestSeguimientoNoDuplicado:
 
         expected_keys = {"frios", "calientes", "cita_24h", "cita_1h", "post_venta", "reactivacion"}
         assert set(result.keys()) == expected_keys
+
+
+class TestHorarioEnvio:
+
+    def test_dentro_de_horario(self):
+        """Hora 10:00 local debe estar dentro del horario permitido."""
+        from modulos.seguimiento import SeguimientoModule
+
+        module = SeguimientoModule(supabase_client=MagicMock())
+        with patch("modulos.seguimiento.datetime") as mock_dt:
+            mock_now = MagicMock()
+            mock_now.hour = 10
+            mock_dt.now.return_value = mock_now
+            assert module._esta_en_horario_envio("America/Guayaquil") is True
+
+    def test_fuera_de_horario_madrugada(self):
+        """Hora 02:00 local debe estar fuera del horario permitido."""
+        from modulos.seguimiento import SeguimientoModule
+
+        module = SeguimientoModule(supabase_client=MagicMock())
+        with patch("modulos.seguimiento.datetime") as mock_dt:
+            mock_now = MagicMock()
+            mock_now.hour = 2
+            mock_dt.now.return_value = mock_now
+            assert module._esta_en_horario_envio("America/Guayaquil") is False
+
+    def test_fuera_de_horario_noche(self):
+        """Hora 21:00 local (inclusive) debe estar fuera del horario permitido."""
+        from modulos.seguimiento import SeguimientoModule
+
+        module = SeguimientoModule(supabase_client=MagicMock())
+        with patch("modulos.seguimiento.datetime") as mock_dt:
+            mock_now = MagicMock()
+            mock_now.hour = 21
+            mock_dt.now.return_value = mock_now
+            assert module._esta_en_horario_envio("America/Guayaquil") is False
+
+    @pytest.mark.asyncio
+    async def test_no_envia_frio_fuera_de_horario(self):
+        """Prospectos fríos no deben enviarse fuera de horario."""
+        from modulos.seguimiento import SeguimientoModule
+
+        sb = make_supabase(leads=[{"id": "lead-1", "nombre": "Test", "telefono": PHONE}])
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "_esta_en_horario_envio", return_value=False):
+            result = await module._verificar_prospectos_frios(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_no_envia_caliente_fuera_de_horario(self):
+        """Leads calientes no deben enviarse fuera de horario."""
+        from modulos.seguimiento import SeguimientoModule
+
+        sb = make_supabase(leads=[{"id": "lead-1", "nombre": "Test", "telefono": PHONE}])
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "_esta_en_horario_envio", return_value=False):
+            result = await module._verificar_leads_calientes(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+        assert result == 0
+
+
+class TestPostVenta:
+
+    @pytest.mark.asyncio
+    async def test_no_envia_post_venta_fuera_de_ventana(self):
+        """Post-venta no se envía si el pago tiene más de 25h o menos de 23h."""
+        from modulos.seguimiento import SeguimientoModule
+
+        now = datetime.now(timezone.utc)
+        pago_reciente = {"id": "pago-1", "sender_telefono": PHONE, "created_at": now.isoformat()}
+        pago_viejo = {"id": "pago-2", "sender_telefono": PHONE, "created_at": (now - timedelta(hours=48)).isoformat()}
+        sb = make_supabase()
+        # Override pagos data
+        orig_table = sb.table
+
+        def table_override(name):
+            tbl = orig_table(name)
+            if name == "pagos":
+                tbl.select = lambda *a: _chain_result(tbl, [pago_reciente, pago_viejo])
+            return tbl
+
+        sb.table = table_override
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "_esta_en_horario_envio", return_value=True), \
+             patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)), \
+             patch.object(module, "_ya_enviado", new=AsyncMock(return_value=False)):
+            result = await module._verificar_post_venta(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+
+        # Neither pago is in the 23-25h window so nothing should send
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_envia_post_venta_en_ventana(self):
+        """Post-venta sí se envía cuando el pago está en la ventana 23-25h."""
+        from modulos.seguimiento import SeguimientoModule
+
+        now = datetime.now(timezone.utc)
+        pago_en_ventana = {
+            "id": "pago-3",
+            "sender_telefono": PHONE,
+            "created_at": (now - timedelta(hours=24)).isoformat(),
+        }
+        sb = make_supabase()
+        orig_table = sb.table
+
+        def table_override(name):
+            tbl = orig_table(name)
+            if name == "pagos":
+                tbl.select = lambda *a: _chain_result(tbl, [pago_en_ventana])
+            return tbl
+
+        sb.table = table_override
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "_esta_en_horario_envio", return_value=True), \
+             patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)), \
+             patch.object(module, "_ya_enviado", new=AsyncMock(return_value=False)), \
+             patch.object(module, "_guardar_alerta_enviada", new=AsyncMock()), \
+             patch.object(module, "_obtener_nombre_usuario", new=AsyncMock(return_value="Cliente")):
+            result = await module._verificar_post_venta(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+
+        assert result == 1
+
+
+class TestReactivacion:
+
+    @pytest.mark.asyncio
+    async def test_no_envia_reactivacion_duplicada(self):
+        """Reactivación no se reenvía si ya fue enviada en las últimas 168h."""
+        from modulos.seguimiento import SeguimientoModule
+
+        conv = {"id": "conv-1", "usuario_id": PHONE, "canal": "whatsapp", "usuario_nombre": "Juan"}
+        sb = make_supabase(conversaciones=[conv])
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "_esta_en_horario_envio", return_value=True), \
+             patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)), \
+             patch.object(module, "_ya_enviado", new=AsyncMock(return_value=True)):
+            result = await module._verificar_reactivacion(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_envia_reactivacion_primera_vez(self):
+        """Reactivación sí se envía cuando la conversación lleva +7 días inactiva."""
+        from modulos.seguimiento import SeguimientoModule
+
+        conv = {"id": "conv-2", "usuario_id": PHONE, "canal": "whatsapp", "usuario_nombre": "Ana"}
+        sb = make_supabase(conversaciones=[conv])
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "_esta_en_horario_envio", return_value=True), \
+             patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)), \
+             patch.object(module, "_ya_enviado", new=AsyncMock(return_value=False)), \
+             patch.object(module, "_guardar_alerta_enviada", new=AsyncMock()):
+            result = await module._verificar_reactivacion(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+
+        assert result == 1
+
+
+class TestRecordatorio1h:
+
+    @pytest.mark.asyncio
+    async def test_no_envia_recordatorio_1h_si_cita_en_2h(self):
+        """Recordatorio 1h no se envía si la cita es en más de 1h."""
+        from modulos.seguimiento import SeguimientoModule
+
+        now = datetime.now(timezone.utc)
+        hora_en_2h = (now + timedelta(hours=2)).strftime("%H:%M")
+        cita = {
+            "id": "cita-1",
+            "nombre_cliente": "Pedro",
+            "hora": hora_en_2h,
+            "telefono_cliente": PHONE,
+            "fecha": now.date().isoformat(),
+            "estado": "confirmada",
+            "recordatorio_1h_enviado": False,
+        }
+        sb = make_supabase(citas=[cita])
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)):
+            result = await module._verificar_recordatorio_cita_1h(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_envia_recordatorio_1h_en_ventana(self):
+        """Recordatorio 1h sí se envía cuando la cita es dentro de los próximos 60 min."""
+        from modulos.seguimiento import SeguimientoModule
+
+        now = datetime.now(timezone.utc)
+        hora_en_45min = (now + timedelta(minutes=45)).strftime("%H:%M")
+        cita = {
+            "id": "cita-2",
+            "nombre_cliente": "Laura",
+            "hora": hora_en_45min,
+            "telefono_cliente": PHONE,
+            "fecha": now.date().isoformat(),
+            "estado": "confirmada",
+            "recordatorio_1h_enviado": False,
+        }
+        sb = make_supabase(citas=[cita])
+
+        # Need update mock on citas
+        def make_update_chain():
+            upd = MagicMock()
+            upd.eq = lambda *a: upd
+            upd.execute.return_value.data = []
+            return upd
+
+        orig_table = sb.table
+
+        def table_with_update(name):
+            tbl = orig_table(name)
+            tbl.update = lambda *a, **kw: make_update_chain()
+            return tbl
+
+        sb.table = table_with_update
+        module = SeguimientoModule(supabase_client=sb)
+
+        with patch.object(module, "enviar_seguimiento", new=AsyncMock(return_value=True)):
+            result = await module._verificar_recordatorio_cita_1h(
+                CLIENTE_ID, {"agente_nombre": "Sofia", "empresa": "LanLabs", "timezone": "America/Guayaquil"}
+            )
+
+        assert result == 1
+
+
+# ── Helpers for table overrides ─────────────────
+
+def _chain_result(tbl: MagicMock, data: list):
+    """Return a mock chain whose .limit().execute().data == data."""
+    sel = MagicMock()
+    sel.eq = lambda *a: sel
+    sel.gte = lambda *a: sel
+    sel.lte = lambda *a: sel
+    sel.lt = lambda *a: sel
+    sel.order = lambda *a, **kw: sel
+    sel.limit = lambda *a: _execute_result(data)
+    tbl.select = lambda *a: sel
+    return sel
+
+
+def _execute_result(data: list):
+    inner = MagicMock()
+    inner.execute.return_value.data = data
+    return inner
