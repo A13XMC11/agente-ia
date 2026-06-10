@@ -8,9 +8,10 @@ REQUIRED SQL MIGRATION before deployment:
 """
 
 import logging
-from datetime import datetime, timedelta, time, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,43 @@ class SeguimientoModule:
         """Close HTTP client."""
         await self.http_client.aclose()
 
+    async def _obtener_info_seguimiento(self, cliente_id: str) -> dict[str, str]:
+        """Fetch agent name, company name, and timezone for personalized follow-up messages."""
+        info: dict[str, str] = {
+            "agente_nombre": "nuestro equipo",
+            "empresa": "nosotros",
+            "timezone": "America/Guayaquil",
+        }
+        try:
+            agente_resp = self.supabase.table("agentes").select(
+                "nombre, business_hours_timezone"
+            ).eq("cliente_id", cliente_id).limit(1).execute()
+            if agente_resp.data:
+                row = agente_resp.data[0]
+                if row.get("nombre"):
+                    info["agente_nombre"] = row["nombre"]
+                if row.get("business_hours_timezone"):
+                    info["timezone"] = row["business_hours_timezone"]
+
+            cliente_resp = self.supabase.table("clientes").select(
+                "nombre_negocio"
+            ).eq("id", cliente_id).limit(1).execute()
+            if cliente_resp.data and cliente_resp.data[0].get("nombre_negocio"):
+                info["empresa"] = cliente_resp.data[0]["nombre_negocio"]
+        except Exception as e:
+            logger.error(f"Error fetching follow-up info for {cliente_id}: {e}")
+        return info
+
+    def _esta_en_horario_envio(self, timezone_str: str) -> bool:
+        """Return True if current local time is between 8:00 and 21:00 (inclusive start)."""
+        try:
+            tz = ZoneInfo(timezone_str)
+            hora_local = datetime.now(tz).hour
+            return 8 <= hora_local < 21
+        except (ZoneInfoNotFoundError, Exception):
+            hora_utc = datetime.now(timezone.utc).hour
+            return 8 <= hora_utc < 21
+
     async def verificar_seguimientos_pendientes(self, cliente_id: str) -> dict[str, int]:
         """
         Verify and send all pending follow-ups for a client.
@@ -47,13 +85,15 @@ class SeguimientoModule:
         try:
             logger.info(f"Verificando seguimientos para cliente {cliente_id}")
 
+            info = await self._obtener_info_seguimiento(cliente_id)
+
             result = {
-                "frios": await self._verificar_prospectos_frios(cliente_id),
-                "calientes": await self._verificar_leads_calientes(cliente_id),
-                "cita_24h": await self._verificar_recordatorio_cita_24h(cliente_id),
-                "cita_1h": await self._verificar_recordatorio_cita_1h(cliente_id),
-                "post_venta": await self._verificar_post_venta(cliente_id),
-                "reactivacion": await self._verificar_reactivacion(cliente_id),
+                "frios": await self._verificar_prospectos_frios(cliente_id, info),
+                "calientes": await self._verificar_leads_calientes(cliente_id, info),
+                "cita_24h": await self._verificar_recordatorio_cita_24h(cliente_id, info),
+                "cita_1h": await self._verificar_recordatorio_cita_1h(cliente_id, info),
+                "post_venta": await self._verificar_post_venta(cliente_id, info),
+                "reactivacion": await self._verificar_reactivacion(cliente_id, info),
             }
 
             total = sum(result.values())
@@ -71,23 +111,23 @@ class SeguimientoModule:
                 "frios": 0, "calientes": 0, "cita_24h": 0, "cita_1h": 0, "post_venta": 0, "reactivacion": 0
             }
 
-    async def _verificar_prospectos_frios(self, cliente_id: str) -> int:
-        """
-        Cold lead follow-up: score < 5, no response in 24h.
-
-        Message: "Hola {nombre} 👋 Hace un momento hablamos..."
-        """
+    async def _verificar_prospectos_frios(self, cliente_id: str, info: dict[str, str]) -> int:
+        """Cold lead follow-up: score < 5, active state, no response in 24h. Respects send hours."""
         try:
+            if not self._esta_en_horario_envio(info["timezone"]):
+                return 0
+
             enviados = 0
             now = datetime.now(timezone.utc)
             hace_24h = now - timedelta(hours=24)
+            agente = info["agente_nombre"]
+            empresa = info["empresa"]
 
-            # Get cold leads (score < 5, not discarded)
             response = self.supabase.table("leads").select(
                 "id, nombre, telefono"
-            ).eq(
-                "cliente_id", cliente_id
-            ).lt("score", 5).neq("estado", "descartado").limit(200).execute()
+            ).eq("cliente_id", cliente_id).lt("score", 5).neq(
+                "estado", "descartado"
+            ).neq("estado", "ganado").neq("estado", "cerrado").limit(200).execute()
 
             leads = response.data or []
             logger.debug(f"Found {len(leads)} cold leads for client {cliente_id}")
@@ -100,7 +140,6 @@ class SeguimientoModule:
                 if not telefono:
                     continue
 
-                # Check last message time
                 conv_response = self.supabase.table("conversaciones").select(
                     "fecha_ultimo_mensaje"
                 ).eq("cliente_id", cliente_id).eq(
@@ -110,18 +149,15 @@ class SeguimientoModule:
                 if not conv_response.data:
                     continue
 
-                conv = conv_response.data[0]
-                fecha_str = conv.get("fecha_ultimo_mensaje")
+                fecha_str = conv_response.data[0].get("fecha_ultimo_mensaje")
                 if not fecha_str:
                     continue
 
-                fecha_ultimo = datetime.fromisoformat(fecha_str)
-
-                # Check if 24h have passed and no duplicate alert
-                if fecha_ultimo < hace_24h:
+                if datetime.fromisoformat(fecha_str) < hace_24h:
                     if not await self._ya_enviado(cliente_id, "seguimiento_frio", lead_id, ventana_horas=24):
                         mensaje = (
-                            f"Hola {nombre} 👋 Hace un momento hablamos sobre nuestros servicios. "
+                            f"Hola {nombre} 👋 Soy {agente} de {empresa}. "
+                            f"Hace un momento hablamos sobre nuestros servicios. "
                             f"¿Pudiste revisar la información? Estoy aquí para resolver cualquier duda 😊"
                         )
                         if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
@@ -134,22 +170,23 @@ class SeguimientoModule:
             logger.error(f"Error in _verificar_prospectos_frios for {cliente_id}: {e}", exc_info=True)
             return 0
 
-    async def _verificar_leads_calientes(self, cliente_id: str) -> int:
-        """
-        Hot lead follow-up: score >= 7, no response in 2h.
-
-        Message: "Hola {nombre} 🔥 Vi que estabas muy interesado..."
-        """
+    async def _verificar_leads_calientes(self, cliente_id: str, info: dict[str, str]) -> int:
+        """Hot lead follow-up: score >= 7, active state, no response in 2h. Respects send hours."""
         try:
+            if not self._esta_en_horario_envio(info["timezone"]):
+                return 0
+
             enviados = 0
             now = datetime.now(timezone.utc)
             hace_2h = now - timedelta(hours=2)
+            agente = info["agente_nombre"]
+            empresa = info["empresa"]
 
             response = self.supabase.table("leads").select(
                 "id, nombre, telefono"
-            ).eq(
-                "cliente_id", cliente_id
-            ).gte("score", 7).limit(200).execute()
+            ).eq("cliente_id", cliente_id).gte("score", 7).neq(
+                "estado", "descartado"
+            ).neq("estado", "ganado").neq("estado", "cerrado").limit(200).execute()
 
             leads = response.data or []
             logger.debug(f"Found {len(leads)} hot leads for client {cliente_id}")
@@ -171,17 +208,15 @@ class SeguimientoModule:
                 if not conv_response.data:
                     continue
 
-                conv = conv_response.data[0]
-                fecha_str = conv.get("fecha_ultimo_mensaje")
+                fecha_str = conv_response.data[0].get("fecha_ultimo_mensaje")
                 if not fecha_str:
                     continue
 
-                fecha_ultimo = datetime.fromisoformat(fecha_str)
-
-                if fecha_ultimo < hace_2h:
+                if datetime.fromisoformat(fecha_str) < hace_2h:
                     if not await self._ya_enviado(cliente_id, "seguimiento_caliente", lead_id, ventana_horas=24):
                         mensaje = (
-                            f"Hola {nombre} 🔥 Vi que estabas muy interesado en nuestros servicios. "
+                            f"Hola {nombre} 🔥 Soy {agente} de {empresa}. "
+                            f"Vi que estabas muy interesado en nuestros servicios. "
                             f"¿Tienes alguna pregunta que pueda resolver ahora mismo?"
                         )
                         if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
@@ -194,23 +229,17 @@ class SeguimientoModule:
             logger.error(f"Error in _verificar_leads_calientes for {cliente_id}: {e}", exc_info=True)
             return 0
 
-    async def _verificar_recordatorio_cita_24h(self, cliente_id: str) -> int:
-        """
-        Appointment reminder 24h before at 9am.
-
-        Message: "Hola {nombre} 👋 Te recuerdo que mañana tienes..."
-        """
+    async def _verificar_recordatorio_cita_24h(self, cliente_id: str, info: dict[str, str]) -> int:
+        """Appointment reminder 24h before. Time-sensitive: no send-hours restriction."""
         try:
             enviados = 0
             now = datetime.now(timezone.utc)
             tomorrow = (now + timedelta(days=1)).date()
+            empresa = info["empresa"]
 
-            # Get confirmed appointments for tomorrow
             response = self.supabase.table("citas").select(
                 "id, nombre_cliente, hora, telefono_cliente, fecha"
-            ).eq(
-                "cliente_id", cliente_id
-            ).eq("estado", "confirmada").eq(
+            ).eq("cliente_id", cliente_id).eq("estado", "confirmada").eq(
                 "recordatorio_24h_enviado", False
             ).limit(200).execute()
 
@@ -223,16 +252,14 @@ class SeguimientoModule:
                 if not fecha_str:
                     continue
 
-                fecha_cita = datetime.fromisoformat(fecha_str).date()
-
-                if fecha_cita == tomorrow:
+                if datetime.fromisoformat(fecha_str).date() == tomorrow:
                     nombre = cita.get("nombre_cliente", "Amigo/a")
                     hora = cita.get("hora", "la hora acordada")
                     telefono = cita.get("telefono_cliente")
 
                     if telefono:
                         mensaje = (
-                            f"Hola {nombre} 👋 Te recuerdo que mañana tienes una cita con nosotros a las {hora}. "
+                            f"Hola {nombre} 👋 Te recuerda {empresa} que mañana tienes una cita a las {hora}. "
                             f"¿Confirmas tu asistencia? 😊"
                         )
                         if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
@@ -247,23 +274,18 @@ class SeguimientoModule:
             logger.error(f"Error in _verificar_recordatorio_cita_24h for {cliente_id}: {e}", exc_info=True)
             return 0
 
-    async def _verificar_recordatorio_cita_1h(self, cliente_id: str) -> int:
-        """
-        Appointment reminder 1h before.
-
-        Message: "Hola {nombre} ⏰ En una hora tienes tu cita..."
-        """
+    async def _verificar_recordatorio_cita_1h(self, cliente_id: str, info: dict[str, str]) -> int:
+        """Appointment reminder 1h before. Time-sensitive: no send-hours restriction."""
         try:
             enviados = 0
             now = datetime.now(timezone.utc)
             today = now.date()
             hora_actual = now.time()
+            empresa = info["empresa"]
 
             response = self.supabase.table("citas").select(
                 "id, nombre_cliente, hora, telefono_cliente, fecha"
-            ).eq(
-                "cliente_id", cliente_id
-            ).eq("estado", "confirmada").eq(
+            ).eq("cliente_id", cliente_id).eq("estado", "confirmada").eq(
                 "recordatorio_1h_enviado", False
             ).limit(200).execute()
 
@@ -277,30 +299,29 @@ class SeguimientoModule:
                 if not fecha_str or not hora_str:
                     continue
 
-                fecha_cita = datetime.fromisoformat(fecha_str).date()
+                if datetime.fromisoformat(fecha_str).date() != today:
+                    continue
 
-                if fecha_cita == today:
-                    try:
-                        hora_cita = datetime.strptime(hora_str, "%H:%M").time()
-                    except ValueError:
-                        continue
+                try:
+                    hora_cita = datetime.strptime(hora_str, "%H:%M").time()
+                except ValueError:
+                    continue
 
-                    # Check if appointment is within next 1 hour
-                    if hora_cita > hora_actual:
-                        tiempo_falta = datetime.combine(today, hora_cita) - now
-                        if timedelta(minutes=0) <= tiempo_falta <= timedelta(hours=1):
-                            nombre = cita.get("nombre_cliente", "Amigo/a")
-                            telefono = cita.get("telefono_cliente")
+                if hora_cita > hora_actual:
+                    tiempo_falta = datetime.combine(today, hora_cita) - now
+                    if timedelta(minutes=0) <= tiempo_falta <= timedelta(hours=1):
+                        nombre = cita.get("nombre_cliente", "Amigo/a")
+                        telefono = cita.get("telefono_cliente")
 
-                            if telefono:
-                                mensaje = (
-                                    f"Hola {nombre} ⏰ En una hora tienes tu cita con nosotros. ¡Te esperamos!"
-                                )
-                                if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
-                                    self.supabase.table("citas").update(
-                                        {"recordatorio_1h_enviado": True}
-                                    ).eq("id", cita_id).execute()
-                                    enviados += 1
+                        if telefono:
+                            mensaje = (
+                                f"Hola {nombre} ⏰ Te recuerda {empresa}: en una hora tienes tu cita. ¡Te esperamos!"
+                            )
+                            if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
+                                self.supabase.table("citas").update(
+                                    {"recordatorio_1h_enviado": True}
+                                ).eq("id", cita_id).execute()
+                                enviados += 1
 
             return enviados
 
@@ -308,23 +329,22 @@ class SeguimientoModule:
             logger.error(f"Error in _verificar_recordatorio_cita_1h for {cliente_id}: {e}", exc_info=True)
             return 0
 
-    async def _verificar_post_venta(self, cliente_id: str) -> int:
-        """
-        Post-sale follow-up: 24h after confirmed payment.
-
-        Message: "Hola {nombre} 😊 ¿Cómo ha sido tu experiencia..."
-        """
+    async def _verificar_post_venta(self, cliente_id: str, info: dict[str, str]) -> int:
+        """Post-sale follow-up: 24h after confirmed payment. Respects send hours."""
         try:
+            if not self._esta_en_horario_envio(info["timezone"]):
+                return 0
+
             enviados = 0
             now = datetime.now(timezone.utc)
             hace_25h = now - timedelta(hours=25)
             hace_23h = now - timedelta(hours=23)
+            agente = info["agente_nombre"]
+            empresa = info["empresa"]
 
             response = self.supabase.table("pagos").select(
                 "id, sender_telefono, created_at"
-            ).eq(
-                "cliente_id", cliente_id
-            ).eq("estado", "confirmado").limit(200).execute()
+            ).eq("cliente_id", cliente_id).eq("estado", "confirmado").limit(200).execute()
 
             pagos = response.data or []
 
@@ -340,7 +360,6 @@ class SeguimientoModule:
                 except ValueError:
                     continue
 
-                # Send follow-up 24h after payment
                 if hace_25h <= created_at <= hace_23h:
                     if not await self._ya_enviado(cliente_id, "seguimiento_post_venta", pago_id, ventana_horas=48):
                         telefono = pago.get("sender_telefono")
@@ -348,7 +367,8 @@ class SeguimientoModule:
 
                         if telefono:
                             mensaje = (
-                                f"Hola {nombre} 😊 ¿Cómo ha sido tu experiencia con nuestro servicio? "
+                                f"Hola {nombre} 😊 Soy {agente} de {empresa}. "
+                                f"¿Cómo ha sido tu experiencia con nuestro servicio? "
                                 f"Tu opinión es muy importante para nosotros."
                             )
                             if await self.enviar_seguimiento(cliente_id, telefono, mensaje):
@@ -361,22 +381,21 @@ class SeguimientoModule:
             logger.error(f"Error in _verificar_post_venta for {cliente_id}: {e}", exc_info=True)
             return 0
 
-    async def _verificar_reactivacion(self, cliente_id: str) -> int:
-        """
-        Reactivation follow-up: 7 days without activity (WhatsApp only).
-
-        Message: "Hola {nombre} 👋 Hace tiempo que no sabemos de ti..."
-        """
+    async def _verificar_reactivacion(self, cliente_id: str, info: dict[str, str]) -> int:
+        """Reactivation follow-up: 7 days without activity (WhatsApp only). Respects send hours."""
         try:
+            if not self._esta_en_horario_envio(info["timezone"]):
+                return 0
+
             enviados = 0
             now = datetime.now(timezone.utc)
             hace_7d = now - timedelta(days=7)
+            agente = info["agente_nombre"]
+            empresa = info["empresa"]
 
             response = self.supabase.table("conversaciones").select(
                 "id, usuario_id, canal, usuario_nombre, fecha_ultimo_mensaje"
-            ).eq(
-                "cliente_id", cliente_id
-            ).eq("canal", "whatsapp").lt(
+            ).eq("cliente_id", cliente_id).eq("canal", "whatsapp").lt(
                 "fecha_ultimo_mensaje", hace_7d.isoformat()
             ).limit(200).execute()
 
@@ -393,8 +412,8 @@ class SeguimientoModule:
 
                 if not await self._ya_enviado(cliente_id, "reactivacion", conv_id, ventana_horas=168):
                     mensaje = (
-                        f"Hola {nombre} 👋 Hace tiempo que no sabemos de ti. "
-                        f"¿Hay algo en lo que podamos ayudarte?"
+                        f"Hola {nombre} 👋 Soy {agente} de {empresa}. "
+                        f"Hace tiempo que no sabemos de ti. ¿Hay algo en lo que podamos ayudarte?"
                     )
                     if await self.enviar_seguimiento(cliente_id, usuario_id, mensaje):
                         await self._guardar_alerta_enviada(cliente_id, "reactivacion", conv_id, mensaje)
