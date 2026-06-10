@@ -1,25 +1,54 @@
-import { CreditCard, CheckCircle, AlertTriangle, XCircle, Clock, HelpCircle, Mail } from 'lucide-react'
+import { CreditCard, CheckCircle, AlertTriangle, XCircle, Clock, HelpCircle, Mail, Building2, MapPin } from 'lucide-react'
 import { getServerSession } from '@/lib/server-auth'
-import { supabase } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import ProofUpload from './ProofUpload'
 
 /* ── Types ─────────────────────────────────────────── */
-type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending_payment'
+type SubscriptionStatus =
+  | 'active'
+  | 'past_due'
+  | 'cancelled'
+  | 'trialing'
+  | 'pending_payment'
+  | 'proof_submitted'
+
+type PaymentMethod = 'payphone' | 'transferencia' | 'efectivo'
 
 interface Subscription {
   id: string
   cliente_id: string
-  payphone_client_transaction_id: string | null
-  payphone_transaction_id: string | null
   monthly_amount: number
   status: SubscriptionStatus
+  payment_method: PaymentMethod | null
   current_period_start: string | null
   current_period_end: string | null
   next_billing_date: string | null
   last_payment_date: string | null
   payment_failed_count: number
   cancelled_date: string | null
+  pending_proof_url: string | null
   created_at: string
+}
+
+interface SubscriptionPayment {
+  id: string
+  payment_method: PaymentMethod
+  amount: number
+  status: 'pending' | 'proof_submitted' | 'paid' | 'rejected'
+  period_start: string | null
+  period_end: string | null
+  verified_at: string | null
+  created_at: string
+}
+
+interface PlatformBankInfo {
+  banco: string
+  tipo_cuenta: string
+  numero_cuenta: string
+  titular: string
+  ruc: string
+  cash_address: string
 }
 
 /* ── Status config ─────────────────────────────────── */
@@ -39,14 +68,21 @@ const STATUS_CONFIG: Record<SubscriptionStatus, {
   },
   past_due: {
     label: 'Pago pendiente',
-    description: 'No pudimos confirmar tu último pago. Contacta a soporte para enviar un nuevo link de pago.',
+    description: 'Hay un problema con tu último pago. Realiza el pago para reactivar tu agente.',
     icon: AlertTriangle,
     iconColor: 'text-warning',
     badgeCls: 'bg-warning/10 text-warning border border-warning/20',
   },
   pending_payment: {
     label: 'Esperando pago',
-    description: 'Se generó un link de pago. Completa el pago para activar tu suscripción.',
+    description: 'Tu suscripción está lista. Completa el pago para activar tu agente.',
+    icon: Clock,
+    iconColor: 'text-accent',
+    badgeCls: 'bg-accent/10 text-accent border border-accent/20',
+  },
+  proof_submitted: {
+    label: 'Comprobante en revisión',
+    description: 'Recibimos tu comprobante. El equipo de LanLabs lo revisará pronto.',
     icon: Clock,
     iconColor: 'text-accent',
     badgeCls: 'bg-accent/10 text-accent border border-accent/20',
@@ -67,6 +103,20 @@ const STATUS_CONFIG: Record<SubscriptionStatus, {
   },
 }
 
+const PAYMENT_STATUS_LABEL: Record<SubscriptionPayment['status'], string> = {
+  pending: 'Pendiente',
+  proof_submitted: 'En revisión',
+  paid: 'Pagado',
+  rejected: 'Rechazado',
+}
+
+const PAYMENT_STATUS_CLS: Record<SubscriptionPayment['status'], string> = {
+  pending: 'bg-accent/10 text-accent border-accent/20',
+  proof_submitted: 'bg-accent/10 text-accent border-accent/20',
+  paid: 'bg-success/10 text-success border-success/20',
+  rejected: 'bg-error/10 text-error border-error/20',
+}
+
 /* ── Helpers ───────────────────────────────────────── */
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
@@ -77,19 +127,15 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
-/* ── Data fetching ─────────────────────────────────── */
-async function getSubscription(clienteId: string): Promise<Subscription | null> {
-  const { data, error } = await supabase
-    .from('subscription')
-    .select('*')
-    .eq('cliente_id', clienteId)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[BILLING] Error fetching subscription:', error)
-    return null
+function getPlatformBankInfo(): PlatformBankInfo {
+  return {
+    banco: process.env.LANLABS_BANCO ?? '',
+    tipo_cuenta: process.env.LANLABS_TIPO_CUENTA ?? '',
+    numero_cuenta: process.env.LANLABS_NUMERO_CUENTA ?? '',
+    titular: process.env.LANLABS_TITULAR ?? '',
+    ruc: process.env.LANLABS_RUC ?? '',
+    cash_address: process.env.LANLABS_CASH_ADDRESS ?? '',
   }
-  return data
 }
 
 /* ── Info row ──────────────────────────────────────── */
@@ -124,20 +170,149 @@ function NoSubscription() {
   )
 }
 
+/* ── Bank transfer instructions ────────────────────── */
+function TransferenciaInstructions({
+  bank,
+  amount,
+  status,
+}: {
+  bank: PlatformBankInfo
+  amount: number
+  status: SubscriptionStatus
+}) {
+  const needsPayment = status === 'pending_payment' || status === 'past_due'
+  const inReview = status === 'proof_submitted'
+
+  return (
+    <div className="stagger-4 rounded-xl border border-border bg-card-bg p-6 space-y-5">
+      <div className="flex items-center gap-2">
+        <Building2 className="h-4 w-4 text-accent" />
+        <h3 className="text-sm font-semibold text-text-primary">Datos para transferencia</h3>
+      </div>
+
+      <div className="rounded-lg bg-surface border border-border divide-y divide-border">
+        {bank.banco && <InfoRow label="Banco" value={bank.banco} />}
+        {bank.tipo_cuenta && <InfoRow label="Tipo de cuenta" value={bank.tipo_cuenta} />}
+        {bank.numero_cuenta && <InfoRow label="Número de cuenta" value={bank.numero_cuenta} />}
+        {bank.titular && <InfoRow label="Titular" value={bank.titular} />}
+        {bank.ruc && <InfoRow label="RUC / Cédula" value={bank.ruc} />}
+        <InfoRow label="Monto a transferir" value={formatCurrency(amount)} />
+      </div>
+
+      {inReview ? (
+        <div className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/5 p-4">
+          <Clock className="h-5 w-5 text-accent shrink-0" />
+          <p className="text-sm text-text-secondary">
+            Tu comprobante está siendo revisado. Te notificaremos cuando sea aprobado.
+          </p>
+        </div>
+      ) : needsPayment ? (
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            Realiza la transferencia por el monto exacto y sube el comprobante.
+          </p>
+          <ProofUpload />
+        </div>
+      ) : (
+        <p className="text-sm text-text-muted">
+          Tu suscripción está activa. Al próximo vencimiento deberás realizar una nueva transferencia.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ── Cash instructions ─────────────────────────────── */
+function EfectivoInstructions({ bank }: { bank: PlatformBankInfo }) {
+  return (
+    <div className="stagger-4 rounded-xl border border-border bg-card-bg p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <MapPin className="h-4 w-4 text-accent" />
+        <h3 className="text-sm font-semibold text-text-primary">Pago en efectivo</h3>
+      </div>
+      <p className="text-sm text-text-secondary">
+        Acércate a nuestras instalaciones para realizar el pago en efectivo.
+      </p>
+      {bank.cash_address && (
+        <div className="rounded-lg bg-surface border border-border p-4">
+          <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Dirección</p>
+          <p className="text-sm font-medium text-text-primary">{bank.cash_address}</p>
+        </div>
+      )}
+      <p className="text-xs text-text-muted">
+        Una vez recibido el pago, nuestro equipo activará o renovará tu suscripción.
+      </p>
+    </div>
+  )
+}
+
+/* ── Payment history ───────────────────────────────── */
+function PaymentHistory({ payments }: { payments: SubscriptionPayment[] }) {
+  if (payments.length === 0) return null
+
+  return (
+    <div className="stagger-5 rounded-xl border border-border bg-card-bg p-6 space-y-4">
+      <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Historial de pagos</h3>
+      <div className="space-y-2">
+        {payments.map((p) => (
+          <div key={p.id} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+            <div>
+              <p className="text-sm font-medium text-text-primary">
+                {formatCurrency(p.amount)}
+                <span className="ml-2 text-xs text-text-muted capitalize">{p.payment_method}</span>
+              </p>
+              {p.period_start && p.period_end && (
+                <p className="text-xs text-text-muted mt-0.5">
+                  {formatDate(p.period_start)} — {formatDate(p.period_end)}
+                </p>
+              )}
+            </div>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PAYMENT_STATUS_CLS[p.status]}`}>
+              {PAYMENT_STATUS_LABEL[p.status]}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ── Page ──────────────────────────────────────────── */
 export default async function BillingPage() {
   const session = await getServerSession()
   if (!session?.cliente_id) redirect('/login')
 
-  const subscription = await getSubscription(session.cliente_id)
+  const supabase = createServerClient()
+
+  const { data: subscription } = await supabase
+    .from('subscription')
+    .select('*')
+    .eq('cliente_id', session.cliente_id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let payments: SubscriptionPayment[] = []
+  if (subscription?.id) {
+    const { data: paymentsData } = await supabase
+      .from('subscription_payments')
+      .select('id, payment_method, amount, status, period_start, period_end, verified_at, created_at')
+      .eq('subscription_id', subscription.id)
+      .order('created_at', { ascending: false })
+      .limit(12)
+    payments = (paymentsData ?? []) as SubscriptionPayment[]
+  }
 
   const statusCfg = subscription
-    ? STATUS_CONFIG[subscription.status] ?? STATUS_CONFIG.active
+    ? (STATUS_CONFIG[subscription.status as SubscriptionStatus] ?? STATUS_CONFIG.active)
     : null
 
   const daysUntilBilling = subscription?.next_billing_date
     ? Math.max(0, Math.ceil((new Date(subscription.next_billing_date).getTime() - Date.now()) / 86_400_000))
     : null
+
+  const paymentMethod = (subscription?.payment_method ?? 'payphone') as PaymentMethod
+  const bankInfo = getPlatformBankInfo()
 
   return (
     <div className="space-y-8 max-w-2xl">
@@ -221,21 +396,40 @@ export default async function BillingPage() {
             </div>
           </div>
 
-          {/* Payment info — Payphone */}
-          <div className="stagger-4 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-text-primary">Método de pago</p>
-              <p className="text-xs text-text-muted mt-0.5">
-                Los cobros se realizan mediante Payphone. Si necesitas actualizar tu método de pago o tienes problemas con un cobro, contáctanos.
-              </p>
+          {/* Payment method — context-aware */}
+          {paymentMethod === 'payphone' && (
+            <div className="stagger-4 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Método de pago</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Los cobros se realizan mediante Payphone. Si tienes problemas, contáctanos.
+                </p>
+              </div>
+              <div className="shrink-0 text-xs font-semibold text-accent bg-accent/10 border border-accent/20 rounded-lg px-3 py-1.5">
+                Payphone
+              </div>
             </div>
-            <div className="shrink-0 text-xs font-semibold text-accent bg-accent/10 border border-accent/20 rounded-lg px-3 py-1.5">
-              Payphone
-            </div>
-          </div>
+          )}
+
+          {paymentMethod === 'transferencia' && (
+            <TransferenciaInstructions
+              bank={bankInfo}
+              amount={subscription.monthly_amount}
+              status={subscription.status as SubscriptionStatus}
+            />
+          )}
+
+          {paymentMethod === 'efectivo' && (
+            <EfectivoInstructions bank={bankInfo} />
+          )}
+
+          {/* Payment history (manual methods) */}
+          {paymentMethod !== 'payphone' && payments.length > 0 && (
+            <PaymentHistory payments={payments} />
+          )}
 
           {/* Support */}
-          <div className="stagger-5 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
+          <div className="stagger-6 rounded-xl border border-border bg-card-bg p-5 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-text-primary">¿Problemas con tu facturación?</p>
               <p className="text-xs text-text-muted mt-0.5">Contacta a soporte y te ayudamos de inmediato.</p>

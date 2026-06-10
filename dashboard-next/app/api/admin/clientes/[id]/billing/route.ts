@@ -42,13 +42,20 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const { id: clienteId } = await params
     const body = await req.json()
-    const { monthly_amount, phone_number, country_code = '593' } = body
+    const { monthly_amount, phone_number, country_code = '593', payment_method = 'payphone' } = body
 
     if (!monthly_amount || isNaN(Number(monthly_amount)) || Number(monthly_amount) <= 0) {
       return NextResponse.json({ success: false, error: 'monthly_amount requerido y debe ser positivo' }, { status: 400 })
     }
-    if (!phone_number || typeof phone_number !== 'string' || !phone_number.trim()) {
-      return NextResponse.json({ success: false, error: 'phone_number (teléfono Payphone del cliente) es requerido' }, { status: 400 })
+
+    if (payment_method === 'payphone') {
+      if (!phone_number || typeof phone_number !== 'string' || !phone_number.trim()) {
+        return NextResponse.json({ success: false, error: 'phone_number (teléfono Payphone del cliente) es requerido' }, { status: 400 })
+      }
+    }
+
+    if (!['payphone', 'transferencia', 'efectivo'].includes(payment_method)) {
+      return NextResponse.json({ success: false, error: 'payment_method inválido' }, { status: 400 })
     }
 
     // Block only if there's an active/past_due subscription
@@ -74,7 +81,6 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ success: false, error: 'Cliente no encontrado' }, { status: 404 })
     }
 
-    // Create via backend API (Payphone payment link + DB insert)
     const apiUrl = process.env.NEXT_PUBLIC_API_URL
     if (!apiUrl) {
       return NextResponse.json({ success: false, error: 'API_URL no configurada' }, { status: 500 })
@@ -89,8 +95,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       body: JSON.stringify({
         client_id: clienteId,
         monthly_amount: Number(monthly_amount),
-        phone_number: phone_number.trim(),
-        country_code: String(country_code),
+        payment_method,
+        ...(payment_method === 'payphone' && {
+          phone_number: phone_number.trim(),
+          country_code: String(country_code),
+        }),
         customer_email: cliente.email,
       }),
     })
@@ -112,8 +121,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   }
 }
 
-/* ── PATCH — manually activate subscription (interim while Notificación Externa pending) ── */
-export async function PATCH(_req: NextRequest, { params }: RouteContext) {
+/* ── PATCH — activate / verify / renew subscription ── */
+export async function PATCH(req: NextRequest, { params }: RouteContext) {
   try {
     const session = await getServerSession()
     if (!session || session.role !== 'super_admin') {
@@ -121,24 +130,50 @@ export async function PATCH(_req: NextRequest, { params }: RouteContext) {
     }
 
     const { id: clienteId } = await params
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>
+    const action = (body.action as string) ?? 'activate'
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL
     if (!apiUrl) {
       return NextResponse.json({ success: false, error: 'API_URL no configurada' }, { status: 500 })
     }
 
-    const apiRes = await fetch(`${apiUrl}/api/billing/manual-activate`, {
+    const internalHeaders = {
+      'Content-Type': 'application/json',
+      'X-Internal-Secret': process.env.INTERNAL_API_SECRET ?? '',
+    }
+
+    let endpoint: string
+    let bodyPayload: Record<string, unknown>
+
+    if (action === 'verify') {
+      endpoint = `${apiUrl}/api/billing/verify-manual`
+      bodyPayload = {
+        client_id: clienteId,
+        approve: Boolean(body.approve),
+        notes: body.notes ?? null,
+      }
+    } else if (action === 'renew') {
+      endpoint = `${apiUrl}/api/billing/renew-manual`
+      bodyPayload = { client_id: clienteId }
+    } else {
+      // Default: 'activate' (Payphone manual activation)
+      endpoint = `${apiUrl}/api/billing/manual-activate`
+      bodyPayload = { client_id: clienteId }
+    }
+
+    const apiRes = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Secret': process.env.INTERNAL_API_SECRET ?? '',
-      },
-      body: JSON.stringify({ client_id: clienteId }),
+      headers: internalHeaders,
+      body: JSON.stringify(bodyPayload),
     })
 
     if (!apiRes.ok) {
-      const errBody = await apiRes.json().catch(() => ({}))
-      return NextResponse.json({ success: false, error: errBody.detail || 'Error al activar suscripción' }, { status: 502 })
+      const errBody = await apiRes.json().catch(() => ({})) as Record<string, string>
+      return NextResponse.json(
+        { success: false, error: errBody.detail ?? `Error al ejecutar acción: ${action}` },
+        { status: 502 },
+      )
     }
 
     return NextResponse.json({ success: true })

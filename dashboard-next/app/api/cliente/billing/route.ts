@@ -20,7 +20,19 @@ export async function GET() {
       return NextResponse.json({ success: false, error: 'Error al obtener suscripción' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, data: data ?? null })
+    // Fetch recent payment history for manual methods
+    let payments: unknown[] = []
+    if (data?.id) {
+      const { data: paymentsData } = await supabase
+        .from('subscription_payments')
+        .select('id, payment_method, amount, status, period_start, period_end, verified_at, created_at')
+        .eq('subscription_id', data.id)
+        .order('created_at', { ascending: false })
+        .limit(12)
+      payments = paymentsData ?? []
+    }
+
+    return NextResponse.json({ success: true, data: data ?? null, payments })
   } catch (error) {
     console.error('[BILLING] Unexpected error:', error)
     return NextResponse.json({ success: false, error: 'Error interno' }, { status: 500 })

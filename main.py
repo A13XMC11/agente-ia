@@ -28,6 +28,7 @@ from seguridad.auth import AuthManager
 from seguridad.rate_limiter import RateLimiter
 from seguridad.validator import WebhookValidator
 from billing.payphone import PayphoneBilling
+from billing.manual import ManualBilling
 import app_state as state  # shared mutable service instances
 
 
@@ -482,6 +483,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error("payphone_billing_init_error", error=str(e))
             state.payphone_billing = None
+
+        # 9. Initialize ManualBilling (bank transfer + cash)
+        try:
+            state.manual_billing = ManualBilling(
+                supabase_client=state.supabase_service_client,
+            )
+            logger.info("manual_billing_initialized")
+        except Exception as e:
+            logger.error("manual_billing_init_error", error=str(e))
+            state.manual_billing = None
 
         startup_ok = True
         logger.info("application_startup_complete")

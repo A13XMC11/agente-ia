@@ -20,3 +20,4 @@ catalog_sync_module: Optional[Any] = None
 campanas_module: Optional[Any] = None
 scheduler: Optional[Any] = None
 payphone_billing: Optional[Any] = None
+manual_billing: Optional[Any] = None

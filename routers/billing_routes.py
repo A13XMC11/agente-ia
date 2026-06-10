@@ -1,4 +1,4 @@
-"""Billing endpoints — Payphone subscription management."""
+"""Billing endpoints — Payphone subscription management and manual methods."""
 import hmac
 import os
 from typing import Any
@@ -42,35 +42,50 @@ async def _resolve_caller(request: Request) -> dict[str, Any]:
 @router.post("/api/billing/create-payment-link")
 async def create_payment_link(request: Request):
     """
-    Initiate a Payphone sale request for a client's monthly subscription.
+    Create a subscription. Routes to Payphone or manual billing based on payment_method.
 
-    Sends a push notification to the client's Payphone app. The client
-    approves or rejects within 5 minutes. Payphone then calls our webhook.
-
-    Body: { client_id, monthly_amount, phone_number, country_code? }
-    Accepts JWT (super_admin) or X-Internal-Secret (dashboard server).
-    Returns: { transaction_id, client_transaction_id }
+    Body (Payphone):    { client_id, monthly_amount, phone_number, country_code?, payment_method='payphone' }
+    Body (transferencia/efectivo): { client_id, monthly_amount, payment_method }
+    Accepts JWT (super_admin) or X-Internal-Secret.
     """
-    if not state.payphone_billing:
-        raise HTTPException(status_code=503, detail="Billing service not configured")
-
     user = await _resolve_caller(request)
     body = await request.json()
 
     monthly_amount = body.get("monthly_amount")
-    phone_number = body.get("phone_number")
-    country_code = body.get("country_code", "593")
+    payment_method = body.get("payment_method", "payphone")
 
     if user.get("role") == "super_admin":
         client_id = body.get("client_id") or user.get("client_id")
     else:
         client_id = user.get("client_id")
 
-    if not client_id or not monthly_amount or not phone_number:
-        raise HTTPException(
-            status_code=400,
-            detail="client_id, monthly_amount and phone_number are required",
+    if not client_id or not monthly_amount:
+        raise HTTPException(status_code=400, detail="client_id and monthly_amount are required")
+
+    if payment_method in ("transferencia", "efectivo"):
+        if not state.manual_billing:
+            raise HTTPException(status_code=503, detail="Manual billing service not configured")
+
+        result = state.manual_billing.create_subscription(
+            client_id=str(client_id),
+            monthly_amount=float(monthly_amount),
+            payment_method=payment_method,
         )
+        if not result:
+            raise HTTPException(status_code=502, detail="Failed to create manual subscription")
+
+        logger.info("manual_subscription_created", client_id=client_id, method=payment_method)
+        return {"status": "ok", "payment_method": payment_method}
+
+    # Default: Payphone
+    if not state.payphone_billing:
+        raise HTTPException(status_code=503, detail="Billing service not configured")
+
+    phone_number = body.get("phone_number")
+    country_code = body.get("country_code", "593")
+
+    if not phone_number:
+        raise HTTPException(status_code=400, detail="phone_number is required for Payphone")
 
     result = await state.payphone_billing.create_sale(
         client_id=client_id,
@@ -87,6 +102,7 @@ async def create_payment_link(request: Request):
         "status": "ok",
         "transaction_id": result["transaction_id"],
         "client_transaction_id": result["client_transaction_id"],
+        "payment_method": "payphone",
     }
 
 
@@ -199,3 +215,132 @@ async def cancel_subscription(request: Request):
 
     logger.info("subscription_cancelled", client_id=client_id)
     return {"status": "ok"}
+
+
+@router.post("/api/billing/submit-proof")
+async def submit_proof(request: Request):
+    """
+    Record that a client uploaded a bank transfer proof.
+
+    Body: { client_id, proof_url }
+    Accepts JWT (any role) or X-Internal-Secret.
+    """
+    if not state.manual_billing:
+        raise HTTPException(status_code=503, detail="Manual billing service not configured")
+
+    user = await _resolve_caller(request)
+    body = await request.json()
+
+    if user.get("role") == "super_admin" or user.get("_internal"):
+        client_id = body.get("client_id") or user.get("client_id")
+    else:
+        client_id = user.get("client_id")
+
+    proof_url = body.get("proof_url")
+
+    if not client_id or not proof_url:
+        raise HTTPException(status_code=400, detail="client_id and proof_url are required")
+
+    success = state.manual_billing.submit_proof(
+        client_id=str(client_id),
+        proof_url=str(proof_url),
+    )
+
+    if not success:
+        raise HTTPException(status_code=502, detail="Failed to record proof submission")
+
+    logger.info("transfer_proof_submitted", client_id=client_id)
+    return {"status": "ok"}
+
+
+@router.post("/api/billing/verify-manual")
+async def verify_manual_payment(request: Request):
+    """
+    Admin approves or rejects a manual payment proof.
+
+    Body: { client_id, approve: bool, notes?: str }
+    Accepts JWT (super_admin) or X-Internal-Secret.
+    """
+    if not state.manual_billing:
+        raise HTTPException(status_code=503, detail="Manual billing service not configured")
+
+    user = await _resolve_caller(request)
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can verify payments")
+
+    body = await request.json()
+    client_id = body.get("client_id")
+    approve = body.get("approve")
+    notes = body.get("notes")
+
+    if not client_id or approve is None:
+        raise HTTPException(status_code=400, detail="client_id and approve are required")
+
+    verified_by = user.get("email") or user.get("sub") or "admin"
+
+    success = state.manual_billing.verify_payment(
+        client_id=str(client_id),
+        approve=bool(approve),
+        verified_by=str(verified_by),
+        notes=str(notes) if notes else None,
+    )
+
+    if not success:
+        raise HTTPException(status_code=502, detail="Failed to verify payment")
+
+    action = "approved" if approve else "rejected"
+    logger.info("manual_payment_verified", client_id=client_id, action=action)
+    return {"status": "ok", "action": action}
+
+
+@router.post("/api/billing/renew-manual")
+async def renew_manual_subscription(request: Request):
+    """
+    Roll a manual subscription forward one month (admin action).
+
+    Body: { client_id }
+    Accepts JWT (super_admin) or X-Internal-Secret.
+    """
+    if not state.manual_billing:
+        raise HTTPException(status_code=503, detail="Manual billing service not configured")
+
+    user = await _resolve_caller(request)
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can renew subscriptions")
+
+    body = await request.json()
+    client_id = body.get("client_id")
+
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+
+    verified_by = user.get("email") or user.get("sub") or "admin"
+
+    success = state.manual_billing.renew(
+        client_id=str(client_id),
+        verified_by=str(verified_by),
+    )
+
+    if not success:
+        raise HTTPException(status_code=502, detail="Failed to renew subscription")
+
+    logger.info("manual_subscription_renewed", client_id=client_id)
+    return {"status": "ok"}
+
+
+@router.get("/api/billing/due-manual")
+async def get_due_manual_subscriptions(request: Request):
+    """
+    List manual subscriptions due or overdue within the next 3 days.
+
+    Accepts JWT (super_admin) or X-Internal-Secret.
+    """
+    if not state.manual_billing:
+        raise HTTPException(status_code=503, detail="Manual billing service not configured")
+
+    user = await _resolve_caller(request)
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can view due subscriptions")
+
+    due = state.manual_billing.get_due_subscriptions()
+    return {"status": "ok", "data": due}

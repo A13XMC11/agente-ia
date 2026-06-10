@@ -9,7 +9,8 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CheckCircle, AlertTriangle, XCircle, Clock, Trash2 } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, Clock, Trash2, ExternalLink } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface Cliente {
   id: string
@@ -23,11 +24,14 @@ interface Cliente {
 }
 
 interface Subscription {
-  status: 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending_payment'
+  id?: string
+  status: 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending_payment' | 'proof_submitted'
   monthly_amount: number
   next_billing_date: string | null
   current_period_end: string | null
   payment_failed_count: number
+  payment_method?: 'payphone' | 'transferencia' | 'efectivo'
+  pending_proof_url?: string | null
 }
 
 interface Agente {
@@ -80,6 +84,7 @@ export default function ClienteDetalle() {
   const [agenteDraft, setAgenteDraft] = useState<Agente | null>(null)
   const [billingAmount, setBillingAmount] = useState('')
   const [billingPhone, setBillingPhone] = useState('')
+  const [billingMethod, setBillingMethod] = useState<'payphone' | 'transferencia' | 'efectivo'>('payphone')
   const [billingLoading, setBillingLoading] = useState(false)
   const [isPollingBilling, setIsPollingBilling] = useState(false)
 
@@ -243,17 +248,28 @@ export default function ClienteDetalle() {
   async function handleCreateSubscription() {
     const amount = parseFloat(billingAmount)
     if (!amount || amount <= 0) return alert('Ingresa un monto válido')
-    if (!billingPhone.trim()) return alert('Ingresa el número de teléfono Payphone del cliente')
+    if (billingMethod === 'payphone' && !billingPhone.trim()) {
+      return alert('Ingresa el número de teléfono Payphone del cliente')
+    }
     setBillingLoading(true)
     try {
       const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ monthly_amount: amount, phone_number: billingPhone.trim(), country_code: '593' }),
+        body: JSON.stringify({
+          monthly_amount: amount,
+          payment_method: billingMethod,
+          ...(billingMethod === 'payphone' && { phone_number: billingPhone.trim(), country_code: '593' }),
+        }),
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        alert('Suscripción creada. El cliente recibirá una notificación en su app Payphone para aprobar el pago.')
+        const msgs: Record<string, string> = {
+          payphone: 'Suscripción creada. El cliente recibirá una notificación en su app Payphone para aprobar el pago.',
+          transferencia: 'Suscripción creada. El cliente deberá realizar la transferencia y subir el comprobante.',
+          efectivo: 'Suscripción creada. El cliente debe pagar en efectivo en las instalaciones.',
+        }
+        alert(msgs[billingMethod] ?? 'Suscripción creada.')
         const refreshed = await fetch(`/api/admin/clientes/${clienteId}/billing`)
         if (refreshed.ok) setSubscription((await refreshed.json()).data)
         setBillingAmount('')
@@ -272,7 +288,11 @@ export default function ClienteDetalle() {
     if (!confirm('¿Confirmas que verificaste el pago en el dashboard de Payphone y quieres activar la suscripción?')) return
     setBillingLoading(true)
     try {
-      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, { method: 'PATCH' })
+      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'activate' }),
+      })
       const data = await res.json()
       if (res.ok && data.success) {
         alert('Suscripción activada correctamente')
@@ -281,6 +301,55 @@ export default function ClienteDetalle() {
         setSubscription(refreshedData.data ?? null)
       } else {
         alert(data.error || 'Error al activar suscripción')
+      }
+    } catch {
+      alert('Error de red')
+    } finally {
+      setBillingLoading(false)
+    }
+  }
+
+  async function handleVerifyPayment(approve: boolean) {
+    const action = approve ? 'aprobar' : 'rechazar'
+    if (!confirm(`¿${approve ? 'Aprobar' : 'Rechazar'} el comprobante de transferencia?`)) return
+    setBillingLoading(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify', approve }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert(approve ? 'Pago aprobado. Suscripción activa.' : 'Comprobante rechazado. El cliente deberá enviar uno nuevo.')
+        const refreshed = await fetch(`/api/admin/clientes/${clienteId}/billing`)
+        if (refreshed.ok) setSubscription((await refreshed.json()).data)
+      } else {
+        alert(data.error || `Error al ${action} el pago`)
+      }
+    } catch {
+      alert('Error de red')
+    } finally {
+      setBillingLoading(false)
+    }
+  }
+
+  async function handleRenewSubscription() {
+    if (!confirm('¿Registrar el pago de este mes y renovar la suscripción por 30 días?')) return
+    setBillingLoading(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${clienteId}/billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'renew' }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert('Suscripción renovada por 30 días.')
+        const refreshed = await fetch(`/api/admin/clientes/${clienteId}/billing`)
+        if (refreshed.ok) setSubscription((await refreshed.json()).data)
+      } else {
+        alert(data.error || 'Error al renovar suscripción')
       }
     } catch {
       alert('Error de red')
@@ -616,7 +685,7 @@ export default function ClienteDetalle() {
       <Card>
         <CardHeader>
           <CardTitle>Facturación</CardTitle>
-          <CardDescription>Suscripción Payphone de este cliente</CardDescription>
+          <CardDescription>Suscripción mensual de este cliente</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {subscription && subscription.status !== 'cancelled' ? (
@@ -624,9 +693,16 @@ export default function ClienteDetalle() {
               <div className="flex items-center gap-3">
                 {subscription.status === 'active' && <CheckCircle className="h-5 w-5 text-success" />}
                 {subscription.status === 'past_due' && <AlertTriangle className="h-5 w-5 text-warning" />}
-                {subscription.status === 'pending_payment' && <Clock className="h-5 w-5 text-accent" />}
+                {(subscription.status === 'pending_payment' || subscription.status === 'proof_submitted') && <Clock className="h-5 w-5 text-accent" />}
                 <div>
-                  <p className="font-semibold text-text-primary capitalize">{subscription.status.replace('_', ' ')}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-text-primary capitalize">{subscription.status.replace(/_/g, ' ')}</p>
+                    {subscription.payment_method && subscription.payment_method !== 'payphone' && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20 capitalize">
+                        {subscription.payment_method}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-text-secondary">
                     ${subscription.monthly_amount}/mes
                     {subscription.next_billing_date && (
@@ -636,25 +712,65 @@ export default function ClienteDetalle() {
                       <> · {subscription.payment_failed_count} pago(s) fallido(s)</>
                     )}
                   </p>
-                  {subscription.status === 'pending_payment' && (
+                  {subscription.status === 'pending_payment' && subscription.payment_method === 'payphone' && (
                     <p className="text-xs text-text-secondary mt-1">
                       {isPollingBilling
                         ? 'Verificando pago automáticamente...'
                         : 'Esperando aprobación del cliente en su app Payphone. Si ya pagó, actívala manualmente.'}
                     </p>
                   )}
+                  {subscription.status === 'pending_payment' && subscription.payment_method !== 'payphone' && (
+                    <p className="text-xs text-text-secondary mt-1">
+                      Esperando que el cliente realice el pago.
+                    </p>
+                  )}
+                  {subscription.status === 'proof_submitted' && (
+                    <p className="text-xs text-accent mt-1 font-medium">
+                      ¡El cliente subió un comprobante! Verifica y aprueba o rechaza.
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {subscription.status === 'pending_payment' && (
-                  <Button
-                    onClick={handleManualActivate}
-                    disabled={billingLoading}
-                    className="w-full sm:w-auto"
+
+              {/* Proof review for transfers */}
+              {subscription.status === 'proof_submitted' && subscription.pending_proof_url && (
+                <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 space-y-3">
+                  <p className="text-sm font-medium text-text-primary">Comprobante de transferencia</p>
+                  <a
+                    href={subscription.pending_proof_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
                   >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Ver comprobante
+                  </a>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => handleVerifyPayment(true)} disabled={billingLoading}>
+                      {billingLoading ? '...' : 'Aprobar'}
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleVerifyPayment(false)} disabled={billingLoading}>
+                      {billingLoading ? '...' : 'Rechazar'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 flex-wrap">
+                {/* Payphone: manual activate while pending */}
+                {subscription.status === 'pending_payment' && subscription.payment_method === 'payphone' && (
+                  <Button onClick={handleManualActivate} disabled={billingLoading} className="w-full sm:w-auto">
                     {billingLoading ? 'Activando...' : 'Activar manualmente'}
                   </Button>
                 )}
+                {/* Manual methods: renew each month */}
+                {subscription.status === 'active' &&
+                  subscription.payment_method &&
+                  subscription.payment_method !== 'payphone' && (
+                    <Button onClick={handleRenewSubscription} disabled={billingLoading} className="w-full sm:w-auto">
+                      {billingLoading ? 'Renovando...' : 'Registrar pago / Renovar mes'}
+                    </Button>
+                  )}
                 <Button
                   variant="destructive"
                   onClick={handleCancelSubscription}
@@ -666,7 +782,7 @@ export default function ClienteDetalle() {
               </div>
             </>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {subscription?.status === 'cancelled' && (
                 <p className="text-sm text-text-secondary flex items-center gap-2">
                   <XCircle className="h-4 w-4 text-error" />
@@ -690,18 +806,33 @@ export default function ClienteDetalle() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Teléfono Payphone del cliente</Label>
-                  <Input
-                    type="tel"
-                    placeholder="0984111222"
-                    value={billingPhone}
-                    onChange={(e) => setBillingPhone(e.target.value)}
-                    className="w-44"
-                  />
+                  <Label>Método de pago</Label>
+                  <Select value={billingMethod} onValueChange={(v) => setBillingMethod(v as typeof billingMethod)}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="payphone">Payphone (app)</SelectItem>
+                      <SelectItem value="transferencia">Transferencia</SelectItem>
+                      <SelectItem value="efectivo">Efectivo</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+                {billingMethod === 'payphone' && (
+                  <div className="space-y-1">
+                    <Label>Teléfono Payphone del cliente</Label>
+                    <Input
+                      type="tel"
+                      placeholder="0984111222"
+                      value={billingPhone}
+                      onChange={(e) => setBillingPhone(e.target.value)}
+                      className="w-44"
+                    />
+                  </div>
+                )}
                 <Button
                   onClick={handleCreateSubscription}
-                  disabled={billingLoading || !billingAmount || !billingPhone}
+                  disabled={billingLoading || !billingAmount || (billingMethod === 'payphone' && !billingPhone)}
                   className="self-end"
                 >
                   {billingLoading ? 'Creando...' : 'Crear suscripción'}
