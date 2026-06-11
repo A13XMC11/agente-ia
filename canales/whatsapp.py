@@ -166,12 +166,14 @@ class WhatsAppHandler:
                 phone_number_id = value.get("metadata", {}).get("phone_number_id")
 
                 if not phone_number_id:
-                    logger.warning("Missing phone_number_id in webhook")
-                    print("\n❌ DEBUG: Missing phone_number_id in webhook metadata")
+                    logger.warning("missing_phone_number_id_in_webhook_metadata")
                     continue
 
-                print(f"\n📱 DEBUG: Webhook received with phone_number_id = {phone_number_id}, waba_id = {waba_id}")
-                logger.info(f"[WEBHOOK_DEBUG] phone_number_id = {phone_number_id}, waba_id = {waba_id}")
+                logger.info(
+                    "whatsapp_webhook_entry phone_number_id=%s",
+                    phone_number_id,
+                    extra={"waba_id": waba_id},
+                )
 
                 client_id = await self.router.identify_client(
                     phone_number_id,
@@ -180,11 +182,14 @@ class WhatsAppHandler:
                 )
 
                 if not client_id:
-                    logger.warning(f"Could not identify client for phone_number_id={phone_number_id} waba_id={waba_id}")
-                    print(f"\n❌ DEBUG: No client found for phone_number_id={phone_number_id} waba_id={waba_id}")
+                    logger.warning(
+                        "whatsapp_client_not_found phone_number_id=%s",
+                        phone_number_id,
+                        extra={"waba_id": waba_id},
+                    )
                     continue
 
-                print(f"✅ DEBUG: Client identified = {client_id}")
+                logger.info("whatsapp_client_identified", extra={"client_id": client_id})
 
                 contacts_by_id = {
                     str(contact.get("wa_id", "")): contact
@@ -225,13 +230,12 @@ class WhatsAppHandler:
             message: Message object from webhook
         """
         try:
-            print(f"\n\n>>> WHATSAPP MESSAGE RECEIVED <<<")
             sender_id = message.get("from", "")
             usuario_nombre = (contact or {}).get("profile", {}).get("name", "") or ""
-            print(f">>> sender_id={sender_id}, client_id={client_id}")
 
             logger.info(
-                f"Processing WhatsApp message from {sender_id}",
+                "whatsapp_message_received type=%s",
+                message.get("type", "unknown"),
                 extra={"client_id": client_id},
             )
 
@@ -351,7 +355,7 @@ class WhatsAppHandler:
                 )
             )
             self._pending_tasks[debounce_key] = task
-            print(f">>> debounce task scheduled for {sender_id} (delay={self._debounce_delay}s)")
+            logger.debug("debounce_task_scheduled delay=%s", self._debounce_delay)
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
@@ -378,7 +382,7 @@ class WhatsAppHandler:
             self._pending_tasks.pop(debounce_key, None)
 
             if not await self.buffer.claim_debounce(debounce_key, token):
-                print(f">>> debounce superseded for {sender_id}, skipping")
+                logger.debug("debounce_superseded_skipping")
                 return
 
             inbound = await self.buffer.get_and_clear_inbound(debounce_key)
@@ -396,7 +400,7 @@ class WhatsAppHandler:
             media_url = first_media.get("media_url")
             media_type = first_media.get("media_type")
 
-            print(f"\n>>> DEBOUNCE FIRED for {sender_id}: {len(inbound)} message(s) combined")
+            logger.info("debounce_fired message_count=%d", len(inbound))
 
             conversation_id = None
             memory_context: list = []
@@ -439,7 +443,7 @@ class WhatsAppHandler:
                     f"memory_not_initialized_degraded_mode client_id={client_id} sender_id={sender_id}"
                 )
 
-            print(f"\n>>> CALLING router.route_message for {sender_id}")
+            logger.info("routing_message_to_agent")
             agent_response = await self.router.route_message(
                 client_id,
                 {

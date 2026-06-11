@@ -159,6 +159,26 @@ class RateLimiter:
             logger.error("rate_limit_check_error", error=str(e), exc_info=True)
             return True, {}
 
+    async def is_login_locked(self, email: str) -> bool:
+        """
+        Check whether the account is currently locked without incrementing any counter.
+
+        Args:
+            email: User email
+
+        Returns:
+            True if the account is locked (must not proceed with login)
+        """
+        if not self.redis:
+            return False
+
+        try:
+            lockout_key = f"ratelimit:login:{email}:lockout"
+            return bool(await self.redis.exists(lockout_key))
+        except Exception as e:
+            logger.error("is_login_locked_error", error=str(e))
+            return False  # Fail open — don't block legitimate users on Redis errors
+
     async def record_failed_login(self, email: str) -> tuple[bool, int]:
         """
         Record failed login attempt.
@@ -228,9 +248,11 @@ class RateLimiter:
 
     async def reset_login_attempts(self, email: str) -> None:
         """
-        Reset failed login counter for email.
+        Reset failed login counter and lockout for email.
 
-        Called after successful login.
+        Called after successful login. Clears both the attempt counter and the
+        lockout key so a previously-locked account can log in again after a
+        successful credential reset.
 
         Args:
             email: User email
@@ -239,13 +261,68 @@ class RateLimiter:
             return
 
         try:
-            key = f"ratelimit:login:{email}"
-            await self.redis.delete(key)
+            counter_key = f"ratelimit:login:{email}"
+            lockout_key = f"ratelimit:login:{email}:lockout"
+            await self.redis.delete(counter_key, lockout_key)
 
             logger.info("login_attempts_reset", email=email)
 
         except Exception as e:
             logger.error("reset_login_attempts_error", error=str(e), exc_info=True)
+
+    async def check_ip_rate_limit(
+        self,
+        ip: str,
+        endpoint: str,
+        limit: int,
+        window_seconds: int,
+    ) -> tuple[bool, dict[str, int]]:
+        """
+        Sliding-window rate limit keyed on IP + endpoint.
+
+        Used to guard public/auth endpoints against distributed brute-force
+        and scraping regardless of which email/user is being targeted.
+
+        Args:
+            ip: Client IP address (from X-Forwarded-For or request.client.host)
+            endpoint: Short endpoint label, e.g. "login" or "generate_prompt"
+            limit: Max allowed requests in the window
+            window_seconds: Window duration in seconds
+
+        Returns:
+            (allowed: bool, info: dict with current count, limit, and window)
+        """
+        if not self.redis:
+            return True, {}
+
+        key = f"ratelimit:ip:{endpoint}:{ip}"
+
+        try:
+            current = await self.redis.incr(key)
+
+            if current == 1:
+                await self.redis.expire(key, window_seconds)
+
+            allowed = current <= limit
+
+            if not allowed:
+                logger.warning(
+                    "ip_rate_limit_exceeded",
+                    ip=ip,
+                    endpoint=endpoint,
+                    current=current,
+                    limit=limit,
+                )
+
+            return allowed, {
+                "current": current,
+                "limit": limit,
+                "window_seconds": window_seconds,
+            }
+
+        except Exception as e:
+            logger.error("ip_rate_limit_error", error=str(e))
+            return True, {}  # Fail open — don't block on Redis errors
 
     async def get_client_token_usage(
         self,

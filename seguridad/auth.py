@@ -124,38 +124,46 @@ class AuthManager:
             User dict with id, email, client_id, role; or None
         """
         try:
-            # Check if account is locked due to failed attempts
+            # 1. Check lockout BEFORE touching the database — prevents timing oracle.
+            #    We only check here; we record the failure AFTER the password fails.
             if self.rate_limiter:
                 try:
-                    allowed, remaining = await self.rate_limiter.record_failed_login(email)
-
-                    if not allowed:
-                        logger.warning(
-                            "login_attempt_locked_account",
-                            email=email,
-                        )
+                    locked = await self.rate_limiter.is_login_locked(email)
+                    if locked:
+                        logger.warning("login_attempt_locked_account", email=email)
                         return None
                 except Exception as e:
                     logger.warning("rate_limit_check_failed", error=str(e))
 
-            # Query user by email
+            # 2. Query user by email
             response = self.supabase.table("usuarios").select("*").eq(
                 "email", email.lower()
             ).execute()
 
             if not response.data:
+                # Record a failed attempt so attackers can't enumerate valid emails
+                # by observing different lockout behaviour vs. wrong password.
+                if self.rate_limiter:
+                    try:
+                        await self.rate_limiter.record_failed_login(email)
+                    except Exception:
+                        pass
                 logger.warning("user_not_found", email=email)
                 return None
 
             user = response.data[0]
 
-            # Verify password
+            # 3. Verify password — only NOW do we record a failure on mismatch.
             if not self.verify_password(password, user.get("password_hash", "")):
                 logger.warning("invalid_password", email=email)
-                # Failed attempt already recorded via rate_limiter above
+                if self.rate_limiter:
+                    try:
+                        await self.rate_limiter.record_failed_login(email)
+                    except Exception as e:
+                        logger.warning("record_failed_login_error", error=str(e))
                 return None
 
-            # Reset failed attempts on successful login
+            # 4. Reset failed attempts on successful login (clears counter + lockout key)
             if self.rate_limiter:
                 try:
                     await self.rate_limiter.reset_login_attempts(email)

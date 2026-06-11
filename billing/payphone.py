@@ -95,7 +95,8 @@ class PayphoneBilling:
             if self.store_id:
                 payload["storeId"] = self.store_id
 
-            print(f"[PAYPHONE] Sending sale request to {phone_number} (countryCode={country_code}), amount={amount_cents} cents")
+            # Log amount and country only — never log raw phone numbers
+            print(f"[PAYPHONE] Sending sale request countryCode={country_code} amount={amount_cents} cents")
             response = await self.http_client.post(
                 f"{PAYPHONE_API_URL}/Sale",
                 headers=self._headers(),
@@ -103,10 +104,11 @@ class PayphoneBilling:
             )
 
             print(f"[PAYPHONE] Sale response status: {response.status_code}")
-            print(f"[PAYPHONE] Sale response body: {response.text}")
+            # Do not log response body — may contain PII / card data
 
             if not (200 <= response.status_code < 300):
-                logger.error(f"Payphone sale error: {response.status_code} {response.text}")
+                logger.error(f"Payphone sale error: {response.status_code}")
+                print(f"[PAYPHONE] Sale HTTP error: {response.status_code}")
                 return None
 
             data = response.json()
@@ -121,8 +123,8 @@ class PayphoneBilling:
 
             payphone_transaction_id = data.get("transactionId")
             if not payphone_transaction_id:
-                logger.error(f"Payphone returned no transactionId: {data}")
-                print(f"[PAYPHONE] No transactionId in response: {data}")
+                logger.error("Payphone returned no transactionId")
+                print("[PAYPHONE] No transactionId in response")
                 return None
 
             now = datetime.utcnow()

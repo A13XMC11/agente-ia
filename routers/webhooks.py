@@ -238,7 +238,7 @@ async def payphone_notificacion_externa(request: Request):
     except Exception:
         return JSONResponse({"Response": False, "ErrorCode": "111"})
 
-    print(f"[PAYPHONE] Notificación externa recibida: {body}")
+    logger.info("payphone_notificacion_externa_recibida", keys=list(body.keys()))
 
     transaction_id = (
         body.get("TransactionId")
@@ -255,7 +255,10 @@ async def payphone_notificacion_externa(request: Request):
     transaction_status = body.get("TransactionStatus", "") or body.get("transactionStatus", "")
 
     if not transaction_id or not client_transaction_id or status_code is None:
-        print(f"[PAYPHONE] Notificación externa: campos requeridos faltantes en {list(body.keys())}")
+        logger.warning(
+            "payphone_notificacion_campos_faltantes",
+            received_keys=list(body.keys()),
+        )
         return JSONResponse({"Response": False, "ErrorCode": "444"})
 
     if not state.payphone_billing:
@@ -268,7 +271,10 @@ async def payphone_notificacion_externa(request: Request):
     ).execute()
 
     if not sub_resp.data:
-        print(f"[PAYPHONE] Notificación externa: suscripción no encontrada para clientTransactionId={client_transaction_id}")
+        logger.warning(
+            "payphone_subscription_not_found",
+            client_transaction_id=str(client_transaction_id),
+        )
         return JSONResponse({"Response": False, "ErrorCode": "333"})
 
     client_id = sub_resp.data[0]["cliente_id"]
@@ -289,7 +295,7 @@ async def payphone_notificacion_externa(request: Request):
             "id", client_id
         ).eq("estado", "pausado").execute()
 
-        print(f"[PAYPHONE] Suscripción activada para cliente {client_id}")
+        logger.info("payphone_subscription_activated", client_id=client_id)
 
     elif status_code == 2 or transaction_status == "Canceled":
         supabase.table("subscription").update({
@@ -297,7 +303,7 @@ async def payphone_notificacion_externa(request: Request):
             "cancelled_date": now,
         }).eq("payphone_client_transaction_id", str(client_transaction_id)).execute()
 
-        print(f"[PAYPHONE] Pago cancelado para cliente {client_id}")
+        logger.info("payphone_payment_cancelled", client_id=client_id)
 
     logger.info("payphone_notificacion_externa", client_id=client_id, status_code=status_code)
     return JSONResponse({"Response": True, "ErrorCode": "000"})

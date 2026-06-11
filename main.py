@@ -593,15 +593,56 @@ app.include_router(billing_routes.router)
 app.include_router(api_routes.router)
 
 # Add CORS middleware
+_cors_origins: list[str]
+if ENVIRONMENT == "development":
+    # Restrict even in development to avoid accidental wildcard in production
+    _dev_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    _cors_origins = [o.strip() for o in _dev_origins.split(",") if o.strip()] or ["http://localhost:3000"]
+else:
+    _cors_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if ENVIRONMENT == "development" else [
-        o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Internal-Secret"],
 )
+
+
+# ============================================================================
+# MIDDLEWARE: Security headers
+# ============================================================================
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """
+    Inject OWASP-recommended security headers on every response.
+
+    Notes:
+    - HSTS: 1 year, includeSubDomains. Only meaningful over TLS; harmless in dev.
+    - CSP: tight policy for a pure API (no HTML served). Blocks all content loading
+      from this origin itself, which is correct for a JSON API.
+    - X-Content-Type-Options: prevents MIME sniffing attacks.
+    - X-Frame-Options: prevents clickjacking (belt-and-suspenders with CSP).
+    - Referrer-Policy: avoids leaking full URL in Referer header to third parties.
+    - Permissions-Policy: opts out of browser features this API never needs.
+    """
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"  # Modern browsers: use CSP instead
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=(), payment=()"
+    )
+    # Remove server fingerprinting header added by uvicorn/starlette
+    response.headers.pop("server", None)
+    return response
 
 
 # ============================================================================
