@@ -83,7 +83,7 @@ class FacebookHandler:
             expected_hash = hmac.new(
                 self.app_secret.encode(),
                 body,
-                hashlib.sha1,
+                hashlib.sha256,
             ).hexdigest()
 
             if not hmac.compare_digest(provided_hash, expected_hash):
@@ -101,23 +101,26 @@ class FacebookHandler:
         self,
         payload: dict[str, Any],
         x_hub_signature: Optional[str] = None,
+        raw_body: bytes = b"",
     ) -> dict[str, Any]:
         """
         Handle Facebook webhook payload.
 
         Args:
             payload: Webhook payload from Meta
-            x_hub_signature: X-Hub-Signature header for verification
+            x_hub_signature: X-Hub-Signature-256 header for verification
+            raw_body: Raw request body bytes for HMAC verification
 
         Returns:
             Response dict
         """
         try:
-            if x_hub_signature:
-                body_str = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-                if not self.verify_webhook_signature(body_str.encode(), x_hub_signature):
-                    logger.error("Webhook signature verification failed")
-                    return {"error": "Signature verification failed"}
+            if not x_hub_signature:
+                logger.error("facebook_webhook_missing_signature")
+                return {"error": "Signature required"}
+            if not self.verify_webhook_signature(raw_body, x_hub_signature):
+                logger.error("Webhook signature verification failed")
+                return {"error": "Signature verification failed"}
 
             logger.info(
                 "Facebook webhook received",

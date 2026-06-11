@@ -83,8 +83,8 @@ class WhatsAppHandler:
             True if signature is valid or verification is skipped
         """
         if not self.app_secret or self.app_secret in ("", "pendiente", "your_app_secret"):
-            logger.warning("meta_app_secret_not_configured_skipping_signature_check")
-            return True
+            logger.error("meta_app_secret_not_configured_rejecting_webhook")
+            return False
 
         try:
             logger.info(f"verifying_signature: {x_hub_signature[:20] if x_hub_signature else 'missing'}")
@@ -691,17 +691,11 @@ class WhatsAppHandler:
                 "Content-Type": "application/json",
             }
 
-            logger.info(f"[WA_DEBUG] URL: {url}")
-            logger.info(f"[WA_DEBUG] token_prefix: {access_token[:20] if access_token else 'MISSING'}")
-            logger.info(f"[WA_DEBUG] payload: {payload}")
-
             response = await self.http_client.post(
                 url,
                 json=payload,
                 headers=headers,
             )
-
-            logger.info(f"[WA_DEBUG] response_status: {response.status_code} body: {response.text[:200]}")
 
             if response.status_code in (200, 201):
                 result = response.json()

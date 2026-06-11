@@ -1,5 +1,6 @@
 """API endpoints — conversations, leads, catalog, and calendar."""
 import base64
+import hmac
 import json as _json
 import os
 import re as _re
@@ -16,6 +17,14 @@ from seguridad.auth import AuthManager
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+async def _require_internal_secret(request: Request) -> None:
+    """Reject requests to /internal/* endpoints that lack a valid X-Internal-Secret."""
+    internal_secret = os.getenv("INTERNAL_API_SECRET", "")
+    provided = request.headers.get("X-Internal-Secret", "")
+    if not internal_secret or not provided or not hmac.compare_digest(provided, internal_secret):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # ============================================================================
@@ -206,9 +215,17 @@ async def upsert_catalog_sync_config(request: Request):
 @router.get("/api/calendar/service-account-email")
 async def get_calendar_service_account_email(request: Request):
     """Return the Google service account email so clients can share their calendar."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    if not state.auth_manager:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        await state.auth_manager.verify_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     raw = os.environ.get("GOOGLE_CALENDAR_CREDENTIALS_JSON", "")
     email = None
@@ -234,7 +251,9 @@ async def internal_send_email(request: Request):
     """
     Internal endpoint for sending transactional emails via SendGrid.
     Called by the Next.js dashboard (e.g. welcome email on client creation).
+    Requires X-Internal-Secret header.
     """
+    await _require_internal_secret(request)
     sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
     if not sendgrid_api_key:
         raise HTTPException(status_code=503, detail="SendGrid not configured")
@@ -277,7 +296,9 @@ async def internal_catalog_sync_now(request: Request):
     Trigger an immediate catalog sync for a client.
     Called by the Next.js dashboard "Sincronizar ahora" button.
     Body: { client_id: string }
+    Requires X-Internal-Secret header.
     """
+    await _require_internal_secret(request)
     if not state.catalog_sync_module:
         raise HTTPException(status_code=503, detail="Catalog sync module not ready")
     if not state.supabase_service_client:
@@ -319,7 +340,9 @@ async def internal_generate_prompt(request: Request):
     """
     Generate an optimized system prompt for a client's AI agent using GPT-4o.
     Called by the Next.js dashboard prompt generator UI.
+    Requires X-Internal-Secret header.
     """
+    await _require_internal_secret(request)
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
         raise HTTPException(status_code=503, detail="OpenAI not configured")
@@ -422,12 +445,14 @@ IMPORTANTE: Genera ÚNICAMENTE el system prompt, sin explicaciones previas ni en
 
 
 @router.post("/internal/invalidate-cache/{client_id}")
-async def internal_invalidate_cache(client_id: str):
+async def internal_invalidate_cache(client_id: str, request: Request):
     """
     Invalidate the cached agent instance for a client.
     Called by the dashboard after module toggles or config changes
     so the next message picks up the updated settings immediately.
+    Requires X-Internal-Secret header.
     """
+    await _require_internal_secret(request)
     if not state.message_router:
         raise HTTPException(status_code=503, detail="Router not initialized")
     state.message_router.invalidate_agent_cache(client_id)

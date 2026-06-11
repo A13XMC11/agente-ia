@@ -99,9 +99,10 @@ async def instagram_webhook(request: Request):
     if not state.instagram_handler:
         raise HTTPException(status_code=503, detail="Service not ready")
 
+    raw_body = await request.body()
     body = await request.json()
-    x_hub_signature = request.headers.get("X-Hub-Signature", "")
-    response = await state.instagram_handler.handle_webhook(body, x_hub_signature)
+    x_hub_signature = request.headers.get("X-Hub-Signature-256", "")
+    response = await state.instagram_handler.handle_webhook(body, x_hub_signature, raw_body=raw_body)
     logger.info("instagram_webhook_processed", entry_id=body.get("entry", [{}])[0].get("id"))
     return response
 
@@ -146,9 +147,10 @@ async def facebook_webhook(request: Request):
     if not state.facebook_handler:
         raise HTTPException(status_code=503, detail="Service not ready")
 
+    raw_body = await request.body()
     body = await request.json()
-    x_hub_signature = request.headers.get("X-Hub-Signature", "")
-    response = await state.facebook_handler.handle_webhook(body, x_hub_signature)
+    x_hub_signature = request.headers.get("X-Hub-Signature-256", "")
+    response = await state.facebook_handler.handle_webhook(body, x_hub_signature, raw_body=raw_body)
     logger.info("facebook_webhook_processed", entry_id=body.get("entry", [{}])[0].get("id"))
     return response
 
@@ -193,9 +195,8 @@ async def payphone_callback_get(request: Request):
     """
     Payphone API Sale responseUrl callback (GET).
 
-    For API Sale, Payphone calls this URL after the payer approves in the app.
-    The GET itself signals approval — no separate /button/V2/Confirm call is
-    needed (that endpoint belongs to the Button product, not API Sale).
+    Delegates to PayphoneBilling.handle_callback() which calls Payphone's
+    /button/V2/Confirm API to verify the transaction before activating.
 
     Params: id (transactionId), clientTransactionId
     """
@@ -210,31 +211,13 @@ async def payphone_callback_get(request: Request):
         logger.warning("payphone_callback_missing_params", params=list(params.keys()))
         return JSONResponse({"status": "error", "message": "Missing id or clientTransactionId"})
 
-    supabase = state.payphone_billing.supabase
-    sub_resp = supabase.table("subscription").select("cliente_id").eq(
-        "payphone_client_transaction_id", str(client_transaction_id)
-    ).execute()
+    result = await state.payphone_billing.handle_callback({
+        "id": transaction_id,
+        "clientTransactionID": client_transaction_id,
+    })
 
-    if not sub_resp.data:
-        logger.warning("payphone_callback_subscription_not_found", client_transaction_id=client_transaction_id)
-        return JSONResponse({"status": "not_found"})
-
-    client_id = sub_resp.data[0]["cliente_id"]
-    now = datetime.utcnow().isoformat()
-
-    supabase.table("subscription").update({
-        "status": "active",
-        "payphone_transaction_id": str(transaction_id),
-        "last_payment_date": now,
-        "payment_failed_count": 0,
-    }).eq("payphone_client_transaction_id", str(client_transaction_id)).execute()
-
-    supabase.table("clientes").update({"estado": "activo"}).eq(
-        "id", client_id
-    ).eq("estado", "pausado").execute()
-
-    logger.info("payphone_callback_activated", client_id=client_id, transaction_id=transaction_id)
-    return JSONResponse({"status": "approved", "client_id": client_id})
+    logger.info("payphone_callback_get", result=result.get("status"))
+    return JSONResponse(result)
 
 
 @router.post("/webhooks/payphone")
@@ -292,12 +275,15 @@ async def payphone_notificacion_externa(request: Request):
     now = datetime.utcnow().isoformat()
 
     if status_code == 3 or transaction_status == "Approved":
+        # Idempotency: skip if this exact transaction_id was already recorded
         supabase.table("subscription").update({
             "status": "active",
             "payphone_transaction_id": str(transaction_id),
             "last_payment_date": now,
             "payment_failed_count": 0,
-        }).eq("payphone_client_transaction_id", str(client_transaction_id)).execute()
+        }).eq("payphone_client_transaction_id", str(client_transaction_id)).neq(
+            "payphone_transaction_id", str(transaction_id)
+        ).execute()
 
         supabase.table("clientes").update({"estado": "activo"}).eq(
             "id", client_id
